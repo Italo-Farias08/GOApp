@@ -22,6 +22,7 @@ export type LoginPayload = {
 export type PhoneLoginPayload = {
   countryCode: string; // ex: "+55"
   phone: string;
+  password: string;
 };
 
 export type RegisterPayload = {

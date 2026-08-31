@@ -45,6 +45,9 @@ export async function loginWithPhone(payload: PhoneLoginPayload): Promise<User> 
     if (!payload.phone || payload.phone.replace(/\D/g, '').length < 10) {
       throw new Error('Número de celular inválido.');
     }
+    if (!payload.password) {
+      throw new Error('Informe sua senha.');
+    }
     const fakeUser: User = {
       id: 'mock-user-phone',
       name: 'Usuário Teste',
@@ -56,8 +59,6 @@ export async function loginWithPhone(payload: PhoneLoginPayload): Promise<User> 
   }
 
   // Formato esperado do backend: POST /auth/login-phone -> { user, tokens }
-  // (normalmente esse endpoint dispara um SMS com código OTP antes de logar de fato;
-  // por enquanto o fluxo está simplificado direto pro login)
   const { data } = await api.post<{ user: User; tokens: AuthTokens }>(
     '/auth/login-phone',
     payload

@@ -1,6 +1,7 @@
 const bcrypt = require('bcryptjs');
 const usuarioModelo = require('../modelos/usuarioModelo');
 const { gerarToken } = require('../utilitarios/token');
+const { normalizarTelefone } = require('../utilitarios/telefone');
 const { ErroHttp } = require('../intermediarios/tratadorErros');
 
 const REGEX_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -25,8 +26,22 @@ async function registrar(req, res, next) {
       throw new ErroHttp(409, 'Já existe uma conta com esse email.');
     }
 
+    const telefoneNormalizado = phone ? normalizarTelefone(phone) : null;
+
+    if (telefoneNormalizado) {
+      const usuarioComEsseTelefone = await usuarioModelo.buscarPorTelefone(telefoneNormalizado);
+      if (usuarioComEsseTelefone) {
+        throw new ErroHttp(409, 'Já existe uma conta com esse telefone.');
+      }
+    }
+
     const senhaHash = await bcrypt.hash(password, 10);
-    const novoUsuario = await usuarioModelo.criar({ nome: name, email, senhaHash, telefone: phone });
+    const novoUsuario = await usuarioModelo.criar({
+      nome: name,
+      email,
+      senhaHash,
+      telefone: telefoneNormalizado,
+    });
 
     const accessToken = gerarToken(novoUsuario.id);
 
@@ -70,24 +85,28 @@ async function entrar(req, res, next) {
 }
 
 // POST /auth/login-phone
-// Fluxo simplificado (sem envio real de SMS/OTP): se o telefone já tem conta, loga;
-// se não tem, cria uma conta nova automaticamente com esse telefone.
+// Exige telefone cadastrado E senha correta (mesma senha do cadastro).
 async function entrarComTelefone(req, res, next) {
   try {
-    const { countryCode, phone } = req.body;
+    const { countryCode, phone, password } = req.body;
 
     if (!phone || phone.replace(/\D/g, '').length < 10) {
       throw new ErroHttp(400, 'Número de celular inválido.');
     }
+    if (!password) {
+      throw new ErroHttp(400, 'Senha é obrigatória.');
+    }
 
-    const telefoneCompleto = `${countryCode || ''}${phone}`;
+    const telefoneNormalizado = normalizarTelefone(`${countryCode || ''}${phone}`);
 
-    let usuario = await usuarioModelo.buscarPorTelefone(telefoneCompleto);
-    if (!usuario) {
-      usuario = await usuarioModelo.criar({
-        nome: 'Usuário',
-        telefone: telefoneCompleto,
-      });
+    const usuario = await usuarioModelo.buscarPorTelefone(telefoneNormalizado);
+    if (!usuario || !usuario.senha_hash) {
+      throw new ErroHttp(401, 'Telefone ou senha inválidos.');
+    }
+
+    const senhaConfere = await bcrypt.compare(password, usuario.senha_hash);
+    if (!senhaConfere) {
+      throw new ErroHttp(401, 'Telefone ou senha inválidos.');
     }
 
     const accessToken = gerarToken(usuario.id);
@@ -130,7 +149,8 @@ async function atualizarPerfil(req, res, next) {
       }
     }
 
-    const usuarioAtualizado = await usuarioModelo.atualizar(req.usuarioId, { nome: name, email, telefone: phone });
+    const telefoneNormalizado = phone ? normalizarTelefone(phone) : undefined;
+    const usuarioAtualizado = await usuarioModelo.atualizar(req.usuarioId, { nome: name, email, telefone: telefoneNormalizado });
     return res.json({ user: usuarioModelo.paraUsuarioPublico(usuarioAtualizado) });
   } catch (erro) {
     next(erro);

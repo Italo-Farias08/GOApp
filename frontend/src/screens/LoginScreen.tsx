@@ -22,14 +22,19 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Login'>;
 export default function LoginScreen({ navigation }: Props) {
   const { signInWithPhone } = useAuth();
   const [phone, setPhone] = useState('');
+  const [password, setPassword] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   async function handleContinue() {
     setErrorMessage(null);
+    if (!password) {
+      setErrorMessage('Informe sua senha.');
+      return;
+    }
     setLoading(true);
     try {
-      await signInWithPhone({ countryCode: '+55', phone: phone.trim() });
+      await signInWithPhone({ countryCode: '+55', phone: phone.trim(), password });
     } catch (err: any) {
       setErrorMessage(err?.message ?? 'Não foi possível continuar.');
     } finally {
@@ -81,6 +86,17 @@ export default function LoginScreen({ navigation }: Props) {
             </View>
 
             {!!errorMessage && <Text style={styles.errorText}>{errorMessage}</Text>}
+
+            <View style={styles.passwordRow}>
+              <TextInput
+                style={styles.passwordInput}
+                placeholder="Senha"
+                placeholderTextColor={colors.textMuted}
+                secureTextEntry
+                value={password}
+                onChangeText={setPassword}
+              />
+            </View>
 
             <Button
               label="Continuar"
@@ -192,6 +208,20 @@ const styles = StyleSheet.create({
     color: colors.danger,
     marginBottom: spacing.md,
     textAlign: 'center',
+  },
+  passwordRow: {
+    height: 56,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    paddingHorizontal: spacing.md,
+    justifyContent: 'center',
+    marginBottom: spacing.md,
+  },
+  passwordInput: {
+    ...typography.body,
+    color: colors.text,
   },
   continueButton: {
     marginBottom: spacing.lg,
