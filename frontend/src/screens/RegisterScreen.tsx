@@ -1,14 +1,21 @@
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import React, { useState } from 'react';
+import { LinearGradient } from 'expo-linear-gradient';
+import React, { useRef, useState } from 'react';
 import {
+  Image,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
+  TouchableWithoutFeedback,
   View,
 } from 'react-native';
 import Button from '../components/Button';
+import CityBackground from '../components/CityBackground';
 import Input from '../components/Input';
 import { useAuth } from '../context/AuthContext';
 import { colors, spacing, typography } from '../theme/theme';
@@ -25,6 +32,12 @@ export default function RegisterScreen({ navigation }: Props) {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // Refs pra pular de um campo pro próximo apertando "próximo" no teclado,
+  // sem precisar tocar na tela toda vez.
+  const emailRef = useRef<TextInput>(null);
+  const phoneRef = useRef<TextInput>(null);
+  const passwordRef = useRef<TextInput>(null);
 
   function validate() {
     const next: Record<string, string> = {};
@@ -52,43 +65,139 @@ export default function RegisterScreen({ navigation }: Props) {
   }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.flex}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <ScrollView contentContainerStyle={styles.container}>
-        <View style={styles.header}>
-          <Text style={styles.title}>Criar conta</Text>
-          <Text style={styles.subtitle}>Leva menos de um minuto.</Text>
-        </View>
+    <LinearGradient colors={['#070B1A', '#0A0F24']} style={styles.flex}>
+      <CityBackground />
+      <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+        <KeyboardAvoidingView
+          style={styles.flex}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <ScrollView
+            contentContainerStyle={styles.container}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            <Pressable style={styles.backButton} onPress={() => navigation.goBack()} hitSlop={12}>
+              <Text style={styles.backArrow}>‹</Text>
+              <Text style={styles.backLabel}>Voltar</Text>
+            </Pressable>
 
-        <View style={styles.form}>
-          <Input label="Nome" placeholder="Seu nome completo" value={name} onChangeText={setName} errorMessage={errors.name} />
-          <Input label="Email" placeholder="seuemail@exemplo.com" autoCapitalize="none" keyboardType="email-address" value={email} onChangeText={setEmail} errorMessage={errors.email} />
-          <Input label="Telefone" placeholder="(00) 00000-0000" keyboardType="phone-pad" value={phone} onChangeText={setPhone} />
-          <Input label="Senha" placeholder="••••••••" secureTextEntry value={password} onChangeText={setPassword} errorMessage={errors.password} />
+            <View style={styles.header}>
+              <Image
+                source={require('../../assets/logo.png')}
+                style={styles.logoImage}
+                resizeMode="contain"
+              />
+              <Text style={styles.title}>Criar conta</Text>
+              <Text style={styles.subtitle}>Leva menos de um minuto.</Text>
+            </View>
 
-          {!!submitError && <Text style={styles.submitError}>{submitError}</Text>}
+            <View style={styles.form}>
+              <Input
+                label="Nome"
+                placeholder="Seu nome completo"
+                value={name}
+                onChangeText={setName}
+                errorMessage={errors.name}
+                returnKeyType="next"
+                blurOnSubmit={false}
+                onSubmitEditing={() => emailRef.current?.focus()}
+              />
+              <Input
+                ref={emailRef}
+                label="Email"
+                placeholder="seuemail@exemplo.com"
+                autoCapitalize="none"
+                keyboardType="email-address"
+                value={email}
+                onChangeText={setEmail}
+                errorMessage={errors.email}
+                returnKeyType="next"
+                blurOnSubmit={false}
+                onSubmitEditing={() => phoneRef.current?.focus()}
+              />
+              <Input
+                ref={phoneRef}
+                label="Telefone"
+                placeholder="(00) 00000-0000"
+                keyboardType="phone-pad"
+                value={phone}
+                onChangeText={setPhone}
+                returnKeyType="next"
+                blurOnSubmit={false}
+                onSubmitEditing={() => passwordRef.current?.focus()}
+              />
+              <Input
+                ref={passwordRef}
+                label="Senha"
+                placeholder="••••••••"
+                secureTextEntry
+                value={password}
+                onChangeText={setPassword}
+                errorMessage={errors.password}
+                returnKeyType="done"
+                onSubmitEditing={handleRegister}
+              />
 
-          <Button label="Cadastrar" onPress={handleRegister} loading={loading} style={styles.registerButton} />
-          <Button label="Já tenho conta" variant="ghost" onPress={() => navigation.goBack()} />
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+              {!!submitError && <Text style={styles.submitError}>{submitError}</Text>}
+
+              <Button label="Cadastrar" onPress={handleRegister} loading={loading} style={styles.registerButton} />
+              <Button label="Já tenho conta" variant="ghost" onPress={() => navigation.goBack()} />
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </TouchableWithoutFeedback>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1, backgroundColor: colors.background },
+  flex: { flex: 1 },
   container: {
     flexGrow: 1,
     justifyContent: 'center',
     paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.xxl,
+    paddingTop: spacing.xxl,
+    paddingBottom: spacing.xxl,
   },
-  header: { marginBottom: spacing.xl },
-  title: { ...typography.h2, color: colors.text },
-  subtitle: { ...typography.body, color: colors.textSecondary, marginTop: spacing.xs },
+  backButton: {
+    position: 'absolute',
+    top: spacing.lg,
+    left: spacing.lg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  backArrow: {
+    color: colors.text,
+    fontSize: 28,
+    lineHeight: 28,
+    marginRight: 2,
+  },
+  backLabel: {
+    ...typography.bodyBold,
+    color: colors.text,
+  },
+  header: {
+    alignItems: 'center',
+    marginBottom: spacing.lg,
+  },
+  logoImage: {
+    width: 180,
+    height: 126,
+    marginBottom: spacing.sm,
+  },
+  title: {
+    ...typography.h2,
+    color: colors.text,
+    textAlign: 'center',
+  },
+  subtitle: {
+    ...typography.body,
+    color: colors.textSecondary,
+    marginTop: spacing.xs,
+    textAlign: 'center',
+  },
   form: { width: '100%' },
   registerButton: { marginTop: spacing.sm, marginBottom: spacing.sm },
   submitError: { color: colors.danger, marginBottom: spacing.md, textAlign: 'center' },

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { forwardRef, useState } from 'react';
 import { StyleSheet, Text, TextInput, TextInputProps, View } from 'react-native';
 import { colors, radius, spacing, typography } from '../theme/theme';
 
@@ -7,13 +7,17 @@ type Props = TextInputProps & {
   errorMessage?: string;
 };
 
-export default function Input({ label, errorMessage, style, ...rest }: Props) {
+const Input = forwardRef<TextInput, Props>(function Input(
+  { label, errorMessage, style, ...rest },
+  ref
+) {
   const [isFocused, setIsFocused] = useState(false);
 
   return (
     <View style={styles.container}>
       <Text style={styles.label}>{label}</Text>
       <TextInput
+        ref={ref}
         placeholderTextColor={colors.textMuted}
         style={[
           styles.input,
@@ -34,7 +38,9 @@ export default function Input({ label, errorMessage, style, ...rest }: Props) {
       {!!errorMessage && <Text style={styles.error}>{errorMessage}</Text>}
     </View>
   );
-}
+});
+
+export default Input;
 
 const styles = StyleSheet.create({
   container: {
