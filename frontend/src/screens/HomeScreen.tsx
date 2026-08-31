@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  FlatList,
   Keyboard,
   Pressable,
   StyleSheet,
@@ -8,10 +9,11 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView, { Marker, UrlTile } from 'react-native-maps';
 import SettingsModal from '../components/SettingsModal';
 import { useAuth } from '../context/AuthContext';
 import { useCurrentLocation } from '../hooks/useCurrentLocation';
+import { useAddressSearch, EnderecoSugerido } from '../hooks/useAddressSearch';
 import { colors, radius, spacing, typography } from '../theme/theme';
 
 const FALLBACK_REGION = {
@@ -21,12 +23,22 @@ const FALLBACK_REGION = {
   longitudeDelta: 0.05,
 };
 
+// Estilo "Alidade Smooth Dark" da Stadia Maps — versão escura do design.
+// Camada mapBrightener por cima clareia um pouco o contraste, sem trocar o mapa.
+const STADIA_TILE_URL = `https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}.png?api_key=${process.env.EXPO_PUBLIC_STADIA_KEY}`;
+
 export default function HomeScreen() {
   const { user } = useAuth();
   const { coords, isLoading, errorMessage } = useCurrentLocation();
   const [destination, setDestination] = useState('');
+  const [destinoSelecionado, setDestinoSelecionado] = useState<EnderecoSugerido | null>(null);
   const [settingsVisible, setSettingsVisible] = useState(false);
   const mapRef = useRef<MapView>(null);
+
+  const { sugestoes, buscando, erro: erroBusca } = useAddressSearch(
+    destinoSelecionado ? '' : destination, // some com a lista assim que um destino é escolhido
+    coords
+  );
 
   const region = coords
     ? {
@@ -37,25 +49,57 @@ export default function HomeScreen() {
       }
     : FALLBACK_REGION;
 
+  function selecionarSugestao(item: EnderecoSugerido) {
+    setDestinoSelecionado(item);
+    setDestination(item.descricao);
+    Keyboard.dismiss();
+
+    mapRef.current?.animateToRegion(
+      {
+        latitude: item.latitude,
+        longitude: item.longitude,
+        latitudeDelta: 0.02,
+        longitudeDelta: 0.02,
+      },
+      500
+    );
+  }
+
+  function limparDestino() {
+    setDestination('');
+    setDestinoSelecionado(null);
+    Keyboard.dismiss();
+  }
+
   return (
     <View style={styles.container}>
       <MapView
         ref={mapRef}
         style={styles.map}
-        provider={PROVIDER_GOOGLE}
         initialRegion={region}
-        region={coords ? region : undefined}
+        region={coords && !destinoSelecionado ? region : undefined}
         showsUserLocation
         showsMyLocationButton={false}
       >
+        <UrlTile urlTemplate={STADIA_TILE_URL} maximumZ={20} flipY={false} />
+
         {coords && (
+          <Marker coordinate={coords} title="Você está aqui" pinColor={colors.primary} />
+        )}
+        {destinoSelecionado && (
           <Marker
-            coordinate={coords}
-            title="Você está aqui"
-            pinColor={colors.primary}
+            coordinate={destinoSelecionado}
+            title="Destino"
+            description={destinoSelecionado.descricao}
           />
         )}
       </MapView>
+
+      <View pointerEvents="none" style={styles.mapBrightener} />
+
+      <View style={styles.attribution}>
+        <Text style={styles.attributionText}>© Stadia Maps © OpenMapTiles © OpenStreetMap</Text>
+      </View>
 
       {isLoading && (
         <View style={styles.loadingOverlay}>
@@ -90,29 +134,46 @@ export default function HomeScreen() {
             placeholder="Digite o endereço de destino"
             placeholderTextColor={colors.textMuted}
             value={destination}
-            onChangeText={setDestination}
+            onChangeText={(texto) => {
+              setDestination(texto);
+              if (destinoSelecionado) setDestinoSelecionado(null);
+            }}
             returnKeyType="done"
             onSubmitEditing={() => Keyboard.dismiss()}
           />
-          {!!destination && (
-            <Pressable
-              onPress={() => {
-                setDestination('');
-                Keyboard.dismiss();
-              }}
-              hitSlop={10}
-            >
+          {buscando && <ActivityIndicator size="small" color={colors.textMuted} />}
+          {!!destination && !buscando && (
+            <Pressable onPress={limparDestino} hitSlop={10}>
               <Text style={styles.clearIcon}>✕</Text>
             </Pressable>
           )}
         </View>
 
+        {!!erroBusca && <Text style={styles.errorHint}>{erroBusca}</Text>}
+
+        {!destinoSelecionado && sugestoes.length > 0 && (
+          <FlatList
+            style={styles.sugestoesLista}
+            data={sugestoes}
+            keyExtractor={(item) => item.id}
+            keyboardShouldPersistTaps="handled"
+            renderItem={({ item }) => (
+              <Pressable style={styles.sugestaoItem} onPress={() => selecionarSugestao(item)}>
+                <Text style={styles.sugestaoTexto} numberOfLines={2}>
+                  {item.descricao}
+                </Text>
+              </Pressable>
+            )}
+          />
+        )}
+
         <Pressable
-          style={[styles.confirmButton, !destination && styles.confirmButtonDisabled]}
-          disabled={!destination}
+          style={[styles.confirmButton, !destinoSelecionado && styles.confirmButtonDisabled]}
+          disabled={!destinoSelecionado}
           onPress={() => {
             // TODO: quando o backend existir, aqui entra a chamada pra buscar
             // rota/preço e navegar pra tela de confirmação da corrida.
+            // destinoSelecionado já tem { latitude, longitude, descricao } prontos pra usar.
           }}
         >
           <Text style={styles.confirmLabel}>Buscar corrida</Text>
@@ -129,6 +190,23 @@ const styles = StyleSheet.create({
   },
   map: {
     ...StyleSheet.absoluteFillObject,
+  },
+  mapBrightener: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(7, 25, 63, 0.25)',
+  },
+  attribution: {
+    position: 'absolute',
+    bottom: 4,
+    right: 8,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  attributionText: {
+    fontSize: 10,
+    color: '#fff',
   },
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -196,6 +274,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: radius.lg,
     padding: spacing.lg,
     paddingBottom: spacing.xl,
+    maxHeight: '60%',
   },
   bottomTitle: {
     ...typography.h2,
@@ -229,6 +308,28 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 16,
     paddingLeft: spacing.sm,
+  },
+  errorHint: {
+    ...typography.caption,
+    color: colors.danger,
+    marginBottom: spacing.sm,
+  },
+  sugestoesLista: {
+    maxHeight: 180,
+    marginBottom: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  sugestaoItem: {
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  sugestaoTexto: {
+    ...typography.body,
+    color: colors.text,
   },
   confirmButton: {
     height: 52,
