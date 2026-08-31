@@ -1,0 +1,34 @@
+{
+  "expo": {
+    "name": "#GO",
+    "slug": "go-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "backgroundColor": "#0B0B0F"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.goapp.mobile",
+      "config": {
+        "googleMapsApiKey": "COLOQUE_SUA_CHAVE_AQUI"
+      },
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "O #GO usa sua localização pra mostrar onde você está no mapa e encontrar corridas por perto."
+      }
+    },
+    "android": {
+      "package": "com.goapp.mobile",
+      "config": {
+        "googleMaps": {
+          "apiKey": "COLOQUE_SUA_CHAVE_AQUI"
+        }
+      },
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
+      ]
+    }
+  }
+}
