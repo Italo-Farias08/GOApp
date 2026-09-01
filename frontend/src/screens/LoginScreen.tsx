@@ -1,9 +1,10 @@
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { LinearGradient } from 'expo-linear-gradient';
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
+  Animated,
   Image,
-  KeyboardAvoidingView,
+  Keyboard,
   Platform,
   Pressable,
   StyleSheet,
@@ -25,6 +26,35 @@ export default function LoginScreen({ navigation }: Props) {
   const [password, setPassword] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const deslocamento = useRef(new Animated.Value(0)).current;
+
+  // Sobe o formulário suavemente quando o teclado abre — animação roda na
+  // thread nativa (useNativeDriver), sem recalcular layout a cada frame,
+  // então não trava mesmo com o gradiente e o SVG de fundo na tela.
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const showSub = Keyboard.addListener(showEvent, (evento) => {
+      Animated.timing(deslocamento, {
+        toValue: -(evento.endCoordinates.height * 0.4),
+        duration: Platform.OS === 'ios' ? evento.duration ?? 250 : 200,
+        useNativeDriver: true,
+      }).start();
+    });
+    const hideSub = Keyboard.addListener(hideEvent, (evento) => {
+      Animated.timing(deslocamento, {
+        toValue: 0,
+        duration: Platform.OS === 'ios' ? evento?.duration ?? 250 : 200,
+        useNativeDriver: true,
+      }).start();
+    });
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, [deslocamento]);
 
     async function handleContinue() {
     setErrorMessage(null);
@@ -54,10 +84,7 @@ export default function LoginScreen({ navigation }: Props) {
   return (
     <LinearGradient colors={['#070B1A', '#0A0F24']} style={styles.flex}>
       <CityBackground />
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
+      <Animated.View style={[styles.flex, { transform: [{ translateY: deslocamento }] }]}>
         <View style={styles.container}>
           <View style={styles.header}>
             <Image
@@ -132,7 +159,7 @@ export default function LoginScreen({ navigation }: Props) {
             </Pressable>
           </View>
         </View>
-      </KeyboardAvoidingView>
+      </Animated.View>
     </LinearGradient>
   );
 }
