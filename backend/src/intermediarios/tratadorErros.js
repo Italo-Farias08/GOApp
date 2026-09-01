@@ -8,7 +8,13 @@ function tratadorErros(erro, req, res, next) {
     ? erro.message
     : 'Erro interno no servidor.';
 
-  res.status(statusCode).json({ message: mensagem });
+  const corpo = { message: mensagem };
+  if (erro.needsVerification) {
+    corpo.needsVerification = true;
+    corpo.email = erro.email;
+  }
+
+  res.status(statusCode).json(corpo);
 }
 
 // Classe simples pra lançar erros com status HTTP definido

@@ -7,6 +7,7 @@ export type User = {
   phone?: string;
   avatarUrl?: string;
   driverStatus?: DriverStatus;
+  emailVerificado?: boolean;
 };
 
 export type AuthTokens = {
@@ -32,6 +33,17 @@ export type RegisterPayload = {
   phone?: string;
 };
 
+// Resposta do /auth/register: nunca vem token direto, precisa confirmar o email antes.
+export type RegisterResult = {
+  needsVerification: true;
+  email: string;
+};
+
+export type VerifyEmailPayload = {
+  email: string;
+  code: string;
+};
+
 // Edição de credenciais na tela de Conta — todos os campos opcionais
 // pra permitir salvar só o que o usuário alterou.
 export type UpdateAccountPayload = {
@@ -54,5 +66,6 @@ export type DriverApplicationPayload = {
 export type RootStackParamList = {
   Login: undefined;
   Register: undefined;
+  VerifyEmail: { email: string };
   Home: undefined;
 };

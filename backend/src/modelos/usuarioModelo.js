@@ -10,6 +10,7 @@ function paraUsuarioPublico(linha) {
     phone: linha.telefone || undefined,
     avatarUrl: linha.avatar_url || undefined,
     driverStatus: linha.status_motorista,
+    emailVerificado: linha.email_verificado,
   };
 }
 
@@ -52,6 +53,33 @@ async function atualizar(id, { nome, email, telefone }) {
   return resultado.rows[0];
 }
 
+async function definirCodigoVerificacao(id, { codigo, expiraEm }) {
+  const resultado = await consultar(
+    `UPDATE usuarios SET
+       codigo_verificacao = $2,
+       codigo_verificacao_expira = $3,
+       atualizado_em = NOW()
+     WHERE id = $1
+     RETURNING *`,
+    [id, codigo, expiraEm]
+  );
+  return resultado.rows[0];
+}
+
+async function marcarEmailVerificado(id) {
+  const resultado = await consultar(
+    `UPDATE usuarios SET
+       email_verificado = TRUE,
+       codigo_verificacao = NULL,
+       codigo_verificacao_expira = NULL,
+       atualizado_em = NOW()
+     WHERE id = $1
+     RETURNING *`,
+    [id]
+  );
+  return resultado.rows[0];
+}
+
 async function atualizarStatusMotorista(id, status) {
   const resultado = await consultar(
     `UPDATE usuarios SET status_motorista = $2, atualizado_em = NOW()
@@ -69,5 +97,7 @@ module.exports = {
   buscarPorId,
   criar,
   atualizar,
+  definirCodigoVerificacao,
+  marcarEmailVerificado,
   atualizarStatusMotorista,
 };

@@ -3,6 +3,8 @@ import type {
   LoginPayload,
   PhoneLoginPayload,
   RegisterPayload,
+  RegisterResult,
+  VerifyEmailPayload,
   UpdateAccountPayload,
   User,
   AuthTokens,
@@ -67,25 +69,49 @@ export async function loginWithPhone(payload: PhoneLoginPayload): Promise<User> 
   return data.user;
 }
 
-export async function register(payload: RegisterPayload): Promise<User> {
+// Cadastro nunca loga direto: o backend manda um código de 6 dígitos por email
+// e só libera o token depois que esse código é confirmado (ver verifyEmail abaixo).
+export async function register(payload: RegisterPayload): Promise<RegisterResult> {
   if (USE_MOCK) {
+    return mockDelay({ needsVerification: true, email: payload.email });
+  }
+
+  // Formato esperado do backend: POST /auth/register -> { needsVerification, email }
+  const { data } = await api.post<RegisterResult>('/auth/register', payload);
+  return data;
+}
+
+// Confirma o código enviado por email e, se estiver certo, já retorna o usuário logado.
+export async function verifyEmail(payload: VerifyEmailPayload): Promise<User> {
+  if (USE_MOCK) {
+    if (payload.code !== '123456') {
+      throw new Error('Código inválido.');
+    }
     const fakeUser: User = {
       id: 'mock-user-new',
-      name: payload.name,
+      name: 'Usuário Teste',
       email: payload.email,
-      phone: payload.phone,
+      emailVerificado: true,
     };
     await saveToken('mock-token-123');
     return mockDelay(fakeUser);
   }
 
-  // Formato esperado do backend: POST /auth/register -> { user, tokens }
   const { data } = await api.post<{ user: User; tokens: AuthTokens }>(
-    '/auth/register',
+    '/auth/verify-email',
     payload
   );
   await saveToken(data.tokens.accessToken);
   return data.user;
+}
+
+// Pede pro backend gerar e mandar um novo código (ex: o usuário deixou expirar).
+export async function resendCode(email: string): Promise<void> {
+  if (USE_MOCK) {
+    await mockDelay(undefined, 400);
+    return;
+  }
+  await api.post('/auth/resend-code', { email });
 }
 
 export async function fetchMe(): Promise<User> {

@@ -26,7 +26,7 @@ export default function LoginScreen({ navigation }: Props) {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  async function handleContinue() {
+    async function handleContinue() {
     setErrorMessage(null);
     if (!password) {
       setErrorMessage('Informe sua senha.');
@@ -36,7 +36,12 @@ export default function LoginScreen({ navigation }: Props) {
     try {
       await signInWithPhone({ countryCode: '+55', phone: phone.trim(), password });
     } catch (err: any) {
-      setErrorMessage(err?.message ?? 'Não foi possível continuar.');
+      const dadosErro = err?.response?.data;
+      if (dadosErro?.needsVerification && dadosErro?.email) {
+        navigation.navigate('VerifyEmail', { email: dadosErro.email });
+        return;
+      }
+      setErrorMessage(dadosErro?.message ?? err?.message ?? 'Não foi possível continuar.');
     } finally {
       setLoading(false);
     }

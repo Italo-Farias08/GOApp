@@ -6,6 +6,7 @@ import type {
   LoginPayload,
   PhoneLoginPayload,
   RegisterPayload,
+  RegisterResult,
   UpdateAccountPayload,
   User,
 } from '../types';
@@ -16,7 +17,9 @@ type AuthContextValue = {
   isAuthenticated: boolean;
   signIn: (payload: LoginPayload) => Promise<void>;
   signInWithPhone: (payload: PhoneLoginPayload) => Promise<void>;
-  signUp: (payload: RegisterPayload) => Promise<void>;
+  signUp: (payload: RegisterPayload) => Promise<RegisterResult>;
+  verifyEmail: (email: string, code: string) => Promise<void>;
+  resendCode: (email: string) => Promise<void>;
   signOut: () => Promise<void>;
   updateAccount: (payload: UpdateAccountPayload) => Promise<void>;
   updateDriverStatus: (status: DriverStatus) => void;
@@ -69,13 +72,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  // Não loga o usuário aqui: só dispara o código por email e devolve o email
+  // pra tela de Cadastro navegar pra tela de verificação.
   async function signUp(payload: RegisterPayload) {
     setError(null);
     try {
-      const newUser = await authService.register(payload);
-      setUser(newUser);
+      return await authService.register(payload);
     } catch (err: any) {
       setError(err?.response?.data?.message ?? err.message ?? 'Erro ao cadastrar.');
+      throw err;
+    }
+  }
+
+  async function verifyEmail(email: string, code: string) {
+    setError(null);
+    try {
+      const verifiedUser = await authService.verifyEmail({ email, code });
+      setUser(verifiedUser);
+    } catch (err: any) {
+      setError(err?.response?.data?.message ?? err.message ?? 'Código inválido.');
+      throw err;
+    }
+  }
+
+  async function resendCode(email: string) {
+    setError(null);
+    try {
+      await authService.resendCode(email);
+    } catch (err: any) {
+      setError(err?.response?.data?.message ?? err.message ?? 'Não foi possível reenviar o código.');
       throw err;
     }
   }
@@ -113,6 +138,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         signIn,
         signInWithPhone,
         signUp,
+        verifyEmail,
+        resendCode,
         signOut,
         updateAccount,
         updateDriverStatus,

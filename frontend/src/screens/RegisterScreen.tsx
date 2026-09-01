@@ -56,9 +56,10 @@ export default function RegisterScreen({ navigation }: Props) {
 
     setLoading(true);
     try {
-      await signUp({ name: name.trim(), email: email.trim(), phone, password });
+      const resultado = await signUp({ name: name.trim(), email: email.trim(), phone, password });
+      navigation.navigate('VerifyEmail', { email: resultado.email });
     } catch (err: any) {
-      setSubmitError(err?.message ?? 'Não foi possível criar a conta.');
+      setSubmitError(err?.response?.data?.message ?? err?.message ?? 'Não foi possível criar a conta.');
     } finally {
       setLoading(false);
     }
@@ -183,8 +184,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   logoImage: {
-    width: 180,
-    height: 126,
+    width: 280,
+    height: 156,
     marginBottom: spacing.sm,
   },
   title: {
