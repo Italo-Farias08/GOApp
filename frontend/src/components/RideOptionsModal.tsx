@@ -85,11 +85,12 @@ export default function RideOptionsModal({
                 style={[styles.opcao, ativo && styles.opcaoAtiva]}
                 onPress={() => setSelecionado(estimativa.tipo)}
               >
-                <View style={[styles.iconeBadge, ativo && styles.iconeBadgeAtivo]}>
+                <View style={styles.iconeBadge}>
                   <Image
                     source={IMAGEM_VEICULO[estimativa.tipo]}
                     style={styles.iconeImagem}
                     resizeMode="contain"
+                    fadeDuration={0}
                   />
                 </View>
 
@@ -199,18 +200,13 @@ const styles = StyleSheet.create({
   iconeBadge: {
     width: 46,
     height: 46,
-    borderRadius: radius.md,
-    backgroundColor: colors.surfaceAlt,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: spacing.md,
   },
-  iconeBadgeAtivo: {
-    backgroundColor: colors.primary,
-  },
   iconeImagem: {
-    width: 30,
-    height: 30,
+    width: 40,
+    height: 40,
   },
   opcaoTexto: {
     flex: 1,

@@ -93,3 +93,56 @@ export function CheckIcon({ size = 14, color = '#0B0B0F', strokeWidth = 2.4 }: I
     </Svg>
   );
 }
+
+// Ícone de mira/GPS — usado no botão de recentralizar o mapa.
+export function LocationIcon({ size = 20, color = '#F5F5F7', strokeWidth = 1.8 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Circle cx="12" cy="12" r="3.2" stroke={color} strokeWidth={strokeWidth} />
+      <Line x1="12" y1="2" x2="12" y2="5.5" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" />
+      <Line x1="12" y1="18.5" x2="12" y2="22" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" />
+      <Line x1="2" y1="12" x2="5.5" y2="12" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" />
+      <Line x1="18.5" y1="12" x2="22" y2="12" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+// Ícone de lupa — usado no campo de busca de destino.
+export function SearchIcon({ size = 18, color = '#9A9AA5', strokeWidth = 1.8 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Circle cx="10.5" cy="10.5" r="6.5" stroke={color} strokeWidth={strokeWidth} />
+      <Line x1="15.3" y1="15.3" x2="21" y2="21" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" />
+    </Svg>
+  );
+}
+// Ícone de alerta (triângulo com exclamação) — usado em banners de erro.
+export function AlertIcon({ size = 16, color = '#FF4D4D', strokeWidth = 1.8 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M12 3.5 L21.5 20 H2.5 Z"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        strokeLinejoin="round"
+      />
+      <Line x1="12" y1="9.5" x2="12" y2="14" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" />
+      <Circle cx="12" cy="17" r="1" fill={color} />
+    </Svg>
+  );
+}
+
+// Ícone de pin pequeno — usado na lista de sugestões de endereço.
+export function PinIcon({ size = 16, color = '#9A9AA5', strokeWidth = 1.8 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M12 21.5 C12 21.5 5 14.6 5 9.8 A7 7 0 0 1 19 9.8 C19 14.6 12 21.5 12 21.5 Z"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        strokeLinejoin="round"
+      />
+      <Circle cx="12" cy="9.8" r="2.4" stroke={color} strokeWidth={strokeWidth} />
+    </Svg>
+  );
+}
