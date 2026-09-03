@@ -98,28 +98,90 @@ async function aceitar(req, res, next) {
 }
 
 // POST /rides/:id/cancel
+//
+// Regras de cancelamento:
+// - Só o passageiro dono da corrida ou o motorista atribuído a ela podem
+//   cancelar; qualquer outra pessoa recebe 403.
+// - PASSAGEIRO: pode cancelar enquanto a corrida está "procurando" ou
+//   "aceita" (motorista a caminho). Cancelar sempre encerra a corrida de
+//   vez.
+// - MOTORISTA: só pode cancelar uma corrida já "aceita" por ele (não dá pra
+//   cancelar uma corrida que nem é sua). Cancelar NÃO mata o pedido do
+//   passageiro na hora — a corrida volta pro radar de outros motoristas
+//   (sem oferecer de novo pra quem já cancelou). Só depois de alguns
+//   motoristas diferentes desistirem é que ela é cancelada de vez.
 async function cancelar(req, res, next) {
   try {
     const corrida = await corridaModelo.buscarPorId(req.params.id);
     if (!corrida) throw new ErroHttp(404, 'Corrida não encontrada.');
 
-    const podeCancel = corrida.passageiro_id === req.usuarioId || corrida.motorista_id === req.usuarioId;
-    if (!podeCancel) {
+    const ehPassageiro = corrida.passageiro_id === req.usuarioId;
+    const ehMotorista = !!corrida.motorista_id && corrida.motorista_id === req.usuarioId;
+    if (!ehPassageiro && !ehMotorista) {
       throw new ErroHttp(403, 'Você não pode cancelar essa corrida.');
     }
 
-    const corridaCancelada = await corridaModelo.cancelar(req.params.id);
-    if (!corridaCancelada) {
+    const motivo = typeof req.body?.motivo === 'string' ? req.body.motivo.trim().slice(0, 255) : null;
+
+    if (ehPassageiro) {
+      if (!['procurando', 'aceita'].includes(corrida.status)) {
+        throw new ErroHttp(409, 'Essa corrida não pode mais ser cancelada.');
+      }
+
+      const corridaCancelada = await corridaModelo.cancelarPeloPassageiro(req.params.id, motivo);
+      if (!corridaCancelada) {
+        throw new ErroHttp(409, 'Essa corrida não pode mais ser cancelada.');
+      }
+
+      soquete.notificarCorridaCancelada({
+        corridaId: corridaCancelada.id,
+        passageiroId: corridaCancelada.passageiro_id,
+        motoristaId: corridaCancelada.motorista_id,
+        canceladoPor: 'passageiro',
+        motivo,
+      });
+
+      return res.json(corridaModelo.paraCorridaPublica(corridaCancelada));
+    }
+
+    // A partir daqui, é o motorista cancelando.
+    if (corrida.status !== 'aceita') {
+      throw new ErroHttp(409, 'Você só pode cancelar uma corrida que já aceitou.');
+    }
+
+    const resultado = await corridaModelo.cancelarPeloMotorista(req.params.id, req.usuarioId, motivo);
+    if (!resultado) {
       throw new ErroHttp(409, 'Essa corrida não pode mais ser cancelada.');
     }
 
-    soquete.notificarCorridaCancelada({
-      corridaId: corridaCancelada.id,
-      passageiroId: corridaCancelada.passageiro_id,
-      motoristaId: corridaCancelada.motorista_id,
-    });
+    // Libera o motorista pra voltar a receber corridas (ele precisa marcar
+    // "ficar online" de novo no app pra aparecer no radar).
+    soquete.marcarMotoristaOcupado(req.usuarioId);
 
-    return res.json(corridaModelo.paraCorridaPublica(corridaCancelada));
+    if (resultado.status === 'procurando') {
+      soquete.notificarMotoristaCancelouReoferta({
+        corridaId: resultado.id,
+        passageiroId: resultado.passageiro_id,
+      });
+      soquete.notificarNovaCorrida(
+        corridaModelo.paraCorridaPublica(resultado),
+        {
+          latitude: Number(resultado.origem_latitude),
+          longitude: Number(resultado.origem_longitude),
+        },
+        resultado.motoristas_ignorados || []
+      );
+    } else {
+      soquete.notificarCorridaCancelada({
+        corridaId: resultado.id,
+        passageiroId: resultado.passageiro_id,
+        motoristaId: null,
+        canceladoPor: 'sistema',
+        motivo: resultado.motivo_cancelamento,
+      });
+    }
+
+    return res.json(corridaModelo.paraCorridaPublica(resultado));
   } catch (erro) {
     next(erro);
   }

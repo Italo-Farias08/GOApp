@@ -1,5 +1,9 @@
 const { consultar } = require('../configuracao/banco');
 
+// Depois de quantos cancelamentos de motoristas diferentes a corrida desiste
+// de procurar outro e é cancelada de vez, avisando o passageiro.
+const LIMITE_CANCELAMENTOS_MOTORISTA = 2;
+
 // Converte a linha do banco (snake_case) pro formato que o front espera
 function paraCorridaPublica(linha) {
   if (!linha) return null;
@@ -23,6 +27,8 @@ function paraCorridaPublica(linha) {
     duracaoMin: Number(linha.duracao_min),
     status: linha.status,
     criadoEm: linha.criado_em,
+    canceladoPor: linha.cancelado_por || undefined,
+    motivoCancelamento: linha.motivo_cancelamento || undefined,
   };
 }
 
@@ -83,12 +89,51 @@ async function aceitar(id, motoristaId) {
   return resultado.rows[0] || null;
 }
 
-async function cancelar(id) {
+// Cancelamento pelo PASSAGEIRO — regra: só enquanto a corrida ainda está
+// "procurando" ou "aceita" (motorista a caminho). Depois de finalizada ou já
+// cancelada, o WHERE simplesmente não bate e retorna null.
+async function cancelarPeloPassageiro(id, motivo) {
   const resultado = await consultar(
-    `UPDATE corridas SET status = 'cancelada'
+    `UPDATE corridas SET
+       status = 'cancelada',
+       cancelado_por = 'passageiro',
+       motivo_cancelamento = $2
      WHERE id = $1 AND status IN ('procurando', 'aceita')
      RETURNING *`,
-    [id]
+    [id, motivo || null]
+  );
+  return resultado.rows[0] || null;
+}
+
+// Cancelamento pelo MOTORISTA — regra: só pode cancelar uma corrida que ele
+// mesmo aceitou (status 'aceita'). Em vez de matar o pedido na hora, a
+// corrida VOLTA pro radar de outros motoristas (status volta a 'procurando',
+// perde o motorista atual) — o motorista que cancelou entra numa lista de
+// ignorados pra não receber a mesma corrida de novo. Só depois de
+// LIMITE_CANCELAMENTOS_MOTORISTA motoristas diferentes desistirem é que a
+// corrida é cancelada de vez, com cancelado_por = 'sistema'.
+async function cancelarPeloMotorista(id, motoristaId, motivo) {
+  const resultado = await consultar(
+    `UPDATE corridas SET
+       status = CASE
+         WHEN motorista_cancelamentos + 1 >= $3 THEN 'cancelada'
+         ELSE 'procurando'
+       END,
+       cancelado_por = CASE
+         WHEN motorista_cancelamentos + 1 >= $3 THEN 'sistema'
+         ELSE NULL
+       END,
+       motivo_cancelamento = CASE
+         WHEN motorista_cancelamentos + 1 >= $3 THEN 'Não encontramos outro motorista disponível.'
+         ELSE $4
+       END,
+       motorista_id = NULL,
+       aceita_em = NULL,
+       motorista_cancelamentos = motorista_cancelamentos + 1,
+       motoristas_ignorados = array_append(motoristas_ignorados, $2::uuid)
+     WHERE id = $1 AND motorista_id = $2 AND status = 'aceita'
+     RETURNING *`,
+    [id, motoristaId, LIMITE_CANCELAMENTOS_MOTORISTA, motivo || null]
   );
   return resultado.rows[0] || null;
 }
@@ -109,6 +154,7 @@ module.exports = {
   buscarPorId,
   buscarAtivaPorPassageiro,
   aceitar,
-  cancelar,
+  cancelarPeloPassageiro,
+  cancelarPeloMotorista,
   finalizar,
 };

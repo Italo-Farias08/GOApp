@@ -1,12 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import MapView, { Marker, Polyline, UrlTile } from 'react-native-maps';
 import type { Socket } from 'socket.io-client';
 import Button from '../components/Button';
+import CancelRideModal from '../components/CancelRideModal';
 import MapPin from '../components/MapPin';
-import { CarIcon } from '../components/icons';
+import StatusToast, { StatusToastTone } from '../components/StatusToast';
+import { CarIcon, CheckIcon } from '../components/icons';
 import { useAuth } from '../context/AuthContext';
 import { useDriverLocationWatcher } from '../hooks/useDriverLocationWatcher';
 import { useRota } from '../hooks/useRota';
@@ -17,6 +19,16 @@ import type { Corrida, RootStackParamList } from '../types';
 import { formatarDistancia, formatarDuracao, formatarMoeda } from '../utils/precoCorrida';
 import { STADIA_TILE_URL } from '../utils/mapaConfig';
 
+// Motivos pré-definidos pro motorista escolher ao cancelar uma corrida já
+// aceita — curtos e específicos o bastante pra dar sinal real do que houve.
+const MOTIVOS_CANCELAMENTO_MOTORISTA = [
+  'O passageiro não apareceu',
+  'Endereço muito longe do combinado',
+  'Problema com o veículo',
+  'Emergência pessoal',
+  'Outro motivo',
+];
+
 export default function DriverHomeScreen() {
   const { user } = useAuth();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
@@ -26,12 +38,55 @@ export default function DriverHomeScreen() {
   const [corridaAtiva, setCorridaAtiva] = useState<Corrida | null>(null);
   const [aceitando, setAceitando] = useState(false);
   const [finalizando, setFinalizando] = useState(false);
+  const [cancelando, setCancelando] = useState(false);
+  const [cancelamentoVisivel, setCancelamentoVisivel] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  const [toastMensagem, setToastMensagem] = useState<string | null>(null);
+  const [toastTom, setToastTom] = useState<StatusToastTone>('info');
 
   const { coords } = useDriverLocationWatcher(disponivel || !!corridaAtiva);
   const { rota, calcularRota, limparRota } = useRota();
   const mapRef = useRef<MapView>(null);
   const soqueteRef = useRef<Socket | null>(null);
+
+  const avisoContadorRef = useRef(0);
+  function avisar(mensagem: string, tom: StatusToastTone = 'info') {
+    avisoContadorRef.current += 1;
+    setToastTom(tom);
+    setToastMensagem(mensagem + '\u200B'.repeat(avisoContadorRef.current % 2));
+  }
+
+  // --- "Nova corrida" nasce com um pulinho (scale) em vez de simplesmente
+  // aparecer — ajuda a chamar atenção do motorista pra decidir rápido. ---
+  const novaCorridaAnim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (corridaRecebida) {
+      novaCorridaAnim.setValue(0);
+      Animated.spring(novaCorridaAnim, {
+        toValue: 1,
+        useNativeDriver: true,
+        friction: 5,
+        tension: 60,
+      }).start();
+    }
+  }, [corridaRecebida?.id]);
+
+  // --- Ponto de status (online) pulsando devagar enquanto o motorista está
+  // disponível ou em corrida — dá a sensação de "app vivo" no topo. ---
+  const statusPulseAnim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (disponivel || corridaAtiva) {
+      statusPulseAnim.setValue(0);
+      const loop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(statusPulseAnim, { toValue: 1, duration: 900, useNativeDriver: true }),
+          Animated.timing(statusPulseAnim, { toValue: 0, duration: 900, useNativeDriver: true }),
+        ])
+      );
+      loop.start();
+      return () => loop.stop();
+    }
+  }, [disponivel, !!corridaAtiva]);
 
   // Conecta ao socket assim que a tela abre e escuta os eventos de corrida.
   useEffect(() => {
@@ -51,9 +106,19 @@ export default function DriverHomeScreen() {
         setCorridaRecebida((atual) => (atual?.id === corridaId ? null : atual));
       });
 
-      soquete.on('corrida:cancelada', ({ corridaId }: { corridaId: string }) => {
+      // Regra: se foi o PASSAGEIRO que cancelou, a corrida acaba de vez pro
+      // motorista também (não tem mais ninguém pra buscar). Isso pode
+      // acontecer tanto numa oferta ainda não aceita quanto numa corrida já
+      // em andamento — em qualquer caso a tela volta pro estado anterior.
+      soquete.on('corrida:cancelada', ({ corridaId, canceladoPor }: { corridaId: string; canceladoPor?: string }) => {
         if (!ativo) return;
-        setCorridaAtiva((atual) => (atual?.id === corridaId ? null : atual));
+        setCorridaAtiva((atual) => {
+          if (atual?.id !== corridaId) return atual;
+          if (canceladoPor === 'passageiro') {
+            avisar('O passageiro cancelou a corrida.', 'warning');
+          }
+          return null;
+        });
         setCorridaRecebida((atual) => (atual?.id === corridaId ? null : atual));
       });
     })();
@@ -117,6 +182,7 @@ export default function DriverHomeScreen() {
       setCorridaAtiva(corrida);
       setCorridaRecebida(null);
       setDisponivel(false);
+      avisar('Corrida aceita! Siga até o passageiro.', 'success');
     } catch (err: any) {
       setErro(err?.response?.data?.message ?? 'Essa corrida já foi aceita por outro motorista.');
       setCorridaRecebida(null);
@@ -134,11 +200,41 @@ export default function DriverHomeScreen() {
     setFinalizando(true);
     try {
       await rideService.finalizarCorrida(corridaAtiva.id);
+      avisar('Corrida finalizada com sucesso!', 'success');
     } catch {
       // segue liberando a tela mesmo se a chamada falhar
     } finally {
       setCorridaAtiva(null);
       setFinalizando(false);
+    }
+  }
+
+  // Regra: o motorista só pode cancelar uma corrida que ele mesmo aceitou
+  // (corridaAtiva já garante isso). Cancelar aqui NÃO finaliza o pedido do
+  // passageiro — o backend devolve a corrida pro radar de outros motoristas,
+  // a não ser que já tenha estourado o limite de cancelamentos.
+  function abrirCancelamentoAtiva() {
+    if (!corridaAtiva) return;
+    setCancelamentoVisivel(true);
+  }
+
+  async function confirmarCancelamentoAtiva(motivo: string) {
+    if (!corridaAtiva) return;
+    setCancelando(true);
+    try {
+      const resultado = await rideService.cancelarCorrida(corridaAtiva.id, motivo);
+      if (resultado.status === 'procurando') {
+        avisar('Corrida cancelada. Ela volta pro radar de outros motoristas.', 'info');
+      } else {
+        avisar('Corrida cancelada.', 'info');
+      }
+    } catch {
+      avisar('Corrida cancelada.', 'info');
+    } finally {
+      setCorridaAtiva(null);
+      setDisponivel(false); // precisa ficar online de novo pra voltar a receber corridas
+      setCancelando(false);
+      setCancelamentoVisivel(false);
     }
   }
 
@@ -193,7 +289,20 @@ export default function DriverHomeScreen() {
         </Pressable>
 
         <View style={[styles.statusPill, disponivel && styles.statusPillOnline]}>
-          <View style={[styles.statusPonto, disponivel && styles.statusPontoOnline]} />
+          <Animated.View
+            style={[
+              styles.statusPonto,
+              disponivel && styles.statusPontoOnline,
+              (disponivel || !!corridaAtiva) && {
+                transform: [
+                  {
+                    scale: statusPulseAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 1.6] }),
+                  },
+                ],
+                opacity: statusPulseAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 0.4] }),
+              },
+            ]}
+          />
           <Text style={styles.statusTexto}>
             {corridaAtiva ? 'Em corrida' : disponivel ? 'Online' : 'Offline'}
           </Text>
@@ -221,7 +330,22 @@ export default function DriverHomeScreen() {
       )}
 
       {corridaRecebida && (
-        <View style={styles.painelInferior}>
+        <Animated.View
+          style={[
+            styles.painelInferior,
+            {
+              opacity: novaCorridaAnim,
+              transform: [
+                {
+                  translateY: novaCorridaAnim.interpolate({ inputRange: [0, 1], outputRange: [40, 0] }),
+                },
+                {
+                  scale: novaCorridaAnim.interpolate({ inputRange: [0, 1], outputRange: [0.94, 1] }),
+                },
+              ],
+            },
+          ]}
+        >
           <Text style={styles.novaCorridaTitulo}>Nova corrida</Text>
           <View style={styles.novaCorridaLinha}>
             <View style={[styles.pontoRota, styles.pontoOrigem]} />
@@ -256,11 +380,17 @@ export default function DriverHomeScreen() {
               style={styles.novaCorridaBotaoMetade}
             />
           </View>
-        </View>
+        </Animated.View>
       )}
 
       {corridaAtiva && (
         <View style={styles.painelInferior}>
+          <View style={styles.corridaAtivaTopo}>
+            <View style={styles.corridaAtivaBadge}>
+              <CheckIcon size={11} color={colors.background} />
+            </View>
+            <Text style={styles.corridaAtivaTexto}>Corrida aceita</Text>
+          </View>
           <Text style={styles.novaCorridaTitulo}>Corrida em andamento</Text>
           <View style={styles.novaCorridaLinha}>
             <View style={[styles.pontoRota, styles.pontoDestino]} />
@@ -278,19 +408,39 @@ export default function DriverHomeScreen() {
             label="Finalizar corrida"
             onPress={finalizarCorridaAtiva}
             loading={finalizando}
+            disabled={cancelando}
             style={styles.painelBotao}
+          />
+          <Button
+            label="Cancelar corrida"
+            variant="ghost"
+            onPress={abrirCancelamentoAtiva}
+            disabled={finalizando || cancelando}
+            style={styles.cancelarCorridaBotao}
           />
         </View>
       )}
+
+      <StatusToast message={toastMensagem} tone={toastTom} topOffset={spacing.xxl + spacing.xl + spacing.md} />
+
+      <CancelRideModal
+        visible={cancelamentoVisivel}
+        titulo="Cancelar essa corrida?"
+        subtitulo="Ela pode ser oferecida a outro motorista — o passageiro não perde o pedido."
+        motivos={MOTIVOS_CANCELAMENTO_MOTORISTA}
+        carregando={cancelando}
+        onConfirmar={confirmarCancelamentoAtiva}
+        onFechar={() => setCancelamentoVisivel(false)}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  map: { ...StyleSheet.absoluteFillObject },
+  map: { ...StyleSheet.absoluteFill },
   mapBrightener: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(7, 25, 63, 0.25)',
   },
   marcadorMotorista: {
@@ -364,6 +514,26 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   painelBotao: { marginTop: spacing.xs },
+  cancelarCorridaBotao: { marginTop: spacing.xs },
+  corridaAtivaTopo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.xs,
+  },
+  corridaAtivaBadge: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.xs,
+  },
+  corridaAtivaTexto: {
+    ...typography.caption,
+    color: colors.primary,
+    fontWeight: '700',
+  },
   novaCorridaTitulo: { ...typography.h2, color: colors.text, marginBottom: spacing.md },
   novaCorridaLinha: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.sm },
   pontoRota: { width: 8, height: 8, borderRadius: 4, marginRight: spacing.sm },

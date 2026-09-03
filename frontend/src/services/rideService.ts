@@ -28,8 +28,8 @@ export async function aceitarCorrida(
   return data;
 }
 
-export async function cancelarCorrida(id: string): Promise<Corrida> {
-  const { data } = await api.post<Corrida>(`/rides/${id}/cancel`);
+export async function cancelarCorrida(id: string, motivo?: string): Promise<Corrida> {
+  const { data } = await api.post<Corrida>(`/rides/${id}/cancel`, { motivo });
   return data;
 }
 

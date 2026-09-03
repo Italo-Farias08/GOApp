@@ -81,6 +81,10 @@ export type MotoristaInfo = {
 
 export type StatusCorrida = 'procurando' | 'aceita' | 'finalizada' | 'cancelada';
 
+// Quem foi responsável pelo cancelamento — usado pra escolher a mensagem
+// certa na tela (ex: "você cancelou" vs "o motorista cancelou").
+export type CanceladoPor = 'passageiro' | 'motorista' | 'sistema';
+
 export type Corrida = {
   id: string;
   passageiroId: string;
@@ -93,6 +97,8 @@ export type Corrida = {
   duracaoMin: number;
   status: StatusCorrida;
   criadoEm: string;
+  canceladoPor?: CanceladoPor;
+  motivoCancelamento?: string;
 };
 
 // Tipos de navegação — adicionar novas telas aqui conforme o app crescer

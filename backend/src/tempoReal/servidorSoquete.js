@@ -84,11 +84,14 @@ function configurarSoquete(servidorHttp) {
   return io;
 }
 
-// Chamado assim que uma corrida nova é criada — avisa só os motoristas
-// disponíveis dentro do raio configurado.
-function notificarNovaCorrida(corrida, origem) {
+// Chamado assim que uma corrida nova é criada (ou volta pro radar depois de
+// um motorista cancelar) — avisa só os motoristas disponíveis dentro do raio
+// configurado. idsIgnorados é a lista de motoristas que já desistiram dessa
+// mesma corrida e não devem recebê-la de novo.
+function notificarNovaCorrida(corrida, origem, idsIgnorados = []) {
   if (!io) return;
-  for (const [, dados] of motoristasDisponiveis.entries()) {
+  for (const [usuarioId, dados] of motoristasDisponiveis.entries()) {
+    if (idsIgnorados.includes(usuarioId)) continue;
     if (calcularDistanciaKm(origem, dados) <= RAIO_NOTIFICACAO_KM) {
       io.to(dados.socketId).emit('corrida:nova', corrida);
     }
@@ -120,11 +123,22 @@ function notificarCorridaFinalizada({ corridaId, passageiroId }) {
   io.to(`usuario:${passageiroId}`).emit('corrida:finalizada', { corridaId });
 }
 
-function notificarCorridaCancelada({ corridaId, passageiroId, motoristaId }) {
+function notificarCorridaCancelada({ corridaId, passageiroId, motoristaId, canceladoPor, motivo }) {
   if (!io) return;
   corridasAtivas.delete(corridaId);
-  if (passageiroId) io.to(`usuario:${passageiroId}`).emit('corrida:cancelada', { corridaId });
-  if (motoristaId) io.to(`usuario:${motoristaId}`).emit('corrida:cancelada', { corridaId });
+  const payload = { corridaId, canceladoPor, motivo };
+  if (passageiroId) io.to(`usuario:${passageiroId}`).emit('corrida:cancelada', payload);
+  if (motoristaId) io.to(`usuario:${motoristaId}`).emit('corrida:cancelada', payload);
+}
+
+// Motorista cancelou uma corrida que já tinha aceito, mas ela ainda tem
+// chance de ser pega por outro motorista (não passou do limite de
+// tentativas) — avisa só o passageiro, sem "matar" a tela dele: ele continua
+// esperando, só que procurando de novo.
+function notificarMotoristaCancelouReoferta({ corridaId, passageiroId }) {
+  if (!io) return;
+  corridasAtivas.delete(corridaId);
+  io.to(`usuario:${passageiroId}`).emit('corrida:motorista_cancelou', { corridaId });
 }
 
 function notificarMotoristaAprovado(usuarioId) {
@@ -139,5 +153,6 @@ module.exports = {
   notificarCorridaAceita,
   notificarCorridaFinalizada,
   notificarCorridaCancelada,
+  notificarMotoristaCancelouReoferta,
   notificarMotoristaAprovado,
 };

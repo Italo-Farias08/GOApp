@@ -21,13 +21,16 @@ import {
 import MapView, { Marker, Polyline, UrlTile } from 'react-native-maps';
 import type { Socket } from 'socket.io-client';
 import Button from '../components/Button';
+import CancelRideModal from '../components/CancelRideModal';
 import MapPin from '../components/MapPin';
 import PromoBanners, { Banner } from '../components/PromoBanners';
 import RideOptionsModal from '../components/RideOptionsModal';
 import SettingsModal from '../components/SettingsModal';
+import StatusToast, { StatusToastTone } from '../components/StatusToast';
 import {
   AlertIcon,
   CarIcon,
+  CheckIcon,
   CloseIcon,
   LocationIcon,
   MotoIcon,
@@ -117,6 +120,17 @@ function obterSaudacao(): string {
   return 'Boa noite,';
 }
 
+// Motivos pré-definidos pro passageiro escolher ao cancelar — mantém o
+// motivo curto, consistente e fácil de analisar depois (nada de campo de
+// texto livre que ninguém preenche direito).
+const MOTIVOS_CANCELAMENTO_PASSAGEIRO = [
+  'Pedi por engano',
+  'O motorista está demorando muito',
+  'Preciso mudar o endereço',
+  'Mudei de ideia',
+  'Outro motivo',
+];
+
 export default function HomeScreen() {
   const { user } = useAuth();
   const { coords, isLoading, errorMessage } = useCurrentLocation();
@@ -133,11 +147,58 @@ export default function HomeScreen() {
   const [motoristaAtribuido, setMotoristaAtribuido] = useState<MotoristaInfo | null>(null);
   const [localizacaoMotorista, setLocalizacaoMotorista] = useState<{ latitude: number; longitude: number } | null>(null);
   const [cancelandoCorrida, setCancelandoCorrida] = useState(false);
+  const [cancelamentoVisivel, setCancelamentoVisivel] = useState(false);
+  const [toastMensagem, setToastMensagem] = useState<string | null>(null);
+  const [toastTom, setToastTom] = useState<StatusToastTone>('info');
   const corridaIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     corridaIdRef.current = corridaId;
   }, [corridaId]);
+
+  const avisoContadorRef = useRef(0);
+  function avisar(mensagem: string, tom: StatusToastTone = 'info') {
+    avisoContadorRef.current += 1;
+    setToastTom(tom);
+    // Um caractere invisível no fim garante que o toast reanima mesmo se a
+    // mensagem for idêntica à anterior (ex: dois avisos "Corrida cancelada"
+    // seguidos).
+    setToastMensagem(mensagem + '\u200B'.repeat(avisoContadorRef.current % 2));
+  }
+
+  // --- Animação de "motorista a caminho": o cartão nasce com um pequeno
+  // pulo (scale) em vez de simplesmente aparecer, pra ficar óbvio que algo
+  // mudou de estado. ---
+  const motoristaAnim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (motoristaAtribuido) {
+      motoristaAnim.setValue(0);
+      Animated.spring(motoristaAnim, {
+        toValue: 1,
+        useNativeDriver: true,
+        friction: 5,
+        tension: 60,
+      }).start();
+    }
+  }, [motoristaAtribuido]);
+
+  // --- Animação de "procurando motorista": anel pulsando ao redor do ícone
+  // do veículo, tipo radar, pra deixar claro que o app está trabalhando. ---
+  const radarAnim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (corridaConfirmada && !motoristaAtribuido) {
+      radarAnim.setValue(0);
+      const loop = Animated.loop(
+        Animated.timing(radarAnim, {
+          toValue: 1,
+          duration: 1400,
+          useNativeDriver: true,
+        })
+      );
+      loop.start();
+      return () => loop.stop();
+    }
+  }, [corridaConfirmada, motoristaAtribuido]);
 
   // --- Entrada suave da tela (topo, FAB e cartão aparecem com fade+slide
   // em vez de "estalar" na tela assim que o componente monta). ---
@@ -274,6 +335,7 @@ export default function HomeScreen() {
       soquete.on('corrida:aceita', ({ corridaId: id, motorista }: { corridaId: string; motorista: MotoristaInfo }) => {
         if (!ativo || id !== corridaIdRef.current) return;
         setMotoristaAtribuido(motorista);
+        avisar(`${motorista.nome.split(' ')[0]} aceitou sua corrida e já está a caminho!`, 'success');
       });
 
       soquete.on('corrida:localizacao_motorista', ({ corridaId: id, latitude, longitude }: { corridaId: string; latitude: number; longitude: number }) => {
@@ -281,13 +343,30 @@ export default function HomeScreen() {
         setLocalizacaoMotorista({ latitude, longitude });
       });
 
+      // Motorista cancelou depois de aceitar, mas a corrida ainda tem chance
+      // com outro motorista — não reseta a tela, só volta pro estado "procurando".
+      soquete.on('corrida:motorista_cancelou', ({ corridaId: id }: { corridaId: string }) => {
+        if (!ativo || id !== corridaIdRef.current) return;
+        setMotoristaAtribuido(null);
+        setLocalizacaoMotorista(null);
+        avisar('Seu motorista precisou cancelar. Procurando outro motorista para você...', 'warning');
+      });
+
       soquete.on('corrida:finalizada', ({ corridaId: id }: { corridaId: string }) => {
         if (!ativo || id !== corridaIdRef.current) return;
+        avisar('Corrida finalizada. Obrigado por viajar com o #GO!', 'success');
         resetarCorrida();
       });
 
-      soquete.on('corrida:cancelada', ({ corridaId: id }: { corridaId: string }) => {
+      soquete.on('corrida:cancelada', ({ corridaId: id, canceladoPor, motivo }: { corridaId: string; canceladoPor?: string; motivo?: string }) => {
         if (!ativo || id !== corridaIdRef.current) return;
+        if (canceladoPor === 'sistema') {
+          avisar(motivo || 'Não encontramos um motorista disponível. Tente novamente.', 'danger');
+        } else if (canceladoPor === 'motorista') {
+          avisar('O motorista cancelou a corrida.', 'warning');
+        } else {
+          avisar('Corrida cancelada.', 'info');
+        }
         resetarCorrida();
       });
     })();
@@ -296,6 +375,7 @@ export default function HomeScreen() {
       ativo = false;
       soquete?.off('corrida:aceita');
       soquete?.off('corrida:localizacao_motorista');
+      soquete?.off('corrida:motorista_cancelou');
       soquete?.off('corrida:finalizada');
       soquete?.off('corrida:cancelada');
     };
@@ -312,16 +392,26 @@ export default function HomeScreen() {
     setDestination('');
   }
 
-  async function cancelarBuscaCorrida() {
+  // Regra: só faz sentido oferecer "cancelar" enquanto existe uma corrida
+  // em aberto (procurando ou já aceita) — depois disso o botão nem aparece.
+  function abrirCancelamento() {
+    if (!corridaId) return;
+    setCancelamentoVisivel(true);
+  }
+
+  async function confirmarCancelamento(motivo: string) {
     if (!corridaId) return;
     setCancelandoCorrida(true);
     try {
-      await rideService.cancelarCorrida(corridaId);
+      await rideService.cancelarCorrida(corridaId, motivo);
+      avisar('Corrida cancelada.', 'info');
     } catch {
       // segue liberando a tela mesmo se a chamada falhar
+      avisar('Corrida cancelada.', 'info');
     } finally {
       resetarCorrida();
       setCancelandoCorrida(false);
+      setCancelamentoVisivel(false);
     }
   }
 
@@ -653,6 +743,20 @@ export default function HomeScreen() {
             {corridaConfirmada && !motoristaAtribuido && (
               <View style={styles.confirmacaoBanner}>
                 <View style={styles.confirmacaoIconeBadge}>
+                  <Animated.View
+                    pointerEvents="none"
+                    style={[
+                      styles.radarAnel,
+                      {
+                        opacity: radarAnim.interpolate({ inputRange: [0, 0.7, 1], outputRange: [0.5, 0.15, 0] }),
+                        transform: [
+                          {
+                            scale: radarAnim.interpolate({ inputRange: [0, 1], outputRange: [0.7, 1.9] }),
+                          },
+                        ],
+                      },
+                    ]}
+                  />
                   <Image
                     source={IMAGEM_VEICULO[corridaConfirmada.tipo]}
                     style={styles.confirmacaoIconeImagem}
@@ -662,7 +766,9 @@ export default function HomeScreen() {
                 </View>
                 <View style={styles.confirmacaoTextos}>
                   <Text style={styles.confirmacaoTexto}>
-                    Corrida solicitada · {formatarMoeda(corridaConfirmada.preco)}
+                    {corridaConfirmada.tipo === 'moto' ? 'Moto solicitada' : 'Carro solicitado'}
+                    {' · '}
+                    {formatarMoeda(corridaConfirmada.preco)}
                   </Text>
                   <View style={styles.procurandoRow}>
                     <ActivityIndicator size="small" color={colors.primary} />
@@ -672,7 +778,7 @@ export default function HomeScreen() {
                   </View>
                 </View>
                 <Pressable
-                  onPress={cancelarBuscaCorrida}
+                  onPress={abrirCancelamento}
                   disabled={cancelandoCorrida}
                   hitSlop={8}
                   style={({ pressed }) => [styles.cancelarBuscaBotao, pressed && styles.pressedFeedback]}
@@ -683,36 +789,56 @@ export default function HomeScreen() {
             )}
 
             {motoristaAtribuido && (
-              <View style={styles.motoristaBanner}>
-                <View style={styles.motoristaAvatar}>
-                  <Text style={styles.motoristaAvatarLetra}>
-                    {motoristaAtribuido.nome.trim()[0]?.toUpperCase() ?? '?'}
+              <Animated.View
+                style={[
+                  styles.motoristaBanner,
+                  {
+                    opacity: motoristaAnim,
+                    transform: [
+                      { scale: motoristaAnim.interpolate({ inputRange: [0, 1], outputRange: [0.9, 1] }) },
+                    ],
+                  },
+                ]}
+              >
+                <View style={styles.motoristaAceitaTopo}>
+                  <View style={styles.motoristaAceitaBadge}>
+                    <CheckIcon size={11} color={colors.background} />
+                  </View>
+                  <Text style={styles.motoristaAceitaTexto}>
+                    Corrida aceita · {corridaConfirmada?.tipo === 'moto' ? 'moto a caminho' : 'carro a caminho'}
                   </Text>
                 </View>
-                <View style={styles.motoristaTextos}>
-                  <Text style={styles.motoristaNome} numberOfLines={1}>{motoristaAtribuido.nome}</Text>
-                  <View style={styles.motoristaVeiculoRow}>
-                    {corridaConfirmada?.tipo === 'moto' ? (
-                      <MotoIcon size={14} color={colors.textSecondary} />
-                    ) : (
-                      <CarIcon size={14} color={colors.textSecondary} />
-                    )}
-                    <Text style={styles.motoristaVeiculoTexto} numberOfLines={1}>
-                      {[motoristaAtribuido.veiculoModelo, motoristaAtribuido.veiculoCor].filter(Boolean).join(' · ')}
-                      {motoristaAtribuido.veiculoPlaca ? ` · ${motoristaAtribuido.veiculoPlaca}` : ''}
+                <View style={styles.motoristaLinha}>
+                  <View style={styles.motoristaAvatar}>
+                    <Text style={styles.motoristaAvatarLetra}>
+                      {motoristaAtribuido.nome.trim()[0]?.toUpperCase() ?? '?'}
                     </Text>
                   </View>
+                  <View style={styles.motoristaTextos}>
+                    <Text style={styles.motoristaNome} numberOfLines={1}>{motoristaAtribuido.nome}</Text>
+                    <View style={styles.motoristaVeiculoRow}>
+                      {corridaConfirmada?.tipo === 'moto' ? (
+                        <MotoIcon size={14} color={colors.textSecondary} />
+                      ) : (
+                        <CarIcon size={14} color={colors.textSecondary} />
+                      )}
+                      <Text style={styles.motoristaVeiculoTexto} numberOfLines={1}>
+                        {[motoristaAtribuido.veiculoModelo, motoristaAtribuido.veiculoCor].filter(Boolean).join(' · ')}
+                        {motoristaAtribuido.veiculoPlaca ? ` · ${motoristaAtribuido.veiculoPlaca}` : ''}
+                      </Text>
+                    </View>
+                  </View>
+                  {!!motoristaAtribuido.telefone && (
+                    <Pressable
+                      onPress={() => Linking.openURL(`tel:${motoristaAtribuido.telefone}`)}
+                      style={({ pressed }) => [styles.ligarBotao, pressed && styles.pressedFeedback]}
+                      hitSlop={8}
+                    >
+                      <PhoneIcon size={18} color={colors.background} />
+                    </Pressable>
+                  )}
                 </View>
-                {!!motoristaAtribuido.telefone && (
-                  <Pressable
-                    onPress={() => Linking.openURL(`tel:${motoristaAtribuido.telefone}`)}
-                    style={({ pressed }) => [styles.ligarBotao, pressed && styles.pressedFeedback]}
-                    hitSlop={8}
-                  >
-                    <PhoneIcon size={18} color={colors.background} />
-                  </Pressable>
-                )}
-              </View>
+              </Animated.View>
             )}
 
             {!destinoSelecionado && sugestoes.length > 0 && (
@@ -736,15 +862,31 @@ export default function HomeScreen() {
             )}
           </ScrollView>
 
-          <Button
-            label="Buscar corrida"
-            onPress={buscarCorrida}
-            loading={calculandoRota}
-            disabled={!destinoPronto}
-            style={styles.confirmButtonWrapper}
-          />
+          {/* Regra de exibição: uma vez que a corrida foi solicitada, o botão
+              de busca SOME — no lugar aparece "Cancelar corrida". Sem isso
+              dava pra parecer que nada tinha acontecido e a pessoa clicar de
+              novo achando que não pediu a corrida. */}
+          {corridaConfirmada ? (
+            <Button
+              label="Cancelar corrida"
+              variant="secondary"
+              onPress={abrirCancelamento}
+              disabled={cancelandoCorrida}
+              style={styles.confirmButtonWrapper}
+            />
+          ) : (
+            <Button
+              label="Buscar corrida"
+              onPress={buscarCorrida}
+              loading={calculandoRota}
+              disabled={!destinoPronto}
+              style={styles.confirmButtonWrapper}
+            />
+          )}
         </View>
       </Animated.View>
+
+      <StatusToast message={toastMensagem} tone={toastTom} />
 
       <RideOptionsModal
         visible={opcoesVisiveis}
@@ -752,6 +894,20 @@ export default function HomeScreen() {
         estimativas={estimativas}
         onSelecionar={confirmarVeiculo}
         onClose={() => setOpcoesVisiveis(false)}
+      />
+
+      <CancelRideModal
+        visible={cancelamentoVisivel}
+        titulo="Cancelar essa corrida?"
+        subtitulo={
+          motoristaAtribuido
+            ? `${motoristaAtribuido.nome.split(' ')[0]} já está a caminho — cancelar agora pode atrasar a corrida dele(a).`
+            : 'Ainda estamos procurando um motorista pra você.'
+        }
+        motivos={MOTIVOS_CANCELAMENTO_PASSAGEIRO}
+        carregando={cancelandoCorrida}
+        onConfirmar={confirmarCancelamento}
+        onFechar={() => setCancelamentoVisivel(false)}
       />
     </View>
   );
@@ -763,10 +919,10 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   map: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   mapBrightener: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(7, 25, 63, 0.25)',
   },
   attribution: {
@@ -783,7 +939,7 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
   loadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.overlay,
@@ -1005,6 +1161,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: spacing.md,
   },
+  radarAnel: {
+    position: 'absolute',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: colors.primary,
+  },
   confirmacaoIconeImagem: {
     width: 36,
     height: 36,
@@ -1031,14 +1195,35 @@ const styles = StyleSheet.create({
     marginLeft: spacing.sm,
   },
   motoristaBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
     borderRadius: radius.md,
     borderWidth: 1,
     borderColor: colors.primary,
     backgroundColor: colors.surfaceAlt,
     padding: spacing.md,
     marginBottom: spacing.md,
+  },
+  motoristaAceitaTopo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  motoristaAceitaBadge: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.xs,
+  },
+  motoristaAceitaTexto: {
+    ...typography.caption,
+    color: colors.primary,
+    fontWeight: '700',
+  },
+  motoristaLinha: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   motoristaAvatar: {
     width: 40,
