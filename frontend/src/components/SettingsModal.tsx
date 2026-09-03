@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAuth } from '../context/AuthContext';
 import * as driverService from '../services/driverService';
 import { colors, radius, spacing, typography } from '../theme/theme';
-import type { DriverStatus } from '../types';
+import type { DriverStatus, RootStackParamList } from '../types';
 import Button from './Button';
 import Input from './Input';
 
@@ -44,7 +46,7 @@ export default function SettingsModal({ visible, onClose }: Props) {
           />
         )}
         {view === 'account' && <AccountView onBack={() => setView('menu')} />}
-        {view === 'driver' && <DriverView onBack={() => setView('menu')} />}
+        {view === 'driver' && <DriverView onBack={() => setView('menu')} onClose={handleClose} />}
       </View>
     </Modal>
   );
@@ -165,8 +167,9 @@ function AccountView({ onBack }: { onBack: () => void }) {
 
 // ---------- Motorista ----------
 
-function DriverView({ onBack }: { onBack: () => void }) {
+function DriverView({ onBack, onClose }: { onBack: () => void; onClose: () => void }) {
   const { user, updateDriverStatus } = useAuth();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [cnhNumber, setCnhNumber] = useState('');
   const [cnhCategory, setCnhCategory] = useState('');
   const [vehiclePlate, setVehiclePlate] = useState('');
@@ -218,7 +221,16 @@ function DriverView({ onBack }: { onBack: () => void }) {
         <StatusCard
           icon="🎉"
           title="Você já é motorista GO"
-          description="Seu cadastro foi aprovado. Em breve o modo motorista chega no app."
+          description="Seu cadastro foi aprovado. Toque abaixo pra começar a receber corridas."
+        />
+        <Button
+          label="Entrar no modo motorista"
+          onPress={() => {
+            onBack();
+            onClose();
+            navigation.navigate('DriverHome');
+          }}
+          style={styles.actionButton}
         />
       </View>
     );

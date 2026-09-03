@@ -7,6 +7,7 @@ import {
   Keyboard,
   LayoutAnimation,
   LayoutChangeEvent,
+  Linking,
   PanResponder,
   Platform,
   Pressable,
@@ -18,6 +19,7 @@ import {
   View,
 } from 'react-native';
 import MapView, { Marker, Polyline, UrlTile } from 'react-native-maps';
+import type { Socket } from 'socket.io-client';
 import Button from '../components/Button';
 import MapPin from '../components/MapPin';
 import PromoBanners, { Banner } from '../components/PromoBanners';
@@ -25,8 +27,11 @@ import RideOptionsModal from '../components/RideOptionsModal';
 import SettingsModal from '../components/SettingsModal';
 import {
   AlertIcon,
+  CarIcon,
   CloseIcon,
   LocationIcon,
+  MotoIcon,
+  PhoneIcon,
   PinIcon,
   SearchIcon,
   SettingsIcon,
@@ -35,7 +40,11 @@ import { useAuth } from '../context/AuthContext';
 import { useCurrentLocation } from '../hooks/useCurrentLocation';
 import { useAddressSearch, EnderecoSugerido } from '../hooks/useAddressSearch';
 import { useRota } from '../hooks/useRota';
+import * as rideService from '../services/rideService';
+import { conectarSoquete } from '../services/socketService';
 import { colors, radius, spacing, typography } from '../theme/theme';
+import type { Corrida, MotoristaInfo } from '../types';
+import { STADIA_TILE_URL } from '../utils/mapaConfig';
 import {
   EstimativaCorrida,
   TipoVeiculo,
@@ -80,8 +89,9 @@ const FALLBACK_REGION = {
 // Altura da tela — usada pra calcular os limites do cartão de baixo.
 const ALTURA_TELA = Dimensions.get('window').height;
 
-// O cartão se ajusta ao próprio conteúdo — nada de altura fixa deixando
-// espaço vazio sobrando. Estes dois valores são só os limites de segurança.
+// O cartão se AJUSTA AO PRÓPRIO CONTEÚDO — nada de altura fixa deixando
+// espaço vazio sobrando. Estes dois valores são só os limites de segurança:
+// o cartão nunca fica menor que o mínimo nem maior que o máximo.
 const SHEET_ALTURA_MINIMA = 230;
 const SHEET_ALTURA_MAXIMA = ALTURA_TELA * 0.75;
 
@@ -98,11 +108,8 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-// Estilo "Alidade Smooth Dark" da Stadia Maps — versão escura do design.
-const STADIA_TILE_URL = `https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}.png?api_key=${process.env.EXPO_PUBLIC_STADIA_KEY}`;
-
 // Saudação de acordo com o horário — pequeno detalhe que faz a tela parecer
-// viva em vez de estática ("Olá," sempre igual, de manhã ou de madrugada).
+// viva em vez de estática.
 function obterSaudacao(): string {
   const hora = new Date().getHours();
   if (hora < 12) return 'Bom dia,';
@@ -121,6 +128,17 @@ export default function HomeScreen() {
   const [corridaConfirmada, setCorridaConfirmada] = useState<EstimativaCorrida | null>(null);
   const [inputFocado, setInputFocado] = useState(false);
 
+  // --- Corrida real (backend + tempo real) ---
+  const [corridaId, setCorridaId] = useState<string | null>(null);
+  const [motoristaAtribuido, setMotoristaAtribuido] = useState<MotoristaInfo | null>(null);
+  const [localizacaoMotorista, setLocalizacaoMotorista] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [cancelandoCorrida, setCancelandoCorrida] = useState(false);
+  const corridaIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    corridaIdRef.current = corridaId;
+  }, [corridaId]);
+
   // --- Entrada suave da tela (topo, FAB e cartão aparecem com fade+slide
   // em vez de "estalar" na tela assim que o componente monta). ---
   const entradaAnim = useRef(new Animated.Value(0)).current;
@@ -129,7 +147,7 @@ export default function HomeScreen() {
       toValue: 1,
       duration: 420,
       delay: 80,
-      useNativeDriver: false,
+      useNativeDriver: false, // 'bottom' do FAB não roda no driver nativo
     }).start();
   }, []);
 
@@ -244,6 +262,69 @@ export default function HomeScreen() {
     }
   }, [sugestoes.length, corridaConfirmada]);
 
+  // Conecta ao socket e escuta o ciclo de vida da corrida (aceita, localização
+  // do motorista ao vivo, finalizada, cancelada).
+  useEffect(() => {
+    let ativo = true;
+    let soquete: Socket | null = null;
+
+    (async () => {
+      soquete = await conectarSoquete();
+
+      soquete.on('corrida:aceita', ({ corridaId: id, motorista }: { corridaId: string; motorista: MotoristaInfo }) => {
+        if (!ativo || id !== corridaIdRef.current) return;
+        setMotoristaAtribuido(motorista);
+      });
+
+      soquete.on('corrida:localizacao_motorista', ({ corridaId: id, latitude, longitude }: { corridaId: string; latitude: number; longitude: number }) => {
+        if (!ativo || id !== corridaIdRef.current) return;
+        setLocalizacaoMotorista({ latitude, longitude });
+      });
+
+      soquete.on('corrida:finalizada', ({ corridaId: id }: { corridaId: string }) => {
+        if (!ativo || id !== corridaIdRef.current) return;
+        resetarCorrida();
+      });
+
+      soquete.on('corrida:cancelada', ({ corridaId: id }: { corridaId: string }) => {
+        if (!ativo || id !== corridaIdRef.current) return;
+        resetarCorrida();
+      });
+    })();
+
+    return () => {
+      ativo = false;
+      soquete?.off('corrida:aceita');
+      soquete?.off('corrida:localizacao_motorista');
+      soquete?.off('corrida:finalizada');
+      soquete?.off('corrida:cancelada');
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function resetarCorrida() {
+    setCorridaId(null);
+    setCorridaConfirmada(null);
+    setMotoristaAtribuido(null);
+    setLocalizacaoMotorista(null);
+    limparRota();
+    setDestinoSelecionado(null);
+    setDestination('');
+  }
+
+  async function cancelarBuscaCorrida() {
+    if (!corridaId) return;
+    setCancelandoCorrida(true);
+    try {
+      await rideService.cancelarCorrida(corridaId);
+    } catch {
+      // segue liberando a tela mesmo se a chamada falhar
+    } finally {
+      resetarCorrida();
+      setCancelandoCorrida(false);
+    }
+  }
+
   const region = coords
     ? {
         latitude: coords.latitude,
@@ -316,10 +397,32 @@ export default function HomeScreen() {
     setOpcoesVisiveis(true);
   }
 
-  function confirmarVeiculo(tipo: TipoVeiculo) {
+  async function confirmarVeiculo(tipo: TipoVeiculo) {
     const escolhida = estimativas.find((estimativa) => estimativa.tipo === tipo);
-    if (escolhida) setCorridaConfirmada(escolhida);
     setOpcoesVisiveis(false);
+    if (!escolhida || !destinoSelecionado || !coords) return;
+
+    setCorridaConfirmada(escolhida);
+    setMotoristaAtribuido(null);
+    setLocalizacaoMotorista(null);
+
+    try {
+      const corrida = await rideService.criarCorrida({
+        origem: { latitude: coords.latitude, longitude: coords.longitude },
+        destino: {
+          latitude: destinoSelecionado.latitude,
+          longitude: destinoSelecionado.longitude,
+          endereco: destinoSelecionado.descricao,
+        },
+        tipoVeiculo: tipo,
+        preco: escolhida.preco,
+        distanciaKm: escolhida.distanciaKm,
+        duracaoMin: escolhida.duracaoMin,
+      });
+      setCorridaId(corrida.id);
+    } catch {
+      setCorridaConfirmada(null);
+    }
   }
 
   const destinoPronto = !!destinoSelecionado && !!rota;
@@ -357,6 +460,17 @@ export default function HomeScreen() {
             strokeColor={colors.primary}
             strokeWidth={4}
           />
+        )}
+        {localizacaoMotorista && (
+          <Marker coordinate={localizacaoMotorista} anchor={{ x: 0.5, y: 0.5 }} title="Motorista a caminho">
+            <View style={styles.marcadorMotorista}>
+              {corridaConfirmada?.tipo === 'moto' ? (
+                <MotoIcon size={16} color={colors.background} />
+              ) : (
+                <CarIcon size={16} color={colors.background} />
+              )}
+            </View>
+          </Marker>
         )}
       </MapView>
 
@@ -536,7 +650,7 @@ export default function HomeScreen() {
               </Text>
             )}
 
-            {corridaConfirmada && (
+            {corridaConfirmada && !motoristaAtribuido && (
               <View style={styles.confirmacaoBanner}>
                 <View style={styles.confirmacaoIconeBadge}>
                   <Image
@@ -557,6 +671,47 @@ export default function HomeScreen() {
                     </Text>
                   </View>
                 </View>
+                <Pressable
+                  onPress={cancelarBuscaCorrida}
+                  disabled={cancelandoCorrida}
+                  hitSlop={8}
+                  style={({ pressed }) => [styles.cancelarBuscaBotao, pressed && styles.pressedFeedback]}
+                >
+                  <CloseIcon size={16} color={colors.textSecondary} />
+                </Pressable>
+              </View>
+            )}
+
+            {motoristaAtribuido && (
+              <View style={styles.motoristaBanner}>
+                <View style={styles.motoristaAvatar}>
+                  <Text style={styles.motoristaAvatarLetra}>
+                    {motoristaAtribuido.nome.trim()[0]?.toUpperCase() ?? '?'}
+                  </Text>
+                </View>
+                <View style={styles.motoristaTextos}>
+                  <Text style={styles.motoristaNome} numberOfLines={1}>{motoristaAtribuido.nome}</Text>
+                  <View style={styles.motoristaVeiculoRow}>
+                    {corridaConfirmada?.tipo === 'moto' ? (
+                      <MotoIcon size={14} color={colors.textSecondary} />
+                    ) : (
+                      <CarIcon size={14} color={colors.textSecondary} />
+                    )}
+                    <Text style={styles.motoristaVeiculoTexto} numberOfLines={1}>
+                      {[motoristaAtribuido.veiculoModelo, motoristaAtribuido.veiculoCor].filter(Boolean).join(' · ')}
+                      {motoristaAtribuido.veiculoPlaca ? ` · ${motoristaAtribuido.veiculoPlaca}` : ''}
+                    </Text>
+                  </View>
+                </View>
+                {!!motoristaAtribuido.telefone && (
+                  <Pressable
+                    onPress={() => Linking.openURL(`tel:${motoristaAtribuido.telefone}`)}
+                    style={({ pressed }) => [styles.ligarBotao, pressed && styles.pressedFeedback]}
+                    hitSlop={8}
+                  >
+                    <PhoneIcon size={18} color={colors.background} />
+                  </Pressable>
+                )}
               </View>
             )}
 
@@ -870,6 +1025,68 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.textSecondary,
     marginLeft: spacing.xs,
+  },
+  cancelarBuscaBotao: {
+    padding: spacing.xs,
+    marginLeft: spacing.sm,
+  },
+  motoristaBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    backgroundColor: colors.surfaceAlt,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  motoristaAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.md,
+  },
+  motoristaAvatarLetra: {
+    ...typography.bodyBold,
+    color: colors.background,
+  },
+  motoristaTextos: { flex: 1 },
+  motoristaNome: {
+    ...typography.bodyBold,
+    color: colors.text,
+  },
+  motoristaVeiculoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  motoristaVeiculoTexto: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginLeft: spacing.xs,
+    flex: 1,
+  },
+  ligarBotao: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: spacing.sm,
+  },
+  marcadorMotorista: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: colors.background,
   },
   sugestoesLista: {
     marginBottom: spacing.md,

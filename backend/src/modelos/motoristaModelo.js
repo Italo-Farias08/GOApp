@@ -30,4 +30,30 @@ async function buscarUltimaSolicitacaoPorUsuario(usuarioId) {
   return resultado.rows[0] || null;
 }
 
-module.exports = { criarSolicitacao, buscarUltimaSolicitacaoPorUsuario };
+async function listarPendentes() {
+  const resultado = await consultar(
+    `SELECT m.*, u.nome, u.email, u.telefone
+     FROM motoristas m
+     JOIN usuarios u ON u.id = m.usuario_id
+     WHERE m.status = 'pending'
+     ORDER BY m.criado_em ASC`
+  );
+  return resultado.rows;
+}
+
+async function atualizarStatusPorUsuario(usuarioId, status) {
+  const resultado = await consultar(
+    `UPDATE motoristas SET status = $2
+     WHERE usuario_id = $1
+     RETURNING *`,
+    [usuarioId, status]
+  );
+  return resultado.rows[0];
+}
+
+module.exports = {
+  criarSolicitacao,
+  buscarUltimaSolicitacaoPorUsuario,
+  listarPendentes,
+  atualizarStatusPorUsuario,
+};

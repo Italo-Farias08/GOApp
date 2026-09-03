@@ -62,10 +62,44 @@ export type DriverApplicationPayload = {
   vehicleYear: string;
 };
 
+// --- Corridas / tempo real ---
+
+export type PontoCorrida = {
+  latitude: number;
+  longitude: number;
+  endereco?: string;
+};
+
+export type MotoristaInfo = {
+  id: string;
+  nome: string;
+  telefone?: string;
+  veiculoModelo?: string;
+  veiculoCor?: string;
+  veiculoPlaca?: string;
+};
+
+export type StatusCorrida = 'procurando' | 'aceita' | 'finalizada' | 'cancelada';
+
+export type Corrida = {
+  id: string;
+  passageiroId: string;
+  motoristaId?: string;
+  origem: PontoCorrida;
+  destino: PontoCorrida;
+  tipoVeiculo: 'carro' | 'moto';
+  preco: number;
+  distanciaKm: number;
+  duracaoMin: number;
+  status: StatusCorrida;
+  criadoEm: string;
+};
+
 // Tipos de navegação — adicionar novas telas aqui conforme o app crescer
 export type RootStackParamList = {
   Login: undefined;
   Register: undefined;
   VerifyEmail: { email: string };
   Home: undefined;
+  DriverHome: undefined;
 };

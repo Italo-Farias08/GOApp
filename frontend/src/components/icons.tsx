@@ -116,6 +116,7 @@ export function SearchIcon({ size = 18, color = '#9A9AA5', strokeWidth = 1.8 }: 
     </Svg>
   );
 }
+
 // Ícone de alerta (triângulo com exclamação) — usado em banners de erro.
 export function AlertIcon({ size = 16, color = '#FF4D4D', strokeWidth = 1.8 }: IconProps) {
   return (
@@ -143,6 +144,21 @@ export function PinIcon({ size = 16, color = '#9A9AA5', strokeWidth = 1.8 }: Ico
         strokeLinejoin="round"
       />
       <Circle cx="12" cy="9.8" r="2.4" stroke={color} strokeWidth={strokeWidth} />
+    </Svg>
+  );
+}
+
+// Ícone de telefone — usado no botão de ligar pro motorista.
+export function PhoneIcon({ size = 18, color = '#0B0B0F', strokeWidth = 1.8 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M6.5 3.5 L9.5 3.5 L11 8 L8.7 9.6 C9.6 11.8 11.2 13.4 13.4 14.3 L15 12 L19.5 13.5 L19.5 16.5 C19.5 18.2 18.1 19.6 16.4 19.4 C10.7 18.8 5.7 13.8 5.1 8.1 C4.9 6.4 6.3 3.5 6.5 3.5 Z"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
     </Svg>
   );
 }

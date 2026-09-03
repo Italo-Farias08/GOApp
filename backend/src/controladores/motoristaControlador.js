@@ -1,6 +1,7 @@
 const usuarioModelo = require('../modelos/usuarioModelo');
 const motoristaModelo = require('../modelos/motoristaModelo');
 const { ErroHttp } = require('../intermediarios/tratadorErros');
+const soquete = require('../tempoReal/servidorSoquete');
 
 // POST /driver/apply
 async function solicitarCadastro(req, res, next) {
@@ -52,4 +53,37 @@ async function consultarStatus(req, res, next) {
   }
 }
 
-module.exports = { solicitarCadastro, consultarStatus };
+// GET /driver/pending (admin)
+async function listarPendentes(req, res, next) {
+  try {
+    const pendentes = await motoristaModelo.listarPendentes();
+    return res.json(pendentes);
+  } catch (erro) {
+    next(erro);
+  }
+}
+
+// POST /driver/:usuarioId/approve (admin) — body: { aprovado: boolean }
+async function aprovar(req, res, next) {
+  try {
+    const { usuarioId } = req.params;
+    const { aprovado } = req.body;
+    const novoStatus = aprovado ? 'approved' : 'rejected';
+
+    const usuarioAtualizado = await usuarioModelo.atualizarStatusMotorista(usuarioId, novoStatus);
+    if (!usuarioAtualizado) {
+      throw new ErroHttp(404, 'Usuário não encontrado.');
+    }
+    await motoristaModelo.atualizarStatusPorUsuario(usuarioId, novoStatus);
+
+    if (novoStatus === 'approved') {
+      soquete.notificarMotoristaAprovado(usuarioId);
+    }
+
+    return res.json({ status: novoStatus });
+  } catch (erro) {
+    next(erro);
+  }
+}
+
+module.exports = { solicitarCadastro, consultarStatus, listarPendentes, aprovar };

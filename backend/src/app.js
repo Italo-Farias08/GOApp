@@ -4,6 +4,7 @@ const morgan = require('morgan');
 
 const autenticacaoRotas = require('./rotas/autenticacaoRotas');
 const motoristaRotas = require('./rotas/motoristaRotas');
+const corridaRotas = require('./rotas/corridaRotas');
 const { tratadorErros } = require('./intermediarios/tratadorErros');
 
 const app = express();
@@ -25,6 +26,7 @@ app.get('/saude', (req, res) => {
 
 app.use('/auth', autenticacaoRotas);
 app.use('/driver', motoristaRotas);
+app.use('/rides', corridaRotas);
 
 // Rota não encontrada
 app.use((req, res) => {
