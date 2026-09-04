@@ -1,11 +1,13 @@
 const { Server } = require('socket.io');
 const { verificarToken } = require('../utilitarios/token');
+const motoristaModelo = require('../modelos/motoristaModelo');
 
 let io = null;
 
 // Motoristas com o app aberto e marcados como "disponíveis", com a última
-// localização que mandaram — usado pra decidir a quem oferecer uma corrida nova.
-const motoristasDisponiveis = new Map(); // usuarioId -> { latitude, longitude, socketId }
+// localização que mandaram e o tipo de veículo — usado pra decidir a quem
+// oferecer uma corrida nova.
+const motoristasDisponiveis = new Map(); // usuarioId -> { latitude, longitude, socketId, tipoVeiculo }
 
 // Corridas aceitas — guarda quem é o passageiro de cada uma, pra saber pra
 // qual sala repassar a localização ao vivo do motorista.
@@ -50,9 +52,27 @@ function configurarSoquete(servidorHttp) {
     // qualquer lugar do backend, sem guardar o socketId dele manualmente.
     socket.join(`usuario:${socket.usuarioId}`);
 
-    socket.on('motorista:disponivel', ({ latitude, longitude }) => {
-      motoristasDisponiveis.set(socket.usuarioId, { latitude, longitude, socketId: socket.id });
-      socket.join('motoristas-online');
+    socket.on('motorista:disponivel', async ({ latitude, longitude }) => {
+      try {
+        // Busca o veículo cadastrado (e aprovado) do motorista direto no
+        // banco — nunca confia no que o app do motorista possa mandar aqui,
+        // pra ninguém conseguir se marcar como "carro" e "moto" ao mesmo
+        // tempo só pra receber tudo.
+        const solicitacao = await motoristaModelo.buscarUltimaSolicitacaoPorUsuario(socket.usuarioId);
+        const tipoVeiculo = solicitacao?.veiculo_tipo;
+        if (!tipoVeiculo) return;
+
+        motoristasDisponiveis.set(socket.usuarioId, {
+          latitude,
+          longitude,
+          socketId: socket.id,
+          tipoVeiculo,
+        });
+        socket.join('motoristas-online');
+      } catch (erro) {
+        // Se der erro na consulta, não deixa o motorista entrar no radar
+        // sem tipo de veículo definido.
+      }
     });
 
     socket.on('motorista:indisponivel', () => {
@@ -85,13 +105,15 @@ function configurarSoquete(servidorHttp) {
 }
 
 // Chamado assim que uma corrida nova é criada (ou volta pro radar depois de
-// um motorista cancelar) — avisa só os motoristas disponíveis dentro do raio
-// configurado. idsIgnorados é a lista de motoristas que já desistiram dessa
-// mesma corrida e não devem recebê-la de novo.
+// um motorista cancelar) — avisa só os motoristas disponíveis, do MESMO
+// TIPO DE VEÍCULO pedido na corrida, que estão dentro do raio configurado.
+// idsIgnorados é a lista de motoristas que já desistiram dessa mesma corrida
+// e não devem recebê-la de novo.
 function notificarNovaCorrida(corrida, origem, idsIgnorados = []) {
   if (!io) return;
   for (const [usuarioId, dados] of motoristasDisponiveis.entries()) {
     if (idsIgnorados.includes(usuarioId)) continue;
+    if (dados.tipoVeiculo !== corrida.tipoVeiculo) continue;
     if (calcularDistanciaKm(origem, dados) <= RAIO_NOTIFICACAO_KM) {
       io.to(dados.socketId).emit('corrida:nova', corrida);
     }

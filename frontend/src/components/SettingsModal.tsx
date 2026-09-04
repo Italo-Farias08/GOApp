@@ -5,7 +5,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAuth } from '../context/AuthContext';
 import * as driverService from '../services/driverService';
 import { colors, radius, spacing, typography } from '../theme/theme';
-import type { DriverStatus, RootStackParamList } from '../types';
+import type { DriverStatus, RootStackParamList, TipoVeiculo } from '../types';
 import Button from './Button';
 import Input from './Input';
 
@@ -172,6 +172,7 @@ function DriverView({ onBack, onClose }: { onBack: () => void; onClose: () => vo
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [cnhNumber, setCnhNumber] = useState('');
   const [cnhCategory, setCnhCategory] = useState('');
+  const [vehicleType, setVehicleType] = useState<TipoVeiculo>('carro');
   const [vehiclePlate, setVehiclePlate] = useState('');
   const [vehicleModel, setVehicleModel] = useState('');
   const [vehicleColor, setVehicleColor] = useState('');
@@ -188,6 +189,7 @@ function DriverView({ onBack, onClose }: { onBack: () => void; onClose: () => vo
       const { status: newStatus } = await driverService.applyToBeDriver({
         cnhNumber: cnhNumber.trim(),
         cnhCategory: cnhCategory.trim(),
+        vehicleType,
         vehiclePlate: vehiclePlate.trim(),
         vehicleModel: vehicleModel.trim(),
         vehicleColor: vehicleColor.trim(),
@@ -252,6 +254,27 @@ function DriverView({ onBack, onClose }: { onBack: () => void; onClose: () => vo
 
       <Input label="Número da CNH" value={cnhNumber} onChangeText={setCnhNumber} placeholder="00000000000" keyboardType="number-pad" />
       <Input label="Categoria da CNH" value={cnhCategory} onChangeText={setCnhCategory} placeholder="Ex: B" autoCapitalize="characters" />
+
+      <Text style={styles.fieldLabel}>Tipo de veículo</Text>
+      <View style={styles.vehicleTypeRow}>
+        <Pressable
+          onPress={() => setVehicleType('carro')}
+          style={[styles.vehicleTypeButton, vehicleType === 'carro' && styles.vehicleTypeButtonAtivo]}
+        >
+          <Text style={[styles.vehicleTypeTexto, vehicleType === 'carro' && styles.vehicleTypeTextoAtivo]}>
+            🚗 Carro
+          </Text>
+        </Pressable>
+        <Pressable
+          onPress={() => setVehicleType('moto')}
+          style={[styles.vehicleTypeButton, vehicleType === 'moto' && styles.vehicleTypeButtonAtivo]}
+        >
+          <Text style={[styles.vehicleTypeTexto, vehicleType === 'moto' && styles.vehicleTypeTextoAtivo]}>
+            🏍️ Moto
+          </Text>
+        </Pressable>
+      </View>
+
       <Input label="Placa do veículo" value={vehiclePlate} onChangeText={setVehiclePlate} placeholder="ABC1D23" autoCapitalize="characters" />
       <Input label="Modelo do veículo" value={vehicleModel} onChangeText={setVehicleModel} placeholder="Ex: Onix 2020" />
       <Input label="Cor do veículo" value={vehicleColor} onChangeText={setVehicleColor} placeholder="Ex: Prata" />
@@ -384,6 +407,37 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginBottom: spacing.md,
     lineHeight: 18,
+  },
+  fieldLabel: {
+    ...typography.caption,
+    color: colors.text,
+    fontWeight: '600',
+    marginBottom: spacing.xs,
+  },
+  vehicleTypeRow: {
+    flexDirection: 'row',
+    marginBottom: spacing.md,
+  },
+  vehicleTypeButton: {
+    flex: 1,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    marginRight: spacing.sm,
+  },
+  vehicleTypeButtonAtivo: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primary + '1A',
+  },
+  vehicleTypeTexto: {
+    ...typography.body,
+    color: colors.textSecondary,
+  },
+  vehicleTypeTextoAtivo: {
+    color: colors.primary,
+    fontWeight: '700',
   },
   errorText: {
     ...typography.caption,

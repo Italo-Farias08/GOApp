@@ -75,6 +75,7 @@ async function aceitar(req, res, next) {
       id: motorista.id,
       nome: motorista.nome,
       telefone: motorista.telefone || undefined,
+      veiculoTipo: solicitacao?.veiculo_tipo,
       veiculoModelo: solicitacao?.veiculo_modelo,
       veiculoCor: solicitacao?.veiculo_cor,
       veiculoPlaca: solicitacao?.veiculo_placa,

@@ -53,9 +53,12 @@ export type UpdateAccountPayload = {
 };
 
 // Dados do formulário "virar motorista"
+export type TipoVeiculo = 'carro' | 'moto';
+
 export type DriverApplicationPayload = {
   cnhNumber: string;
   cnhCategory: string;
+  vehicleType: TipoVeiculo;
   vehiclePlate: string;
   vehicleModel: string;
   vehicleColor: string;
@@ -74,6 +77,7 @@ export type MotoristaInfo = {
   id: string;
   nome: string;
   telefone?: string;
+  veiculoTipo?: TipoVeiculo;
   veiculoModelo?: string;
   veiculoCor?: string;
   veiculoPlaca?: string;
@@ -91,7 +95,7 @@ export type Corrida = {
   motoristaId?: string;
   origem: PontoCorrida;
   destino: PontoCorrida;
-  tipoVeiculo: 'carro' | 'moto';
+  tipoVeiculo: TipoVeiculo;
   preco: number;
   distanciaKm: number;
   duracaoMin: number;

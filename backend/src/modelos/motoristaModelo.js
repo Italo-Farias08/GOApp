@@ -4,6 +4,7 @@ async function criarSolicitacao({
   usuarioId,
   cnhNumero,
   cnhCategoria,
+  veiculoTipo,
   veiculoPlaca,
   veiculoModelo,
   veiculoCor,
@@ -11,10 +12,10 @@ async function criarSolicitacao({
 }) {
   const resultado = await consultar(
     `INSERT INTO motoristas
-       (usuario_id, cnh_numero, cnh_categoria, veiculo_placa, veiculo_modelo, veiculo_cor, veiculo_ano)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
+       (usuario_id, cnh_numero, cnh_categoria, veiculo_tipo, veiculo_placa, veiculo_modelo, veiculo_cor, veiculo_ano)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
      RETURNING *`,
-    [usuarioId, cnhNumero, cnhCategoria, veiculoPlaca, veiculoModelo, veiculoCor, veiculoAno]
+    [usuarioId, cnhNumero, cnhCategoria, veiculoTipo, veiculoPlaca, veiculoModelo, veiculoCor, veiculoAno]
   );
   return resultado.rows[0];
 }

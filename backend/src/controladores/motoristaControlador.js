@@ -3,12 +3,15 @@ const motoristaModelo = require('../modelos/motoristaModelo');
 const { ErroHttp } = require('../intermediarios/tratadorErros');
 const soquete = require('../tempoReal/servidorSoquete');
 
+const TIPOS_VEICULO_VALIDOS = ['carro', 'moto'];
+
 // POST /driver/apply
 async function solicitarCadastro(req, res, next) {
   try {
     const {
       cnhNumber,
       cnhCategory,
+      vehicleType,
       vehiclePlate,
       vehicleModel,
       vehicleColor,
@@ -21,11 +24,15 @@ async function solicitarCadastro(req, res, next) {
     if (!cnhCategory || !vehicleModel || !vehicleColor || !vehicleYear) {
       throw new ErroHttp(400, 'Preencha todos os dados do veículo e da CNH.');
     }
+    if (!TIPOS_VEICULO_VALIDOS.includes(vehicleType)) {
+      throw new ErroHttp(400, 'Informe se o veículo é carro ou moto.');
+    }
 
     await motoristaModelo.criarSolicitacao({
       usuarioId: req.usuarioId,
       cnhNumero: cnhNumber,
       cnhCategoria: cnhCategory,
+      veiculoTipo: vehicleType,
       veiculoPlaca: vehiclePlate,
       veiculoModelo: vehicleModel,
       veiculoCor: vehicleColor,
