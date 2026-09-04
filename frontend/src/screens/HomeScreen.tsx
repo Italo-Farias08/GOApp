@@ -7,7 +7,6 @@ import {
   Keyboard,
   LayoutAnimation,
   LayoutChangeEvent,
-  Linking,
   PanResponder,
   Platform,
   Pressable,
@@ -22,6 +21,7 @@ import MapView, { Marker, Polyline, UrlTile } from 'react-native-maps';
 import type { Socket } from 'socket.io-client';
 import Button from '../components/Button';
 import CancelRideModal from '../components/CancelRideModal';
+import ChatModal from '../components/ChatModal';
 import MapPin from '../components/MapPin';
 import PromoBanners, { Banner } from '../components/PromoBanners';
 import RideOptionsModal from '../components/RideOptionsModal';
@@ -30,11 +30,11 @@ import StatusToast, { StatusToastTone } from '../components/StatusToast';
 import {
   AlertIcon,
   CarIcon,
+  ChatIcon,
   CheckIcon,
   CloseIcon,
   LocationIcon,
   MotoIcon,
-  PhoneIcon,
   PinIcon,
   SearchIcon,
   SettingsIcon,
@@ -46,7 +46,7 @@ import { useRota } from '../hooks/useRota';
 import * as rideService from '../services/rideService';
 import { conectarSoquete } from '../services/socketService';
 import { colors, radius, spacing, typography } from '../theme/theme';
-import type { Corrida, MotoristaInfo } from '../types';
+import type { Corrida, MensagemChat, MotoristaInfo } from '../types';
 import { STADIA_TILE_URL } from '../utils/mapaConfig';
 import {
   EstimativaCorrida,
@@ -99,8 +99,10 @@ const SHEET_ALTURA_MINIMA = 230;
 const SHEET_ALTURA_MAXIMA = ALTURA_TELA * 0.75;
 
 // Teto da área rolável (erros/rota/confirmação/sugestões) — acima disso ela
-// passa a rolar internamente em vez de empurrar o cartão pra cima.
-const ALTURA_MAXIMA_CONTEUDO_ROLAVEL = 260;
+// passa a rolar internamente em vez de empurrar o cartão pra cima. Maior que
+// antes pra caber o card do motorista (foto do veículo + dados) sem cortar
+// nada nem precisar rolar pra ver o resto.
+const ALTURA_MAXIMA_CONTEUDO_ROLAVEL = 380;
 
 // Degrau recolhido "de reserva", usado só até medirmos a altura real do
 // grupo handle + input na primeira renderização — ver onLayout abaixo.
@@ -158,6 +160,53 @@ export default function HomeScreen() {
   useEffect(() => {
     corridaIdRef.current = corridaId;
   }, [corridaId]);
+
+  const userIdRef = useRef<string | undefined>(user?.id);
+  useEffect(() => {
+    userIdRef.current = user?.id;
+  }, [user?.id]);
+
+  // --- Chat com o motorista (substitui o antigo botão "Ligar") ---
+  const [chatVisivel, setChatVisivel] = useState(false);
+  const [mensagensChat, setMensagensChat] = useState<MensagemChat[]>([]);
+  const [carregandoHistoricoChat, setCarregandoHistoricoChat] = useState(false);
+  const [mensagensNaoLidas, setMensagensNaoLidas] = useState(0);
+  const soqueteRef = useRef<Socket | null>(null);
+
+  // Busca o histórico assim que sabe qual é a corrida (seja pedido novo
+  // aceito, seja retomando uma corrida que já estava em andamento) — sem
+  // isso o chat abriria vazio de novo a cada reabertura do app.
+  useEffect(() => {
+    if (!corridaId) {
+      setMensagensChat([]);
+      setMensagensNaoLidas(0);
+      return;
+    }
+    let ativo = true;
+    setCarregandoHistoricoChat(true);
+    rideService
+      .listarMensagens(corridaId)
+      .then((mensagens) => {
+        if (ativo) setMensagensChat(mensagens);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (ativo) setCarregandoHistoricoChat(false);
+      });
+    return () => {
+      ativo = false;
+    };
+  }, [corridaId]);
+
+  function abrirChat() {
+    setMensagensNaoLidas(0);
+    setChatVisivel(true);
+  }
+
+  function enviarMensagemChat(texto: string) {
+    if (!corridaId) return;
+    soqueteRef.current?.emit('chat:mensagem', { corridaId, texto });
+  }
 
   const avisoContadorRef = useRef(0);
   function avisar(mensagem: string, tom: StatusToastTone = 'info') {
@@ -334,6 +383,21 @@ export default function HomeScreen() {
 
     (async () => {
       soquete = await conectarSoquete();
+      soqueteRef.current = soquete;
+
+      // Mensagem nova do chat — só aceita se for da corrida atual. Se o chat
+      // estiver fechado no momento, conta como "não lida" pra dar sinal
+      // visual no botão de conversar.
+      soquete.on('corrida:mensagem', (mensagem: MensagemChat) => {
+        if (!ativo || mensagem.corridaId !== corridaIdRef.current) return;
+        setMensagensChat((atual) => [...atual, mensagem]);
+        setChatVisivel((visivelAtual) => {
+          if (!visivelAtual && mensagem.remetenteId !== userIdRef.current) {
+            setMensagensNaoLidas((n) => n + 1);
+          }
+          return visivelAtual;
+        });
+      });
 
       soquete.on('corrida:aceita', ({ corridaId: id, motorista }: { corridaId: string; motorista: MotoristaInfo }) => {
         if (!ativo || id !== corridaIdRef.current) return;
@@ -384,6 +448,7 @@ export default function HomeScreen() {
 
     return () => {
       ativo = false;
+      soquete?.off('corrida:mensagem');
       soquete?.off('corrida:aceita');
       soquete?.off('corrida:localizacao_motorista');
       soquete?.off('corrida:embarque');
@@ -457,6 +522,9 @@ export default function HomeScreen() {
     limparRota();
     setDestinoSelecionado(null);
     setDestination('');
+    setChatVisivel(false);
+    setMensagensChat([]);
+    setMensagensNaoLidas(0);
   }
 
   // Regra: só faz sentido oferecer "cancelar" enquanto existe uma corrida
@@ -899,49 +967,77 @@ export default function HomeScreen() {
                       : `Corrida aceita · ${corridaConfirmada?.tipo === 'moto' ? 'moto a caminho' : 'carro a caminho'}`}
                   </Text>
                 </View>
-                <View style={styles.motoristaLinha}>
-                  {motoristaAtribuido.avatarUrl ? (
+
+                {/* Card principal, maior e FLEXÍVEL — cresce com o conteúdo
+                    (sem numberOfLines cortando texto) em vez de espremer tudo
+                    numa única linha. Mostra a mesma imagem do veículo usada
+                    na tela de escolha (carro.png/moto.png). */}
+                <View style={styles.motoristaCardPrincipal}>
+                  <View style={styles.motoristaVeiculoImagemBox}>
                     <Image
-                      source={{ uri: motoristaAtribuido.avatarUrl }}
-                      style={styles.motoristaAvatarFoto}
+                      source={IMAGEM_VEICULO[motoristaAtribuido.veiculoTipo ?? corridaConfirmada?.tipo ?? 'carro']}
+                      style={styles.motoristaVeiculoImagem}
+                      resizeMode="contain"
+                      fadeDuration={0}
                     />
-                  ) : (
-                    <View style={styles.motoristaAvatar}>
-                      <Text style={styles.motoristaAvatarLetra}>
-                        {motoristaAtribuido.nome.trim()[0]?.toUpperCase() ?? '?'}
-                      </Text>
-                    </View>
-                  )}
-                  <View style={styles.motoristaTextos}>
-                    <Text style={styles.motoristaNome} numberOfLines={1}>{motoristaAtribuido.nome}</Text>
-                    <View style={styles.motoristaVeiculoRow}>
-                      {corridaConfirmada?.tipo === 'moto' ? (
-                        <MotoIcon size={14} color={colors.textSecondary} />
+                  </View>
+
+                  <View style={styles.motoristaInfoPrincipal}>
+                    <View style={styles.motoristaLinhaNome}>
+                      {motoristaAtribuido.avatarUrl ? (
+                        <Image
+                          source={{ uri: motoristaAtribuido.avatarUrl }}
+                          style={styles.motoristaAvatarFoto}
+                        />
                       ) : (
-                        <CarIcon size={14} color={colors.textSecondary} />
+                        <View style={styles.motoristaAvatar}>
+                          <Text style={styles.motoristaAvatarLetra}>
+                            {motoristaAtribuido.nome.trim()[0]?.toUpperCase() ?? '?'}
+                          </Text>
+                        </View>
                       )}
-                      <Text style={styles.motoristaVeiculoTexto} numberOfLines={1}>
-                        {[
-                          motoristaAtribuido.veiculoModelo,
-                          motoristaAtribuido.veiculoAno,
-                          motoristaAtribuido.veiculoCor,
-                        ]
+                      <Text style={styles.motoristaNome}>{motoristaAtribuido.nome}</Text>
+                    </View>
+
+                    {!!(motoristaAtribuido.veiculoModelo || motoristaAtribuido.veiculoCor) && (
+                      <View style={styles.motoristaVeiculoRow}>
+                        {corridaConfirmada?.tipo === 'moto' ? (
+                          <MotoIcon size={14} color={colors.textSecondary} />
+                        ) : (
+                          <CarIcon size={14} color={colors.textSecondary} />
+                        )}
+                        <Text style={styles.motoristaVeiculoTexto}>
+                          {[motoristaAtribuido.veiculoModelo, motoristaAtribuido.veiculoCor]
+                            .filter(Boolean)
+                            .join(' · ')}
+                        </Text>
+                      </View>
+                    )}
+
+                    {!!(motoristaAtribuido.veiculoAno || motoristaAtribuido.veiculoPlaca) && (
+                      <Text style={styles.motoristaVeiculoSub}>
+                        {[motoristaAtribuido.veiculoAno, motoristaAtribuido.veiculoPlaca]
                           .filter(Boolean)
                           .join(' · ')}
-                        {motoristaAtribuido.veiculoPlaca ? ` · ${motoristaAtribuido.veiculoPlaca}` : ''}
+                      </Text>
+                    )}
+                  </View>
+                </View>
+
+                <Pressable
+                  onPress={abrirChat}
+                  style={({ pressed }) => [styles.ligarBotaoGrande, pressed && styles.pressedFeedback]}
+                >
+                  <ChatIcon size={18} color={colors.background} />
+                  <Text style={styles.ligarBotaoTexto}>Conversar com o motorista</Text>
+                  {mensagensNaoLidas > 0 && (
+                    <View style={styles.chatBadge}>
+                      <Text style={styles.chatBadgeTexto}>
+                        {mensagensNaoLidas > 9 ? '9+' : mensagensNaoLidas}
                       </Text>
                     </View>
-                  </View>
-                  {!!motoristaAtribuido.telefone && (
-                    <Pressable
-                      onPress={() => Linking.openURL(`tel:${motoristaAtribuido.telefone}`)}
-                      style={({ pressed }) => [styles.ligarBotao, pressed && styles.pressedFeedback]}
-                      hitSlop={8}
-                    >
-                      <PhoneIcon size={18} color={colors.background} />
-                    </Pressable>
                   )}
-                </View>
+                </Pressable>
               </Animated.View>
             )}
 
@@ -1012,6 +1108,16 @@ export default function HomeScreen() {
         carregando={cancelandoCorrida}
         onConfirmar={confirmarCancelamento}
         onFechar={() => setCancelamentoVisivel(false)}
+      />
+
+      <ChatModal
+        visible={chatVisivel}
+        outroNome={motoristaAtribuido?.nome ?? 'Motorista'}
+        meuId={user?.id ?? ''}
+        mensagens={mensagensChat}
+        carregandoHistorico={carregandoHistoricoChat}
+        onEnviar={enviarMensagemChat}
+        onFechar={() => setChatVisivel(false)}
       />
     </View>
   );
@@ -1299,7 +1405,7 @@ const styles = StyleSheet.create({
     marginLeft: spacing.sm,
   },
   motoristaBanner: {
-    borderRadius: radius.md,
+    borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: colors.primary,
     backgroundColor: colors.surfaceAlt,
@@ -1309,7 +1415,7 @@ const styles = StyleSheet.create({
   motoristaAceitaTopo: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: spacing.sm,
+    marginBottom: spacing.md,
   },
   motoristaAceitaBadge: {
     width: 18,
@@ -1324,55 +1430,112 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.primary,
     fontWeight: '700',
+    flex: 1,
   },
-  motoristaLinha: {
+  // Card principal — imagem do veículo (mesma da tela de escolha) + dados do
+  // motorista lado a lado. FLEXÍVEL: nada de altura fixa, cresce conforme o
+  // conteúdo (nome grande, placa, ano etc.) em vez de cortar texto.
+  motoristaCardPrincipal: {
     flexDirection: 'row',
     alignItems: 'center',
+    marginBottom: spacing.md,
   },
-  motoristaAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.primary,
+  motoristaVeiculoImagemBox: {
+    width: 76,
+    height: 76,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: spacing.md,
+  },
+  motoristaVeiculoImagem: {
+    width: 60,
+    height: 60,
+  },
+  motoristaInfoPrincipal: {
+    flex: 1,
+    minWidth: 0,
+  },
+  motoristaLinhaNome: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.xs,
+  },
+  motoristaAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.sm,
   },
   motoristaAvatarLetra: {
     ...typography.bodyBold,
+    fontSize: 14,
     color: colors.background,
   },
   motoristaAvatarFoto: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    marginRight: spacing.md,
-    backgroundColor: colors.surfaceAlt,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    marginRight: spacing.sm,
+    backgroundColor: colors.surface,
   },
-  motoristaTextos: { flex: 1 },
   motoristaNome: {
     ...typography.bodyBold,
+    fontSize: 18,
     color: colors.text,
+    flexShrink: 1,
   },
   motoristaVeiculoRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     marginTop: 2,
   },
   motoristaVeiculoTexto: {
-    ...typography.caption,
+    ...typography.body,
     color: colors.textSecondary,
     marginLeft: spacing.xs,
     flex: 1,
+    flexWrap: 'wrap',
   },
-  ligarBotao: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.primary,
+  motoristaVeiculoSub: {
+    ...typography.caption,
+    color: colors.textMuted,
+    marginTop: 2,
+  },
+  ligarBotaoGrande: {
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    height: 44,
+    borderRadius: radius.md,
+    backgroundColor: colors.primary,
+  },
+  ligarBotaoTexto: {
+    ...typography.bodyBold,
+    color: colors.background,
     marginLeft: spacing.sm,
+  },
+  chatBadge: {
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: colors.danger,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 5,
+    marginLeft: spacing.sm,
+  },
+  chatBadgeTexto: {
+    ...typography.caption,
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.background,
   },
   marcadorMotorista: {
     width: 30,

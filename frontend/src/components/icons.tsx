@@ -148,7 +148,7 @@ export function PinIcon({ size = 16, color = '#9A9AA5', strokeWidth = 1.8 }: Ico
   );
 }
 
-// Ícone de telefone — usado no botão de ligar pro motorista.
+// Ícone de telefone — mantido pra quem ainda usa ligação em algum lugar.
 export function PhoneIcon({ size = 18, color = '#0B0B0F', strokeWidth = 1.8 }: IconProps) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
@@ -159,6 +159,39 @@ export function PhoneIcon({ size = 18, color = '#0B0B0F', strokeWidth = 1.8 }: I
         strokeLinejoin="round"
         strokeLinecap="round"
       />
+    </Svg>
+  );
+}
+
+// Ícone de balão de chat — usado no botão de conversar com o motorista/passageiro.
+export function ChatIcon({ size = 18, color = '#0B0B0F', strokeWidth = 1.8 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M4 5.5 H20 A1.2 1.2 0 0 1 21.2 6.7 V15.3 A1.2 1.2 0 0 1 20 16.5 H9.5 L5.2 19.8 A0.5 0.5 0 0 1 4.4 19.4 V16.5 H4 A1.2 1.2 0 0 1 2.8 15.3 V6.7 A1.2 1.2 0 0 1 4 5.5 Z"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
+      <Line x1="7" y1="9.5" x2="17" y2="9.5" stroke={color} strokeWidth={strokeWidth * 0.85} strokeLinecap="round" />
+      <Line x1="7" y1="12.6" x2="14" y2="12.6" stroke={color} strokeWidth={strokeWidth * 0.85} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+// Ícone de enviar (avião de papel) — usado no botão de enviar mensagem do chat.
+export function SendIcon({ size = 18, color = '#0B0B0F', strokeWidth = 1.8 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M20.5 3.5 L3 10.7 C2.5 10.9 2.5 11.6 3.1 11.8 L9.9 14.1 L12.2 20.9 C12.4 21.5 13.1 21.5 13.3 21 L20.5 3.5 Z"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
+      <Line x1="9.9" y1="14.1" x2="20.5" y2="3.5" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" />
     </Svg>
   );
 }

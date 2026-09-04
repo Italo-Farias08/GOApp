@@ -97,6 +97,10 @@ export type Corrida = {
   id: string;
   passageiroId: string;
   motoristaId?: string;
+  // Só vem preenchido na resposta de aceitar a corrida — é o único momento
+  // em que o motorista precisa saber o nome do passageiro (pra identificar
+  // quem é quem no chat).
+  passageiroNome?: string;
   origem: PontoCorrida;
   destino: PontoCorrida;
   tipoVeiculo: TipoVeiculo;
@@ -108,6 +112,16 @@ export type Corrida = {
   embarqueEm?: string;
   canceladoPor?: CanceladoPor;
   motivoCancelamento?: string;
+};
+
+// --- Chat da corrida ---
+
+export type MensagemChat = {
+  id: string;
+  corridaId: string;
+  remetenteId: string;
+  texto: string;
+  criadoEm: string;
 };
 
 // Tipos de navegação — adicionar novas telas aqui conforme o app crescer

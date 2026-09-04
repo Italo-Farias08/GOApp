@@ -179,6 +179,39 @@ async function finalizar(id) {
   return resultado.rows[0] || null;
 }
 
+// Converte uma linha de mensagens_corrida pro formato que o front espera.
+function paraMensagemPublica(linha) {
+  if (!linha) return null;
+  return {
+    id: linha.id,
+    corridaId: linha.corrida_id,
+    remetenteId: linha.remetente_id,
+    texto: linha.texto,
+    criadoEm: linha.criado_em,
+  };
+}
+
+// Salva uma mensagem do chat da corrida (passageiro <-> motorista).
+async function salvarMensagem(corridaId, remetenteId, texto) {
+  const resultado = await consultar(
+    `INSERT INTO mensagens_corrida (corrida_id, remetente_id, texto)
+     VALUES ($1, $2, $3)
+     RETURNING *`,
+    [corridaId, remetenteId, texto]
+  );
+  return resultado.rows[0];
+}
+
+// Histórico completo do chat de uma corrida, em ordem cronológica — usado
+// pra recuperar a conversa quando o app reabre no meio de uma corrida.
+async function listarMensagens(corridaId) {
+  const resultado = await consultar(
+    `SELECT * FROM mensagens_corrida WHERE corrida_id = $1 ORDER BY criado_em ASC`,
+    [corridaId]
+  );
+  return resultado.rows;
+}
+
 module.exports = {
   paraCorridaPublica,
   criar,
@@ -190,4 +223,7 @@ module.exports = {
   cancelarPeloPassageiro,
   cancelarPeloMotorista,
   finalizar,
+  paraMensagemPublica,
+  salvarMensagem,
+  listarMensagens,
 };

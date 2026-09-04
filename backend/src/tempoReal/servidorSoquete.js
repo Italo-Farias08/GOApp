@@ -121,6 +121,29 @@ function configurarSoquete(servidorHttp) {
       }
     });
 
+    // Chat da corrida — passageiro e motorista mandam mensagem pro mesmo
+    // evento, o servidor só decide pra quem repassar (o "outro lado" da
+    // corrida) e salva no banco pra sobreviver a reconexões.
+    socket.on('chat:mensagem', async ({ corridaId, texto }) => {
+      try {
+        const textoLimpo = typeof texto === 'string' ? texto.trim().slice(0, 1000) : '';
+        if (!corridaId || !textoLimpo) return;
+
+        const corrida = corridasAtivas.get(corridaId);
+        if (!corrida) return; // corrida não está mais ativa (ou nunca foi aceita)
+
+        const { passageiroId, motoristaId } = corrida;
+        if (socket.usuarioId !== passageiroId && socket.usuarioId !== motoristaId) return;
+
+        const linhaSalva = await corridaModelo.salvarMensagem(corridaId, socket.usuarioId, textoLimpo);
+        const mensagem = corridaModelo.paraMensagemPublica(linhaSalva);
+
+        io.to(`usuario:${passageiroId}`).to(`usuario:${motoristaId}`).emit('corrida:mensagem', mensagem);
+      } catch (erro) {
+        console.error('[chat] falha ao processar mensagem:', erro);
+      }
+    });
+
     socket.on('disconnect', () => {
       motoristasDisponiveis.delete(socket.usuarioId);
     });

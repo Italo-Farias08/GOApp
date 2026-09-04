@@ -13,5 +13,6 @@ roteador.post('/:id/accept', corridaControlador.aceitar);
 roteador.post('/:id/pickup', corridaControlador.embarcar);
 roteador.post('/:id/cancel', corridaControlador.cancelar);
 roteador.post('/:id/finish', corridaControlador.finalizar);
+roteador.get('/:id/messages', corridaControlador.listarMensagens);
 
 module.exports = roteador;

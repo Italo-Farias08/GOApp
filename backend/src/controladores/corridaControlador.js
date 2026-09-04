@@ -136,10 +136,42 @@ async function aceitar(req, res, next) {
       motorista: dadosMotorista,
     });
 
+    // O motorista precisa saber o nome do passageiro pra identificar quem é
+    // quem na tela de chat — busca à parte porque a linha da corrida só tem
+    // o ID.
+    const passageiro = await usuarioModelo.buscarPorId(corridaAceita.passageiro_id);
+
     return res.json({
-      corrida: corridaModelo.paraCorridaPublica(corridaAceita),
+      corrida: {
+        ...corridaModelo.paraCorridaPublica(corridaAceita),
+        passageiroNome: passageiro?.nome,
+      },
       motorista: dadosMotorista,
     });
+  } catch (erro) {
+    next(erro);
+  }
+}
+
+// GET /rides/:id/messages
+//
+// Histórico do chat da corrida. Só o passageiro ou o motorista atribuídos a
+// ela podem ler — qualquer outra pessoa recebe 403. Usado pelo app pra
+// recuperar as mensagens ao abrir/reconectar no meio de uma corrida (o
+// socket sozinho só entrega mensagens novas, não o que já foi trocado).
+async function listarMensagens(req, res, next) {
+  try {
+    const corrida = await corridaModelo.buscarPorId(req.params.id);
+    if (!corrida) throw new ErroHttp(404, 'Corrida não encontrada.');
+
+    const ehPassageiro = corrida.passageiro_id === req.usuarioId;
+    const ehMotorista = !!corrida.motorista_id && corrida.motorista_id === req.usuarioId;
+    if (!ehPassageiro && !ehMotorista) {
+      throw new ErroHttp(403, 'Você não pode ver o chat dessa corrida.');
+    }
+
+    const mensagens = await corridaModelo.listarMensagens(req.params.id);
+    return res.json(mensagens.map(corridaModelo.paraMensagemPublica));
   } catch (erro) {
     next(erro);
   }
@@ -293,4 +325,4 @@ async function finalizar(req, res, next) {
   }
 }
 
-module.exports = { criar, buscarAtiva, detalhar, aceitar, embarcar, cancelar, finalizar };
+module.exports = { criar, buscarAtiva, detalhar, aceitar, embarcar, cancelar, finalizar, listarMensagens };

@@ -6,16 +6,17 @@ import MapView, { Marker, Polyline, UrlTile } from 'react-native-maps';
 import type { Socket } from 'socket.io-client';
 import Button from '../components/Button';
 import CancelRideModal from '../components/CancelRideModal';
+import ChatModal from '../components/ChatModal';
 import MapPin from '../components/MapPin';
 import StatusToast, { StatusToastTone } from '../components/StatusToast';
-import { CarIcon, CheckIcon } from '../components/icons';
+import { CarIcon, ChatIcon, CheckIcon } from '../components/icons';
 import { useAuth } from '../context/AuthContext';
 import { useDriverLocationWatcher } from '../hooks/useDriverLocationWatcher';
 import { useRota } from '../hooks/useRota';
 import * as rideService from '../services/rideService';
 import { conectarSoquete } from '../services/socketService';
 import { colors, radius, spacing, typography } from '../theme/theme';
-import type { Corrida, RootStackParamList } from '../types';
+import type { Corrida, MensagemChat, RootStackParamList } from '../types';
 import { formatarDistancia, formatarDuracao, formatarMoeda } from '../utils/precoCorrida';
 import { STADIA_TILE_URL } from '../utils/mapaConfig';
 
@@ -58,6 +59,54 @@ export default function DriverHomeScreen() {
     avisoContadorRef.current += 1;
     setToastTom(tom);
     setToastMensagem(mensagem + '\u200B'.repeat(avisoContadorRef.current % 2));
+  }
+
+  // --- Chat com o passageiro ---
+  const [chatVisivel, setChatVisivel] = useState(false);
+  const [mensagensChat, setMensagensChat] = useState<MensagemChat[]>([]);
+  const [carregandoHistoricoChat, setCarregandoHistoricoChat] = useState(false);
+  const [mensagensNaoLidas, setMensagensNaoLidas] = useState(0);
+  const corridaAtivaIdRef = useRef<string | null>(null);
+  const userIdRef = useRef<string | undefined>(user?.id);
+  useEffect(() => {
+    userIdRef.current = user?.id;
+  }, [user?.id]);
+  useEffect(() => {
+    corridaAtivaIdRef.current = corridaAtiva?.id ?? null;
+  }, [corridaAtiva?.id]);
+
+  // Busca o histórico assim que a corrida é aceita — sem isso o chat abriria
+  // vazio de novo se o motorista fechar e reabrir a conversa.
+  useEffect(() => {
+    if (!corridaAtiva) {
+      setMensagensChat([]);
+      setMensagensNaoLidas(0);
+      return;
+    }
+    let ativo = true;
+    setCarregandoHistoricoChat(true);
+    rideService
+      .listarMensagens(corridaAtiva.id)
+      .then((mensagens) => {
+        if (ativo) setMensagensChat(mensagens);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (ativo) setCarregandoHistoricoChat(false);
+      });
+    return () => {
+      ativo = false;
+    };
+  }, [corridaAtiva?.id]);
+
+  function abrirChat() {
+    setMensagensNaoLidas(0);
+    setChatVisivel(true);
+  }
+
+  function enviarMensagemChat(texto: string) {
+    if (!corridaAtiva) return;
+    soqueteRef.current?.emit('chat:mensagem', { corridaId: corridaAtiva.id, texto });
   }
 
   // --- "Nova corrida" nasce com um pulinho (scale) em vez de simplesmente
@@ -105,6 +154,19 @@ export default function DriverHomeScreen() {
         setCorridaRecebida((atual) => atual ?? corrida);
       });
 
+      // Mensagem nova do chat — só aceita se for da corrida ativa. Se o chat
+      // estiver fechado no momento, conta como "não lida".
+      soquete.on('corrida:mensagem', (mensagem: MensagemChat) => {
+        if (!ativo || mensagem.corridaId !== corridaAtivaIdRef.current) return;
+        setMensagensChat((atual) => [...atual, mensagem]);
+        setChatVisivel((visivelAtual) => {
+          if (!visivelAtual && mensagem.remetenteId !== userIdRef.current) {
+            setMensagensNaoLidas((n) => n + 1);
+          }
+          return visivelAtual;
+        });
+      });
+
       soquete.on('corrida:indisponivel', ({ corridaId }: { corridaId: string }) => {
         if (!ativo) return;
         setCorridaRecebida((atual) => (atual?.id === corridaId ? null : atual));
@@ -130,6 +192,7 @@ export default function DriverHomeScreen() {
     return () => {
       ativo = false;
       soqueteRef.current?.off('corrida:nova');
+      soqueteRef.current?.off('corrida:mensagem');
       soqueteRef.current?.off('corrida:indisponivel');
       soqueteRef.current?.off('corrida:cancelada');
     };
@@ -453,6 +516,18 @@ export default function DriverHomeScreen() {
             disabled={cancelando}
             style={styles.painelBotao}
           />
+          <Pressable
+            onPress={abrirChat}
+            style={({ pressed }) => [styles.chatBotao, pressed && styles.pressedFeedback]}
+          >
+            <ChatIcon size={18} color={colors.background} />
+            <Text style={styles.chatBotaoTexto}>Conversar com o passageiro</Text>
+            {mensagensNaoLidas > 0 && (
+              <View style={styles.chatBadge}>
+                <Text style={styles.chatBadgeTexto}>{mensagensNaoLidas > 9 ? '9+' : mensagensNaoLidas}</Text>
+              </View>
+            )}
+          </Pressable>
           <Button
             label="Cancelar corrida"
             variant="ghost"
@@ -484,6 +559,18 @@ export default function DriverHomeScreen() {
               {formatarDuracao(rota.duracaoMin)}
             </Text>
           )}
+          <Pressable
+            onPress={abrirChat}
+            style={({ pressed }) => [styles.chatBotao, pressed && styles.pressedFeedback]}
+          >
+            <ChatIcon size={18} color={colors.background} />
+            <Text style={styles.chatBotaoTexto}>Conversar com o passageiro</Text>
+            {mensagensNaoLidas > 0 && (
+              <View style={styles.chatBadge}>
+                <Text style={styles.chatBadgeTexto}>{mensagensNaoLidas > 9 ? '9+' : mensagensNaoLidas}</Text>
+              </View>
+            )}
+          </Pressable>
           <Button
             label="Finalizar corrida"
             onPress={finalizarCorridaAtiva}
@@ -503,6 +590,16 @@ export default function DriverHomeScreen() {
         carregando={cancelando}
         onConfirmar={confirmarCancelamentoAtiva}
         onFechar={() => setCancelamentoVisivel(false)}
+      />
+
+      <ChatModal
+        visible={chatVisivel}
+        outroNome={corridaAtiva?.passageiroNome ?? 'Passageiro'}
+        meuId={user?.id ?? ''}
+        mensagens={mensagensChat}
+        carregandoHistorico={carregandoHistoricoChat}
+        onEnviar={enviarMensagemChat}
+        onFechar={() => setChatVisivel(false)}
       />
     </View>
   );
@@ -586,6 +683,36 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   painelBotao: { marginTop: spacing.xs },
+  chatBotao: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 44,
+    borderRadius: radius.md,
+    backgroundColor: colors.primary,
+    marginTop: spacing.sm,
+  },
+  chatBotaoTexto: {
+    ...typography.bodyBold,
+    color: colors.background,
+    marginLeft: spacing.sm,
+  },
+  chatBadge: {
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: colors.danger,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 5,
+    marginLeft: spacing.sm,
+  },
+  chatBadgeTexto: {
+    ...typography.caption,
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.background,
+  },
   cancelarCorridaBotao: { marginTop: spacing.xs },
   corridaAtivaTopo: {
     flexDirection: 'row',

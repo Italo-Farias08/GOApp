@@ -1,6 +1,6 @@
 import { api } from './api';
 import type { TipoVeiculo } from '../utils/precoCorrida';
-import type { Corrida, MotoristaInfo, PontoCorrida } from '../types';
+import type { Corrida, MensagemChat, MotoristaInfo, PontoCorrida } from '../types';
 
 type CriarCorridaPayload = {
   origem: PontoCorrida;
@@ -50,5 +50,13 @@ export async function cancelarCorrida(id: string, motivo?: string): Promise<Corr
 
 export async function finalizarCorrida(id: string): Promise<Corrida> {
   const { data } = await api.post<Corrida>(`/rides/${id}/finish`);
+  return data;
+}
+
+// Histórico do chat da corrida — usado pra carregar as mensagens já
+// trocadas ao abrir a tela de conversa (o socket sozinho só entrega
+// mensagens novas a partir de quando conecta).
+export async function listarMensagens(id: string): Promise<MensagemChat[]> {
+  const { data } = await api.get<MensagemChat[]>(`/rides/${id}/messages`);
   return data;
 }
