@@ -84,10 +84,12 @@ async function aceitar(req, res, next) {
       id: motorista.id,
       nome: motorista.nome,
       telefone: motorista.telefone || undefined,
+      avatarUrl: motorista.avatar_url || undefined,
       veiculoTipo: solicitacao.veiculo_tipo,
       veiculoModelo: solicitacao.veiculo_modelo,
       veiculoCor: solicitacao.veiculo_cor,
       veiculoPlaca: solicitacao.veiculo_placa,
+      veiculoAno: solicitacao.veiculo_ano || undefined,
     };
 
     soquete.marcarMotoristaOcupado(req.usuarioId);

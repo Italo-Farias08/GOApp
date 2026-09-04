@@ -675,7 +675,11 @@ export default function HomeScreen() {
       >
         <View onLayout={medirConteudo}>
           <View style={styles.cabecalhoArrastavel}>
-            {expandido && <Text style={styles.bottomTitle}>Para onde vamos?</Text>}
+            {expandido && (
+              <Text style={styles.bottomTitle}>
+                {corridaConfirmada ? 'Sua corrida' : 'Para onde vamos?'}
+              </Text>
+            )}
 
             <View
               style={styles.grupoBase}
@@ -684,36 +688,44 @@ export default function HomeScreen() {
               <View style={styles.handleArea} {...panResponder.panHandlers}>
                 <View style={styles.sheetHandle} />
               </View>
-              <View style={[styles.destinationRow, inputFocado && styles.destinationRowFocado]}>
-                <SearchIcon size={18} color={colors.textMuted} />
-                <TextInput
-                  style={styles.destinationInput}
-                  placeholder="Digite o endereço de destino"
-                  placeholderTextColor={colors.textMuted}
-                  value={destination}
-                  onChangeText={(texto) => {
-                    setDestination(texto);
-                    if (destinoSelecionado) setDestinoSelecionado(null);
-                  }}
-                  onFocus={() => {
-                    irParaDegrau(true);
-                    setInputFocado(true);
-                  }}
-                  onBlur={() => setInputFocado(false)}
-                  returnKeyType="done"
-                  onSubmitEditing={() => Keyboard.dismiss()}
-                />
-                {buscando && <ActivityIndicator size="small" color={colors.textMuted} />}
-                {!!destination && !buscando && (
-                  <Pressable
-                    onPress={limparDestino}
-                    hitSlop={10}
-                    style={({ pressed }) => [styles.clearButton, pressed && styles.pressedFeedback]}
-                  >
-                    <CloseIcon size={14} color={colors.textSecondary} />
-                  </Pressable>
-                )}
-              </View>
+
+              {/* Regra: com a corrida já solicitada (procurando OU aceita),
+                  esconde a busca de endereço — o passageiro não pode nem
+                  deveria pesquisar/trocar destino ou disparar outra corrida
+                  por cima da atual. Só volta a aparecer depois que a corrida
+                  atual for cancelada ou finalizada (resetarCorrida). */}
+              {!corridaConfirmada && (
+                <View style={[styles.destinationRow, inputFocado && styles.destinationRowFocado]}>
+                  <SearchIcon size={18} color={colors.textMuted} />
+                  <TextInput
+                    style={styles.destinationInput}
+                    placeholder="Digite o endereço de destino"
+                    placeholderTextColor={colors.textMuted}
+                    value={destination}
+                    onChangeText={(texto) => {
+                      setDestination(texto);
+                      if (destinoSelecionado) setDestinoSelecionado(null);
+                    }}
+                    onFocus={() => {
+                      irParaDegrau(true);
+                      setInputFocado(true);
+                    }}
+                    onBlur={() => setInputFocado(false)}
+                    returnKeyType="done"
+                    onSubmitEditing={() => Keyboard.dismiss()}
+                  />
+                  {buscando && <ActivityIndicator size="small" color={colors.textMuted} />}
+                  {!!destination && !buscando && (
+                    <Pressable
+                      onPress={limparDestino}
+                      hitSlop={10}
+                      style={({ pressed }) => [styles.clearButton, pressed && styles.pressedFeedback]}
+                    >
+                      <CloseIcon size={14} color={colors.textSecondary} />
+                    </Pressable>
+                  )}
+                </View>
+              )}
             </View>
 
             {expandido && !destinoSelecionado && !corridaConfirmada && sugestoes.length === 0 && (
@@ -732,20 +744,20 @@ export default function HomeScreen() {
             scrollEnabled={expandido}
             bounces={false}
           >
-            {!!erroBusca && (
+            {!corridaConfirmada && !!erroBusca && (
               <View style={styles.errorHintRow}>
                 <AlertIcon size={14} color={colors.danger} />
                 <Text style={styles.errorHint}>{erroBusca}</Text>
               </View>
             )}
-            {!!erroRota && (
+            {!corridaConfirmada && !!erroRota && (
               <View style={styles.errorHintRow}>
                 <AlertIcon size={14} color={colors.danger} />
                 <Text style={styles.errorHint}>{erroRota}</Text>
               </View>
             )}
 
-            {calculandoRota && (
+            {!corridaConfirmada && calculandoRota && (
               <Text style={styles.rotaInfo}>Calculando rota...</Text>
             )}
             {!calculandoRota && rota && !corridaConfirmada && (
@@ -825,11 +837,18 @@ export default function HomeScreen() {
                   </Text>
                 </View>
                 <View style={styles.motoristaLinha}>
-                  <View style={styles.motoristaAvatar}>
-                    <Text style={styles.motoristaAvatarLetra}>
-                      {motoristaAtribuido.nome.trim()[0]?.toUpperCase() ?? '?'}
-                    </Text>
-                  </View>
+                  {motoristaAtribuido.avatarUrl ? (
+                    <Image
+                      source={{ uri: motoristaAtribuido.avatarUrl }}
+                      style={styles.motoristaAvatarFoto}
+                    />
+                  ) : (
+                    <View style={styles.motoristaAvatar}>
+                      <Text style={styles.motoristaAvatarLetra}>
+                        {motoristaAtribuido.nome.trim()[0]?.toUpperCase() ?? '?'}
+                      </Text>
+                    </View>
+                  )}
                   <View style={styles.motoristaTextos}>
                     <Text style={styles.motoristaNome} numberOfLines={1}>{motoristaAtribuido.nome}</Text>
                     <View style={styles.motoristaVeiculoRow}>
@@ -839,7 +858,13 @@ export default function HomeScreen() {
                         <CarIcon size={14} color={colors.textSecondary} />
                       )}
                       <Text style={styles.motoristaVeiculoTexto} numberOfLines={1}>
-                        {[motoristaAtribuido.veiculoModelo, motoristaAtribuido.veiculoCor].filter(Boolean).join(' · ')}
+                        {[
+                          motoristaAtribuido.veiculoModelo,
+                          motoristaAtribuido.veiculoAno,
+                          motoristaAtribuido.veiculoCor,
+                        ]
+                          .filter(Boolean)
+                          .join(' · ')}
                         {motoristaAtribuido.veiculoPlaca ? ` · ${motoristaAtribuido.veiculoPlaca}` : ''}
                       </Text>
                     </View>
@@ -857,7 +882,7 @@ export default function HomeScreen() {
               </Animated.View>
             )}
 
-            {!destinoSelecionado && sugestoes.length > 0 && (
+            {!corridaConfirmada && !destinoSelecionado && sugestoes.length > 0 && (
               <View style={styles.sugestoesLista}>
                 {sugestoes.map((item) => (
                   <Pressable
@@ -1253,6 +1278,13 @@ const styles = StyleSheet.create({
   motoristaAvatarLetra: {
     ...typography.bodyBold,
     color: colors.background,
+  },
+  motoristaAvatarFoto: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    marginRight: spacing.md,
+    backgroundColor: colors.surfaceAlt,
   },
   motoristaTextos: { flex: 1 },
   motoristaNome: {

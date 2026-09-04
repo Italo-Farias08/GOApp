@@ -77,10 +77,12 @@ export type MotoristaInfo = {
   id: string;
   nome: string;
   telefone?: string;
+  avatarUrl?: string;
   veiculoTipo?: TipoVeiculo;
   veiculoModelo?: string;
   veiculoCor?: string;
   veiculoPlaca?: string;
+  veiculoAno?: string;
 };
 
 // 'aceita'       -> motorista aceitou e está indo até o passageiro
