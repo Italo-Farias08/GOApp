@@ -394,6 +394,60 @@ export default function HomeScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Tira uma mensagem legível de um erro de chamada à API (usa a mensagem
+  // que o backend manda em `message`, com um texto genérico de fallback pra
+  // quando o erro é de rede/timeout e não chegou a ter resposta).
+  function extrairMensagemErro(erro: unknown, fallback: string): string {
+    const resposta = (erro as { response?: { data?: { message?: string } } })?.response;
+    return resposta?.data?.message || fallback;
+  }
+
+  // Ao abrir a Home, verifica se o passageiro já tem uma corrida em aberto
+  // (procurando, aceita ou em andamento) — por exemplo se o app fechou ou
+  // caiu a conexão no meio de uma corrida. Em vez de deixar a tela "zerada"
+  // (o que faz qualquer novo pedido falhar com 409 "corrida em andamento"
+  // sem explicação nenhuma), RETOMA o estado exatamente de onde parou.
+  useEffect(() => {
+    let ativo = true;
+    (async () => {
+      try {
+        const ativa = await rideService.buscarCorridaAtiva();
+        if (!ativo || !ativa) return;
+
+        const { corrida, motorista } = ativa;
+        setCorridaId(corrida.id);
+        setCorridaConfirmada({
+          tipo: corrida.tipoVeiculo,
+          preco: corrida.preco,
+          distanciaKm: corrida.distanciaKm,
+          duracaoMin: corrida.duracaoMin,
+          multiplicadorHorario: 1,
+          labelHorario: null,
+        });
+        setEmbarcado(corrida.status === 'em_andamento');
+        if (motorista) setMotoristaAtribuido(motorista);
+
+        if (corrida.destino) {
+          const destino: EnderecoSugerido = {
+            id: corrida.id,
+            descricao: corrida.destino.endereco || 'Destino',
+            latitude: corrida.destino.latitude,
+            longitude: corrida.destino.longitude,
+          };
+          setDestinoSelecionado(destino);
+          setDestination(destino.descricao);
+          if (coords) calcularRota(coords, destino);
+        }
+      } catch {
+        // Sem corrida ativa (ou falha ao consultar) — segue normal, tela em branco.
+      }
+    })();
+    return () => {
+      ativo = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   function resetarCorrida() {
     setCorridaId(null);
     setCorridaConfirmada(null);
@@ -524,8 +578,17 @@ export default function HomeScreen() {
         duracaoMin: escolhida.duracaoMin,
       });
       setCorridaId(corrida.id);
-    } catch {
+    } catch (erro) {
+      // Antes esse catch resetava a tela em silêncio — dava a impressão de
+      // que a corrida tinha sido "cancelada sozinha" quase na hora, quando
+      // na real a criação nem chegou a dar certo (ex: já existia uma
+      // corrida em aberto, sem internet, backend fora do ar). Agora sempre
+      // mostra o motivo real pro passageiro.
       setCorridaConfirmada(null);
+      avisar(
+        extrairMensagemErro(erro, 'Não foi possível pedir a corrida. Tente novamente.'),
+        'danger'
+      );
     }
   }
 

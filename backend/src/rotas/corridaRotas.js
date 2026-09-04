@@ -7,6 +7,7 @@ const roteador = express.Router();
 roteador.use(autenticacaoIntermediario);
 
 roteador.post('/', corridaControlador.criar);
+roteador.get('/', corridaControlador.buscarAtiva);
 roteador.get('/:id', corridaControlador.detalhar);
 roteador.post('/:id/accept', corridaControlador.aceitar);
 roteador.post('/:id/pickup', corridaControlador.embarcar);

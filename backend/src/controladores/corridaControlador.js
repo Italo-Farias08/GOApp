@@ -45,6 +45,42 @@ async function criar(req, res, next) {
   }
 }
 
+// GET /rides — corrida ativa do passageiro logado (procurando/aceita/em
+// andamento), se existir. Usado pelo app pra RECUPERAR o estado da tela ao
+// abrir/reconectar, em vez de simplesmente falhar com 409 toda vez que o
+// passageiro tenta pedir uma corrida nova enquanto já tem uma em aberto.
+async function buscarAtiva(req, res, next) {
+  try {
+    const corrida = await corridaModelo.buscarAtivaPorPassageiro(req.usuarioId);
+    if (!corrida) {
+      return res.json(null);
+    }
+
+    let motorista;
+    if (corrida.motorista_id) {
+      const usuarioMotorista = await usuarioModelo.buscarPorId(corrida.motorista_id);
+      if (usuarioMotorista) {
+        const solicitacao = await motoristaModelo.buscarUltimaSolicitacaoPorUsuario(corrida.motorista_id);
+        motorista = {
+          id: usuarioMotorista.id,
+          nome: usuarioMotorista.nome,
+          telefone: usuarioMotorista.telefone || undefined,
+          avatarUrl: usuarioMotorista.avatar_url || undefined,
+          veiculoTipo: solicitacao?.veiculo_tipo,
+          veiculoModelo: solicitacao?.veiculo_modelo,
+          veiculoCor: solicitacao?.veiculo_cor,
+          veiculoPlaca: solicitacao?.veiculo_placa,
+          veiculoAno: solicitacao?.veiculo_ano || undefined,
+        };
+      }
+    }
+
+    return res.json({ corrida: corridaModelo.paraCorridaPublica(corrida), motorista });
+  } catch (erro) {
+    next(erro);
+  }
+}
+
 // GET /rides/:id
 async function detalhar(req, res, next) {
   try {
@@ -257,4 +293,4 @@ async function finalizar(req, res, next) {
   }
 }
 
-module.exports = { criar, detalhar, aceitar, embarcar, cancelar, finalizar };
+module.exports = { criar, buscarAtiva, detalhar, aceitar, embarcar, cancelar, finalizar };

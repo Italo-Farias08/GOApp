@@ -21,6 +21,14 @@ export async function buscarCorrida(id: string): Promise<Corrida> {
   return data;
 }
 
+// Corrida ativa do passageiro logado (procurando/aceita/em andamento), se
+// existir. Usado ao abrir a Home pra RETOMAR o estado da tela em vez de só
+// falhar com 409 quando já existe uma corrida em aberto.
+export async function buscarCorridaAtiva(): Promise<{ corrida: Corrida; motorista?: MotoristaInfo } | null> {
+  const { data } = await api.get<{ corrida: Corrida; motorista?: MotoristaInfo } | null>('/rides');
+  return data;
+}
+
 export async function aceitarCorrida(
   id: string
 ): Promise<{ corrida: Corrida; motorista: MotoristaInfo }> {
