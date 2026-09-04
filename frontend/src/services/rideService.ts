@@ -28,6 +28,13 @@ export async function aceitarCorrida(
   return data;
 }
 
+// Motorista confirma que pegou o passageiro no ponto de embarque — a partir
+// daqui a corrida vira "em_andamento" e o mapa passa a guiar até o destino.
+export async function embarcarCorrida(id: string): Promise<Corrida> {
+  const { data } = await api.post<Corrida>(`/rides/${id}/pickup`);
+  return data;
+}
+
 export async function cancelarCorrida(id: string, motivo?: string): Promise<Corrida> {
   const { data } = await api.post<Corrida>(`/rides/${id}/cancel`, { motivo });
   return data;

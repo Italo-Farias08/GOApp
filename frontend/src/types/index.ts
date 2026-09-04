@@ -83,7 +83,9 @@ export type MotoristaInfo = {
   veiculoPlaca?: string;
 };
 
-export type StatusCorrida = 'procurando' | 'aceita' | 'finalizada' | 'cancelada';
+// 'aceita'       -> motorista aceitou e está indo até o passageiro
+// 'em_andamento' -> motorista confirmou o embarque, indo até o destino final
+export type StatusCorrida = 'procurando' | 'aceita' | 'em_andamento' | 'finalizada' | 'cancelada';
 
 // Quem foi responsável pelo cancelamento — usado pra escolher a mensagem
 // certa na tela (ex: "você cancelou" vs "o motorista cancelou").
@@ -101,6 +103,7 @@ export type Corrida = {
   duracaoMin: number;
   status: StatusCorrida;
   criadoEm: string;
+  embarqueEm?: string;
   canceladoPor?: CanceladoPor;
   motivoCancelamento?: string;
 };

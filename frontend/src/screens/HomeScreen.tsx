@@ -146,6 +146,9 @@ export default function HomeScreen() {
   const [corridaId, setCorridaId] = useState<string | null>(null);
   const [motoristaAtribuido, setMotoristaAtribuido] = useState<MotoristaInfo | null>(null);
   const [localizacaoMotorista, setLocalizacaoMotorista] = useState<{ latitude: number; longitude: number } | null>(null);
+  // true depois que o motorista confirma que pegou o passageiro — troca o
+  // texto/estado da tela de "a caminho" pra "indo ao destino".
+  const [embarcado, setEmbarcado] = useState(false);
   const [cancelandoCorrida, setCancelandoCorrida] = useState(false);
   const [cancelamentoVisivel, setCancelamentoVisivel] = useState(false);
   const [toastMensagem, setToastMensagem] = useState<string | null>(null);
@@ -343,6 +346,14 @@ export default function HomeScreen() {
         setLocalizacaoMotorista({ latitude, longitude });
       });
 
+      // Motorista confirmou que pegou o passageiro — a partir daqui a
+      // corrida está "em_andamento", indo pro destino final.
+      soquete.on('corrida:embarque', ({ corridaId: id }: { corridaId: string }) => {
+        if (!ativo || id !== corridaIdRef.current) return;
+        setEmbarcado(true);
+        avisar('Motorista confirmou o embarque. A caminho do seu destino!', 'success');
+      });
+
       // Motorista cancelou depois de aceitar, mas a corrida ainda tem chance
       // com outro motorista — não reseta a tela, só volta pro estado "procurando".
       soquete.on('corrida:motorista_cancelou', ({ corridaId: id }: { corridaId: string }) => {
@@ -375,6 +386,7 @@ export default function HomeScreen() {
       ativo = false;
       soquete?.off('corrida:aceita');
       soquete?.off('corrida:localizacao_motorista');
+      soquete?.off('corrida:embarque');
       soquete?.off('corrida:motorista_cancelou');
       soquete?.off('corrida:finalizada');
       soquete?.off('corrida:cancelada');
@@ -387,6 +399,7 @@ export default function HomeScreen() {
     setCorridaConfirmada(null);
     setMotoristaAtribuido(null);
     setLocalizacaoMotorista(null);
+    setEmbarcado(false);
     limparRota();
     setDestinoSelecionado(null);
     setDestination('');
@@ -495,6 +508,7 @@ export default function HomeScreen() {
     setCorridaConfirmada(escolhida);
     setMotoristaAtribuido(null);
     setLocalizacaoMotorista(null);
+    setEmbarcado(false);
 
     try {
       const corrida = await rideService.criarCorrida({
@@ -805,7 +819,9 @@ export default function HomeScreen() {
                     <CheckIcon size={11} color={colors.background} />
                   </View>
                   <Text style={styles.motoristaAceitaTexto}>
-                    Corrida aceita · {corridaConfirmada?.tipo === 'moto' ? 'moto a caminho' : 'carro a caminho'}
+                    {embarcado
+                      ? 'Embarque confirmado · a caminho do destino'
+                      : `Corrida aceita · ${corridaConfirmada?.tipo === 'moto' ? 'moto a caminho' : 'carro a caminho'}`}
                   </Text>
                 </View>
                 <View style={styles.motoristaLinha}>

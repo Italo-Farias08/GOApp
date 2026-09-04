@@ -27,6 +27,7 @@ function paraCorridaPublica(linha) {
     duracaoMin: Number(linha.duracao_min),
     status: linha.status,
     criadoEm: linha.criado_em,
+    embarqueEm: linha.embarque_em || undefined,
     canceladoPor: linha.cancelado_por || undefined,
     motivoCancelamento: linha.motivo_cancelamento || undefined,
   };
@@ -65,12 +66,25 @@ async function buscarPorId(id) {
 async function buscarAtivaPorPassageiro(passageiroId) {
   const resultado = await consultar(
     `SELECT * FROM corridas
-     WHERE passageiro_id = $1 AND status IN ('procurando', 'aceita')
+     WHERE passageiro_id = $1 AND status IN ('procurando', 'aceita', 'em_andamento')
      ORDER BY criado_em DESC
      LIMIT 1`,
     [passageiroId]
   );
   return resultado.rows[0] || null;
+}
+
+// Todas as corridas ainda "procurando" motorista de um tipo de veículo —
+// usado pra reoferecer corridas pendentes assim que um motorista fica online
+// (sem isso, só quem já estava online no instante da criação recebia).
+async function buscarProcurandoPorTipo(tipoVeiculo) {
+  const resultado = await consultar(
+    `SELECT * FROM corridas
+     WHERE status = 'procurando' AND tipo_veiculo = $1
+     ORDER BY criado_em ASC`,
+    [tipoVeiculo]
+  );
+  return resultado.rows;
 }
 
 // Só deixa aceitar se ainda estiver "procurando" — o próprio WHERE resolve a
@@ -89,16 +103,30 @@ async function aceitar(id, motoristaId) {
   return resultado.rows[0] || null;
 }
 
+// Motorista confirma que pegou o passageiro — só é aceito se a corrida
+// estiver "aceita" e for desse mesmo motorista. Depois disso o mapa passa a
+// guiar até o destino final, não mais até o ponto de embarque.
+async function embarcar(id, motoristaId) {
+  const resultado = await consultar(
+    `UPDATE corridas SET
+       status = 'em_andamento',
+       embarque_em = NOW()
+     WHERE id = $1 AND motorista_id = $2 AND status = 'aceita'
+     RETURNING *`,
+    [id, motoristaId]
+  );
+  return resultado.rows[0] || null;
+}
+
 // Cancelamento pelo PASSAGEIRO — regra: só enquanto a corrida ainda está
-// "procurando" ou "aceita" (motorista a caminho). Depois de finalizada ou já
-// cancelada, o WHERE simplesmente não bate e retorna null.
+// "procurando", "aceita" (motorista a caminho) ou "em_andamento" (já embarcou).
 async function cancelarPeloPassageiro(id, motivo) {
   const resultado = await consultar(
     `UPDATE corridas SET
        status = 'cancelada',
        cancelado_por = 'passageiro',
        motivo_cancelamento = $2
-     WHERE id = $1 AND status IN ('procurando', 'aceita')
+     WHERE id = $1 AND status IN ('procurando', 'aceita', 'em_andamento')
      RETURNING *`,
     [id, motivo || null]
   );
@@ -106,12 +134,15 @@ async function cancelarPeloPassageiro(id, motivo) {
 }
 
 // Cancelamento pelo MOTORISTA — regra: só pode cancelar uma corrida que ele
-// mesmo aceitou (status 'aceita'). Em vez de matar o pedido na hora, a
-// corrida VOLTA pro radar de outros motoristas (status volta a 'procurando',
-// perde o motorista atual) — o motorista que cancelou entra numa lista de
-// ignorados pra não receber a mesma corrida de novo. Só depois de
-// LIMITE_CANCELAMENTOS_MOTORISTA motoristas diferentes desistirem é que a
-// corrida é cancelada de vez, com cancelado_por = 'sistema'.
+// mesmo aceitou e AINDA NÃO embarcou (status 'aceita'; depois de
+// 'em_andamento' o passageiro já está no veículo, então cancelar aqui deixa
+// de fazer sentido — nesse caso ele deve finalizar a corrida normalmente).
+// Em vez de matar o pedido na hora, a corrida VOLTA pro radar de outros
+// motoristas (status volta a 'procurando'), perde o motorista atual, e o
+// motorista que cancelou entra numa lista de ignorados pra não receber a
+// mesma corrida de novo. Só depois de LIMITE_CANCELAMENTOS_MOTORISTA
+// motoristas diferentes desistirem é que a corrida é cancelada de vez, com
+// cancelado_por = 'sistema'.
 async function cancelarPeloMotorista(id, motoristaId, motivo) {
   const resultado = await consultar(
     `UPDATE corridas SET
@@ -141,7 +172,7 @@ async function cancelarPeloMotorista(id, motoristaId, motivo) {
 async function finalizar(id) {
   const resultado = await consultar(
     `UPDATE corridas SET status = 'finalizada', finalizada_em = NOW()
-     WHERE id = $1 AND status = 'aceita'
+     WHERE id = $1 AND status = 'em_andamento'
      RETURNING *`,
     [id]
   );
@@ -153,7 +184,9 @@ module.exports = {
   criar,
   buscarPorId,
   buscarAtivaPorPassageiro,
+  buscarProcurandoPorTipo,
   aceitar,
+  embarcar,
   cancelarPeloPassageiro,
   cancelarPeloMotorista,
   finalizar,

@@ -36,7 +36,11 @@ export default function DriverHomeScreen() {
   const [disponivel, setDisponivel] = useState(false);
   const [corridaRecebida, setCorridaRecebida] = useState<Corrida | null>(null);
   const [corridaAtiva, setCorridaAtiva] = useState<Corrida | null>(null);
+  // Etapa dentro da corrida ativa: false = ainda indo buscar o passageiro no
+  // ponto de embarque; true = já confirmou o embarque, indo pro destino final.
+  const [embarcado, setEmbarcado] = useState(false);
   const [aceitando, setAceitando] = useState(false);
+  const [embarcando, setEmbarcando] = useState(false);
   const [finalizando, setFinalizando] = useState(false);
   const [cancelando, setCancelando] = useState(false);
   const [cancelamentoVisivel, setCancelamentoVisivel] = useState(false);
@@ -158,20 +162,28 @@ export default function DriverHomeScreen() {
     })();
   }, [corridaAtiva, coords]);
 
-  // Calcula a rota até o passageiro assim que a corrida é aceita, e limpa
-  // quando ela termina.
+  // Sempre que a corrida ativa termina (finalizada, cancelada ou nunca
+  // chegou a existir), a etapa de embarque volta pro início.
+  useEffect(() => {
+    if (!corridaAtiva) setEmbarcado(false);
+  }, [corridaAtiva]);
+
+  // Calcula a rota até o próximo ponto: enquanto não embarcou, até o
+  // passageiro (origem); depois de confirmar o embarque, até o destino
+  // final. Recalcula sempre que a etapa muda.
   useEffect(() => {
     if (corridaAtiva && coords) {
-      calcularRota(coords, corridaAtiva.origem);
+      const alvo = embarcado ? corridaAtiva.destino : corridaAtiva.origem;
+      calcularRota(coords, alvo);
       mapRef.current?.fitToCoordinates(
-        [corridaAtiva.origem, corridaAtiva.destino],
+        [coords, alvo],
         { edgePadding: { top: 100, right: 60, bottom: 280, left: 60 }, animated: true }
       );
     } else {
       limparRota();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [corridaAtiva?.id]);
+  }, [corridaAtiva?.id, embarcado]);
 
   async function aceitarCorridaRecebida() {
     if (!corridaRecebida) return;
@@ -180,6 +192,7 @@ export default function DriverHomeScreen() {
     try {
       const { corrida } = await rideService.aceitarCorrida(corridaRecebida.id);
       setCorridaAtiva(corrida);
+      setEmbarcado(false);
       setCorridaRecebida(null);
       setDisponivel(false);
       avisar('Corrida aceita! Siga até o passageiro.', 'success');
@@ -193,6 +206,24 @@ export default function DriverHomeScreen() {
 
   function recusarCorridaRecebida() {
     setCorridaRecebida(null);
+  }
+
+  // Motorista confirma que pegou o passageiro no ponto de embarque — a
+  // partir daqui o mapa passa a guiar até o destino final.
+  async function confirmarEmbarque() {
+    if (!corridaAtiva) return;
+    setEmbarcando(true);
+    setErro(null);
+    try {
+      const corridaAtualizada = await rideService.embarcarCorrida(corridaAtiva.id);
+      setCorridaAtiva(corridaAtualizada);
+      setEmbarcado(true);
+      avisar('Embarque confirmado! Siga até o destino.', 'success');
+    } catch (err: any) {
+      setErro(err?.response?.data?.message ?? 'Não foi possível confirmar o embarque agora.');
+    } finally {
+      setEmbarcando(false);
+    }
   }
 
   async function finalizarCorridaAtiva() {
@@ -209,12 +240,15 @@ export default function DriverHomeScreen() {
     }
   }
 
-  // Regra: o motorista só pode cancelar uma corrida que ele mesmo aceitou
-  // (corridaAtiva já garante isso). Cancelar aqui NÃO finaliza o pedido do
-  // passageiro — o backend devolve a corrida pro radar de outros motoristas,
-  // a não ser que já tenha estourado o limite de cancelamentos.
+  // Regra: o motorista só pode cancelar uma corrida que ele mesmo aceitou e
+  // AINDA ANTES de confirmar o embarque (corridaAtiva && !embarcado já
+  // garante isso — depois do embarque o passageiro já está no veículo, então
+  // a opção de cancelar nem aparece, só finalizar). Cancelar aqui NÃO
+  // finaliza o pedido do passageiro — o backend devolve a corrida pro radar
+  // de outros motoristas, a não ser que já tenha estourado o limite de
+  // cancelamentos.
   function abrirCancelamentoAtiva() {
-    if (!corridaAtiva) return;
+    if (!corridaAtiva || embarcado) return;
     setCancelamentoVisivel(true);
   }
 
@@ -248,6 +282,10 @@ export default function DriverHomeScreen() {
     );
   }
 
+  // Ponto que o mapa deve destacar: enquanto não embarcou, o passageiro;
+  // depois do embarque, o destino final.
+  const alvoAtual = corridaAtiva ? (embarcado ? corridaAtiva.destino : corridaAtiva.origem) : null;
+
   return (
     <View style={styles.container}>
       <MapView ref={mapRef} style={styles.map} showsUserLocation showsMyLocationButton={false}>
@@ -261,9 +299,13 @@ export default function DriverHomeScreen() {
           </Marker>
         )}
 
-        {corridaAtiva && (
+        {corridaAtiva && alvoAtual && (
           <>
-            <Marker coordinate={corridaAtiva.origem} anchor={{ x: 0.5, y: 0.85 }} title="Passageiro">
+            <Marker
+              coordinate={alvoAtual}
+              anchor={{ x: 0.5, y: 0.85 }}
+              title={embarcado ? 'Destino' : 'Passageiro'}
+            >
               <MapPin variant="destino" />
             </Marker>
             {rota && (
@@ -383,7 +425,7 @@ export default function DriverHomeScreen() {
         </Animated.View>
       )}
 
-      {corridaAtiva && (
+      {corridaAtiva && !embarcado && (
         <View style={styles.painelInferior}>
           <View style={styles.corridaAtivaTopo}>
             <View style={styles.corridaAtivaBadge}>
@@ -391,9 +433,9 @@ export default function DriverHomeScreen() {
             </View>
             <Text style={styles.corridaAtivaTexto}>Corrida aceita</Text>
           </View>
-          <Text style={styles.novaCorridaTitulo}>Corrida em andamento</Text>
+          <Text style={styles.novaCorridaTitulo}>A caminho do passageiro</Text>
           <View style={styles.novaCorridaLinha}>
-            <View style={[styles.pontoRota, styles.pontoDestino]} />
+            <View style={[styles.pontoRota, styles.pontoOrigem]} />
             <Text style={styles.novaCorridaEndereco} numberOfLines={1}>
               {corridaAtiva.origem.endereco ?? 'Buscar passageiro'}
             </Text>
@@ -405,9 +447,9 @@ export default function DriverHomeScreen() {
             </Text>
           )}
           <Button
-            label="Finalizar corrida"
-            onPress={finalizarCorridaAtiva}
-            loading={finalizando}
+            label="Cheguei · Confirmar embarque"
+            onPress={confirmarEmbarque}
+            loading={embarcando}
             disabled={cancelando}
             style={styles.painelBotao}
           />
@@ -415,8 +457,38 @@ export default function DriverHomeScreen() {
             label="Cancelar corrida"
             variant="ghost"
             onPress={abrirCancelamentoAtiva}
-            disabled={finalizando || cancelando}
+            disabled={embarcando || cancelando}
             style={styles.cancelarCorridaBotao}
+          />
+        </View>
+      )}
+
+      {corridaAtiva && embarcado && (
+        <View style={styles.painelInferior}>
+          <View style={styles.corridaAtivaTopo}>
+            <View style={styles.corridaAtivaBadge}>
+              <CheckIcon size={11} color={colors.background} />
+            </View>
+            <Text style={styles.corridaAtivaTexto}>Passageiro a bordo</Text>
+          </View>
+          <Text style={styles.novaCorridaTitulo}>A caminho do destino</Text>
+          <View style={styles.novaCorridaLinha}>
+            <View style={[styles.pontoRota, styles.pontoDestino]} />
+            <Text style={styles.novaCorridaEndereco} numberOfLines={1}>
+              {corridaAtiva.destino.endereco ?? 'Destino final'}
+            </Text>
+          </View>
+          {rota && (
+            <Text style={styles.painelSubtitulo}>
+              {formatarDistancia(rota.distanciaKm)} até o destino · aproximadamente{' '}
+              {formatarDuracao(rota.duracaoMin)}
+            </Text>
+          )}
+          <Button
+            label="Finalizar corrida"
+            onPress={finalizarCorridaAtiva}
+            loading={finalizando}
+            style={styles.painelBotao}
           />
         </View>
       )}

@@ -1,6 +1,7 @@
 const { Server } = require('socket.io');
 const { verificarToken } = require('../utilitarios/token');
 const motoristaModelo = require('../modelos/motoristaModelo');
+const corridaModelo = require('../modelos/corridaModelo');
 
 let io = null;
 
@@ -69,9 +70,33 @@ function configurarSoquete(servidorHttp) {
           tipoVeiculo,
         });
         socket.join('motoristas-online');
+
+        // Corridas que já estavam "procurando" ANTES desse motorista ficar
+        // online também precisam chegar pra ele agora — sem isso, só quem já
+        // estava online no exato momento da criação recebia o pedido, e
+        // corridas legítimas ficavam "perdidas" no radar pra sempre.
+        try {
+          const corridasPendentes = await corridaModelo.buscarProcurandoPorTipo(tipoVeiculo);
+          for (const corrida of corridasPendentes) {
+            if ((corrida.motoristas_ignorados || []).includes(socket.usuarioId)) continue;
+
+            const origemCorrida = {
+              latitude: Number(corrida.origem_latitude),
+              longitude: Number(corrida.origem_longitude),
+            };
+            if (calcularDistanciaKm(origemCorrida, { latitude, longitude }) <= RAIO_NOTIFICACAO_KM) {
+              socket.emit('corrida:nova', corridaModelo.paraCorridaPublica(corrida));
+            }
+          }
+        } catch (erroBusca) {
+          // Não deixa um erro aqui derrubar a conexão do motorista — mas
+          // precisa aparecer no log, senão vira um bug invisível de novo.
+          console.error('[radar] falha ao buscar corridas pendentes pra reoferecer:', erroBusca);
+        }
       } catch (erro) {
         // Se der erro na consulta, não deixa o motorista entrar no radar
         // sem tipo de veículo definido.
+        console.error('[radar] falha ao marcar motorista como disponível:', erro);
       }
     });
 
@@ -139,6 +164,13 @@ function notificarCorridaAceita({ corridaId, passageiroId, motoristaId, motorist
   io.to('motoristas-online').emit('corrida:indisponivel', { corridaId });
 }
 
+// Motorista confirmou que pegou o passageiro — o mapa do passageiro (e do
+// motorista) passa a apontar pro destino final a partir daqui.
+function notificarEmbarque({ corridaId, passageiroId }) {
+  if (!io) return;
+  io.to(`usuario:${passageiroId}`).emit('corrida:embarque', { corridaId });
+}
+
 function notificarCorridaFinalizada({ corridaId, passageiroId }) {
   if (!io) return;
   corridasAtivas.delete(corridaId);
@@ -173,6 +205,7 @@ module.exports = {
   notificarNovaCorrida,
   marcarMotoristaOcupado,
   notificarCorridaAceita,
+  notificarEmbarque,
   notificarCorridaFinalizada,
   notificarCorridaCancelada,
   notificarMotoristaCancelouReoferta,
