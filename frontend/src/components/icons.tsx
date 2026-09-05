@@ -69,6 +69,65 @@ export function SettingsIcon({ size = 20, color = '#F5F5F7', strokeWidth = 1.8 }
   );
 }
 
+// Ícone de usuário (cabeça + ombros) — usado no item "Conta" do menu de
+// configurações, no lugar do emoji 👤.
+export function UserIcon({ size = 20, color = '#F5F5F7', strokeWidth = 1.7 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Circle cx="12" cy="8.2" r="3.6" stroke={color} strokeWidth={strokeWidth} />
+      <Path
+        d="M4.5 20 C4.5 15.9 7.8 13.6 12 13.6 C16.2 13.6 19.5 15.9 19.5 20"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
+// Ícone de saída (porta + seta) — usado no item "Sair" do menu de
+// configurações, no lugar do emoji 🚪.
+export function ExitIcon({ size = 20, color = '#FF4D4D', strokeWidth = 1.7 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M10.8 4.5 H6.7 A1.5 1.5 0 0 0 5.2 6 V18 A1.5 1.5 0 0 0 6.7 19.5 H10.8"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Line x1="9.8" y1="12" x2="20" y2="12" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" />
+      <Path
+        d="M16.3 8.2 L20.3 12 L16.3 15.8"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
+// Ícone de relógio/histórico — usado na lista de "Mensagens" pra indicar
+// uma corrida já encerrada.
+export function HistoryIcon({ size = 16, color = '#9A9AA5', strokeWidth = 1.8 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Circle cx="12" cy="12.5" r="8" stroke={color} strokeWidth={strokeWidth} />
+      <Path
+        d="M12 8.3 V12.5 L15 14.5"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Path d="M8.5 3.5 H15.5" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
 // Ícone de fechar (X) — substitui o "✕" em texto puro.
 export function CloseIcon({ size = 16, color = '#9A9AA5', strokeWidth = 2 }: IconProps) {
   return (

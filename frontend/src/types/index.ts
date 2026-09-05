@@ -140,6 +140,19 @@ export type MensagemChat = {
   criadoEm: string;
 };
 
+// Item da lista de "Mensagens" nas configurações — uma corrida já encerrada
+// (finalizada ou cancelada) junto com quem foi o motorista dela, pra o
+// passageiro poder reabrir a conversa e mandar um recado mesmo depois que a
+// viagem já acabou (ex: esqueceu algo no carro).
+export type HistoricoCorridaItem = {
+  corrida: Corrida;
+  motorista: {
+    id: string;
+    nome: string;
+    avatarUrl?: string;
+  };
+};
+
 // Tipos de navegação — adicionar novas telas aqui conforme o app crescer
 export type RootStackParamList = {
   Login: undefined;

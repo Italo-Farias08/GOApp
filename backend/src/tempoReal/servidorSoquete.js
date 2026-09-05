@@ -223,6 +223,17 @@ function notificarMotoristaAprovado(usuarioId) {
   io.to(`usuario:${usuarioId}`).emit('motorista:aprovado');
 }
 
+// Entrega uma mensagem de chat direto na sala pessoal do destinatário —
+// diferente do "chat:mensagem" em tempo real (que só existe enquanto a
+// corrida está em corridasAtivas), essa aqui funciona pra QUALQUER corrida
+// já encerrada, já que passageiro e motorista continuam com sala pessoal
+// aberta enquanto tiverem o app conectado. Usado pela rota REST de mandar
+// mensagem pós-corrida (ex: passageiro esqueceu algo no carro).
+function notificarMensagem({ destinatarioId, mensagem }) {
+  if (!io || !destinatarioId) return;
+  io.to(`usuario:${destinatarioId}`).emit('corrida:mensagem', mensagem);
+}
+
 module.exports = {
   configurarSoquete,
   notificarNovaCorrida,
@@ -233,4 +244,5 @@ module.exports = {
   notificarCorridaCancelada,
   notificarMotoristaCancelouReoferta,
   notificarMotoristaAprovado,
+  notificarMensagem,
 };

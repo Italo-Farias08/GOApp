@@ -1,6 +1,6 @@
 import { api } from './api';
 import type { TipoVeiculo } from '../utils/precoCorrida';
-import type { Corrida, MensagemChat, MotoristaInfo, PontoCorrida } from '../types';
+import type { Corrida, HistoricoCorridaItem, MensagemChat, MotoristaInfo, PontoCorrida } from '../types';
 
 type CriarCorridaPayload = {
   origem: PontoCorrida;
@@ -58,5 +58,21 @@ export async function finalizarCorrida(id: string): Promise<Corrida> {
 // mensagens novas a partir de quando conecta).
 export async function listarMensagens(id: string): Promise<MensagemChat[]> {
   const { data } = await api.get<MensagemChat[]>(`/rides/${id}/messages`);
+  return data;
+}
+
+// Manda uma mensagem por REST em vez de socket — funciona mesmo com a
+// corrida já encerrada, ao contrário do evento "chat:mensagem" (que só
+// entrega enquanto a corrida está ativa). Usado pela tela de "Mensagens"
+// das configurações, pra falar com o motorista de uma viagem que já acabou.
+export async function enviarMensagemCorrida(id: string, texto: string): Promise<MensagemChat> {
+  const { data } = await api.post<MensagemChat>(`/rides/${id}/messages`, { texto });
+  return data;
+}
+
+// Corridas já encerradas que tiveram motorista atribuído, com os dados dele
+// — alimenta a lista da tela "Mensagens".
+export async function listarHistoricoCorridas(): Promise<HistoricoCorridaItem[]> {
+  const { data } = await api.get<HistoricoCorridaItem[]>('/rides/history');
   return data;
 }

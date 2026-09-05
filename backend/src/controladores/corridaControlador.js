@@ -153,6 +153,62 @@ async function aceitar(req, res, next) {
   }
 }
 
+// GET /rides/history
+//
+// Corridas já encerradas (finalizadas ou canceladas) do passageiro logado
+// que tiveram um motorista atribuído — alimenta a tela "Mensagens" das
+// configurações, onde o passageiro pode reabrir o chat de uma viagem antiga
+// pra falar com o motorista (ex: esqueceu algo no carro).
+async function listarHistorico(req, res, next) {
+  try {
+    const linhas = await corridaModelo.listarFinalizadasComMotoristaPorPassageiro(req.usuarioId);
+    const historico = linhas.map((linha) => ({
+      corrida: corridaModelo.paraCorridaPublica(linha),
+      motorista: {
+        id: linha.motorista_id,
+        nome: linha.motorista_nome,
+        avatarUrl: linha.motorista_avatar_url || undefined,
+      },
+    }));
+    return res.json(historico);
+  } catch (erro) {
+    next(erro);
+  }
+}
+
+// POST /rides/:id/messages
+//
+// Manda uma mensagem pro outro lado da corrida (passageiro -> motorista ou
+// motorista -> passageiro) por REST, funcionando mesmo com a corrida já
+// finalizada — diferente do evento de soquete "chat:mensagem", que só existe
+// enquanto a corrida está ativa. É o que permite a tela de "Mensagens"
+// mandar um recado pro motorista depois que a viagem já acabou.
+async function enviarMensagem(req, res, next) {
+  try {
+    const corrida = await corridaModelo.buscarPorId(req.params.id);
+    if (!corrida) throw new ErroHttp(404, 'Corrida não encontrada.');
+
+    const ehPassageiro = corrida.passageiro_id === req.usuarioId;
+    const ehMotorista = !!corrida.motorista_id && corrida.motorista_id === req.usuarioId;
+    if (!ehPassageiro && !ehMotorista) {
+      throw new ErroHttp(403, 'Você não pode mandar mensagem nessa corrida.');
+    }
+
+    const textoLimpo = typeof req.body?.texto === 'string' ? req.body.texto.trim().slice(0, 1000) : '';
+    if (!textoLimpo) throw new ErroHttp(400, 'Digite uma mensagem.');
+
+    const linhaSalva = await corridaModelo.salvarMensagem(req.params.id, req.usuarioId, textoLimpo);
+    const mensagem = corridaModelo.paraMensagemPublica(linhaSalva);
+
+    const destinatarioId = ehPassageiro ? corrida.motorista_id : corrida.passageiro_id;
+    soquete.notificarMensagem({ destinatarioId, mensagem });
+
+    return res.status(201).json(mensagem);
+  } catch (erro) {
+    next(erro);
+  }
+}
+
 // GET /rides/:id/messages
 //
 // Histórico do chat da corrida. Só o passageiro ou o motorista atribuídos a
@@ -325,4 +381,15 @@ async function finalizar(req, res, next) {
   }
 }
 
-module.exports = { criar, buscarAtiva, detalhar, aceitar, embarcar, cancelar, finalizar, listarMensagens };
+module.exports = {
+  criar,
+  buscarAtiva,
+  detalhar,
+  aceitar,
+  embarcar,
+  cancelar,
+  finalizar,
+  listarHistorico,
+  listarMensagens,
+  enviarMensagem,
+};

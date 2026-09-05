@@ -3,9 +3,9 @@ import {
   ActivityIndicator,
   Animated,
   Dimensions,
+  Easing,
   Image,
   Keyboard,
-  LayoutAnimation,
   LayoutChangeEvent,
   PanResponder,
   Platform,
@@ -14,7 +14,6 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  UIManager,
   View,
 } from 'react-native';
 import MapView, { Marker, Polyline, UrlTile } from 'react-native-maps';
@@ -107,11 +106,6 @@ const ALTURA_MAXIMA_CONTEUDO_ROLAVEL = 380;
 // Degrau recolhido "de reserva", usado só até medirmos a altura real do
 // grupo handle + input na primeira renderização — ver onLayout abaixo.
 const SHEET_ALTURA_RECOLHIDA_PADRAO = 110;
-
-// Android precisa habilitar isso manualmente pra LayoutAnimation funcionar.
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
 
 // Saudação de acordo com o horário — pequeno detalhe que faz a tela parecer
 // viva em vez de estática.
@@ -285,6 +279,26 @@ export default function HomeScreen() {
   const keyboardOffset = useRef(new Animated.Value(0)).current;
   const mapRef = useRef<MapView>(null);
 
+  // Altura do cartão como Animated.Value — antes essa transição rodava por
+  // LayoutAnimation (motor de animação separado do Animated.spring que já
+  // move o cartão ao arrastar). Os dois rodando juntos, com curvas e
+  // durações diferentes, é o que fazia o cartão parecer "travado"/dessincronizado
+  // sempre que o conteúdo mudava de altura (ex: lista de sugestões
+  // aparecendo/mudando de tamanho a cada letra digitada). Unificando tudo
+  // num Animated.Value só, o movimento fica sempre consistente.
+  const alturaAnimada = useRef(new Animated.Value(alturaExpandida)).current;
+  const alturaAnteriorRef = useRef(alturaExpandida);
+  useEffect(() => {
+    if (alturaAnteriorRef.current === alturaExpandida) return;
+    alturaAnteriorRef.current = alturaExpandida;
+    Animated.timing(alturaAnimada, {
+      toValue: alturaExpandida,
+      duration: 240,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+  }, [alturaExpandida]);
+
   useEffect(() => {
     const alturaOcultavel = alturaExpandida - alturaRecolhida;
     alturaOcultavelRef.current = alturaOcultavel;
@@ -295,7 +309,6 @@ export default function HomeScreen() {
   }, [alturaRecolhida, alturaExpandida]);
 
   function irParaDegrau(paraExpandido: boolean) {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     const destino = paraExpandido ? 0 : alturaOcultavelRef.current;
     setExpandido(paraExpandido);
     valorAtualRef.current = destino;
@@ -561,11 +574,7 @@ export default function HomeScreen() {
 
   function medirConteudo(evento: LayoutChangeEvent) {
     const novaAltura = evento.nativeEvent.layout.height;
-    setAlturaConteudo((atual) => {
-      if (Math.abs(atual - novaAltura) <= 1) return atual;
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-      return novaAltura;
-    });
+    setAlturaConteudo((atual) => (Math.abs(atual - novaAltura) <= 1 ? atual : novaAltura));
   }
 
   async function selecionarSugestao(item: EnderecoSugerido) {
@@ -776,7 +785,7 @@ export default function HomeScreen() {
             {
               opacity: entradaAnim,
               bottom: Animated.add(
-                Animated.subtract(alturaExpandida, Animated.add(panY, keyboardOffset)),
+                Animated.subtract(alturaAnimada, Animated.add(panY, keyboardOffset)),
                 spacing.md
               ),
             },
@@ -798,7 +807,7 @@ export default function HomeScreen() {
         style={[
           styles.bottomSheet,
           {
-            height: alturaExpandida,
+            height: alturaAnimada,
             opacity: entradaAnim,
             transform: [{ translateY: Animated.add(panY, keyboardOffset) }],
           },

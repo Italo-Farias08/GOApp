@@ -179,6 +179,28 @@ async function finalizar(id) {
   return resultado.rows[0] || null;
 }
 
+// Corridas já finalizadas (ou canceladas) que tiveram um motorista
+// atribuído — é a lista que alimenta a tela "Mensagens" das configurações,
+// pra o passageiro conseguir escrever pro motorista de uma viagem antiga
+// caso tenha esquecido algo. Só corridas com motorista fazem sentido aqui
+// (sem motorista não tem com quem conversar).
+async function listarFinalizadasComMotoristaPorPassageiro(passageiroId) {
+  const resultado = await consultar(
+    `SELECT c.*,
+            u.nome AS motorista_nome,
+            u.avatar_url AS motorista_avatar_url
+     FROM corridas c
+     JOIN usuarios u ON u.id = c.motorista_id
+     WHERE c.passageiro_id = $1
+       AND c.motorista_id IS NOT NULL
+       AND c.status IN ('finalizada', 'cancelada')
+     ORDER BY c.criado_em DESC
+     LIMIT 30`,
+    [passageiroId]
+  );
+  return resultado.rows;
+}
+
 // Converte uma linha de mensagens_corrida pro formato que o front espera.
 function paraMensagemPublica(linha) {
   if (!linha) return null;
@@ -223,6 +245,7 @@ module.exports = {
   cancelarPeloPassageiro,
   cancelarPeloMotorista,
   finalizar,
+  listarFinalizadasComMotoristaPorPassageiro,
   paraMensagemPublica,
   salvarMensagem,
   listarMensagens,

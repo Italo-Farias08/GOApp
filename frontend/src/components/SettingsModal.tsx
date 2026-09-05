@@ -1,15 +1,43 @@
-import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAuth } from '../context/AuthContext';
 import * as driverService from '../services/driverService';
+import * as rideService from '../services/rideService';
+import { conectarSoquete } from '../services/socketService';
 import { colors, radius, spacing, typography } from '../theme/theme';
-import type { DriverStatus, RootStackParamList, TipoVeiculo } from '../types';
+import type {
+  DriverStatus,
+  HistoricoCorridaItem,
+  MensagemChat,
+  RootStackParamList,
+  TipoVeiculo,
+} from '../types';
 import Button from './Button';
+import ChatModal from './ChatModal';
 import Input from './Input';
+import {
+  CarIcon,
+  ChatIcon,
+  ChevronLeftIcon,
+  ExitIcon,
+  HistoryIcon,
+  MotoIcon,
+  UserIcon,
+} from './icons';
 
-type ModalView = 'menu' | 'account' | 'driver';
+type ModalView = 'menu' | 'account' | 'driver' | 'messages';
 
 type Props = {
   visible: boolean;
@@ -42,11 +70,13 @@ export default function SettingsModal({ visible, onClose }: Props) {
             userName={user?.name}
             onSelectAccount={() => setView('account')}
             onSelectDriver={() => setView('driver')}
+            onSelectMessages={() => setView('messages')}
             onSignOut={handleSignOut}
           />
         )}
         {view === 'account' && <AccountView onBack={() => setView('menu')} />}
         {view === 'driver' && <DriverView onBack={() => setView('menu')} onClose={handleClose} />}
+        {view === 'messages' && <MessagesView onBack={() => setView('menu')} />}
       </View>
     </Modal>
   );
@@ -58,52 +88,86 @@ function MenuView({
   userName,
   onSelectAccount,
   onSelectDriver,
+  onSelectMessages,
   onSignOut,
 }: {
   userName?: string;
   onSelectAccount: () => void;
   onSelectDriver: () => void;
+  onSelectMessages: () => void;
   onSignOut: () => void;
 }) {
   return (
     <View>
       <Text style={styles.menuTitle}>Olá, {userName?.split(' ')[0] ?? 'por aí'}</Text>
 
-      <MenuItem icon="👤" label="Conta" sublabel="Dados e credenciais" onPress={onSelectAccount} />
-      <MenuItem icon="🚗" label="Motorista" sublabel="Cadastre-se pra dirigir no GO" onPress={onSelectDriver} />
+      <MenuItem
+        renderIcon={(cor) => <UserIcon size={22} color={cor} />}
+        label="Conta"
+        sublabel="Dados e credenciais"
+        onPress={onSelectAccount}
+      />
+      <MenuItem
+        renderIcon={(cor) => <ChatIcon size={20} color={cor} />}
+        label="Mensagens"
+        sublabel="Fale com motoristas de corridas anteriores"
+        onPress={onSelectMessages}
+      />
+      <MenuItem
+        renderIcon={(cor) => <CarIcon size={22} color={cor} />}
+        label="Motorista"
+        sublabel="Cadastre-se pra dirigir no GO"
+        onPress={onSelectDriver}
+      />
 
       <View style={styles.divider} />
 
-      <MenuItem icon="🚪" label="Sair" danger onPress={onSignOut} />
+      <MenuItem
+        renderIcon={(cor) => <ExitIcon size={20} color={cor} />}
+        label="Sair"
+        danger
+        onPress={onSignOut}
+      />
     </View>
   );
 }
 
 function MenuItem({
-  icon,
+  renderIcon,
   label,
   sublabel,
   danger,
   onPress,
 }: {
-  icon: string;
+  renderIcon: (color: string) => React.ReactNode;
   label: string;
   sublabel?: string;
   danger?: boolean;
   onPress: () => void;
 }) {
+  const corIcone = danger ? colors.danger : colors.text;
   return (
     <Pressable
       style={({ pressed }) => [styles.menuItem, pressed && styles.menuItemPressed]}
       onPress={onPress}
     >
-      <Text style={styles.menuIcon}>{icon}</Text>
+      <View style={styles.menuIconWrap}>{renderIcon(corIcone)}</View>
       <View style={styles.menuItemTextWrap}>
         <Text style={[styles.menuItemLabel, danger && styles.menuItemLabelDanger]}>{label}</Text>
         {!!sublabel && <Text style={styles.menuItemSublabel}>{sublabel}</Text>}
       </View>
-      {!danger && <Text style={styles.chevron}>›</Text>}
+      {!danger && <ChevronRightIcon />}
     </Pressable>
+  );
+}
+
+// Seta ">" simples reaproveitando o ChevronLeftIcon espelhado, pra não criar
+// mais um ícone só pra isso.
+function ChevronRightIcon() {
+  return (
+    <View style={{ transform: [{ rotate: '180deg' }] }}>
+      <ChevronLeftIcon size={18} color={colors.textMuted} strokeWidth={1.8} />
+    </View>
   );
 }
 
@@ -206,7 +270,7 @@ function DriverView({ onBack, onClose }: { onBack: () => void; onClose: () => vo
       <View>
         <Header title="Motorista" onBack={onBack} />
         <StatusCard
-          icon="⏳"
+          icon={<HistoryIcon size={36} color={colors.warning} strokeWidth={1.6} />}
           title="Cadastro em análise"
           description="Recebemos seus dados. Assim que forem aprovados, sua conta vira motorista do GO."
         />
@@ -241,17 +305,29 @@ function DriverView({ onBack, onClose }: { onBack: () => void; onClose: () => vo
           onPress={() => setVehicleType('carro')}
           style={[styles.vehicleTypeButton, vehicleType === 'carro' && styles.vehicleTypeButtonAtivo]}
         >
-          <Text style={[styles.vehicleTypeTexto, vehicleType === 'carro' && styles.vehicleTypeTextoAtivo]}>
-            🚗 Carro
-          </Text>
+          <View style={styles.vehicleTypeConteudo}>
+            <CarIcon
+              size={18}
+              color={vehicleType === 'carro' ? colors.primary : colors.textSecondary}
+            />
+            <Text style={[styles.vehicleTypeTexto, vehicleType === 'carro' && styles.vehicleTypeTextoAtivo]}>
+              Carro
+            </Text>
+          </View>
         </Pressable>
         <Pressable
           onPress={() => setVehicleType('moto')}
           style={[styles.vehicleTypeButton, vehicleType === 'moto' && styles.vehicleTypeButtonAtivo]}
         >
-          <Text style={[styles.vehicleTypeTexto, vehicleType === 'moto' && styles.vehicleTypeTextoAtivo]}>
-            🏍️ Moto
-          </Text>
+          <View style={styles.vehicleTypeConteudo}>
+            <MotoIcon
+              size={18}
+              color={vehicleType === 'moto' ? colors.primary : colors.textSecondary}
+            />
+            <Text style={[styles.vehicleTypeTexto, vehicleType === 'moto' && styles.vehicleTypeTextoAtivo]}>
+              Moto
+            </Text>
+          </View>
         </Pressable>
       </View>
 
@@ -336,7 +412,7 @@ function DriverVehiclePanel({ onBack, onClose }: { onBack: () => void; onClose: 
       <Header title="Motorista" onBack={onBack} />
 
       <StatusCard
-        icon="🎉"
+        icon={<CarIcon size={36} color={colors.primary} strokeWidth={1.5} />}
         title="Você já é motorista GO"
         description="Confira ou atualize os dados do seu veículo abaixo sempre que precisar."
       />
@@ -370,17 +446,29 @@ function DriverVehiclePanel({ onBack, onClose }: { onBack: () => void; onClose: 
               onPress={() => setVehicleType('carro')}
               style={[styles.vehicleTypeButton, vehicleType === 'carro' && styles.vehicleTypeButtonAtivo]}
             >
-              <Text style={[styles.vehicleTypeTexto, vehicleType === 'carro' && styles.vehicleTypeTextoAtivo]}>
-                🚗 Carro
-              </Text>
+              <View style={styles.vehicleTypeConteudo}>
+                <CarIcon
+                  size={18}
+                  color={vehicleType === 'carro' ? colors.primary : colors.textSecondary}
+                />
+                <Text style={[styles.vehicleTypeTexto, vehicleType === 'carro' && styles.vehicleTypeTextoAtivo]}>
+                  Carro
+                </Text>
+              </View>
             </Pressable>
             <Pressable
               onPress={() => setVehicleType('moto')}
               style={[styles.vehicleTypeButton, vehicleType === 'moto' && styles.vehicleTypeButtonAtivo]}
             >
-              <Text style={[styles.vehicleTypeTexto, vehicleType === 'moto' && styles.vehicleTypeTextoAtivo]}>
-                🏍️ Moto
-              </Text>
+              <View style={styles.vehicleTypeConteudo}>
+                <MotoIcon
+                  size={18}
+                  color={vehicleType === 'moto' ? colors.primary : colors.textSecondary}
+                />
+                <Text style={[styles.vehicleTypeTexto, vehicleType === 'moto' && styles.vehicleTypeTextoAtivo]}>
+                  Moto
+                </Text>
+              </View>
             </Pressable>
           </View>
 
@@ -399,13 +487,194 @@ function DriverVehiclePanel({ onBack, onClose }: { onBack: () => void; onClose: 
   );
 }
 
+// ---------- Mensagens (histórico pós-corrida) ----------
+//
+// Lista as corridas já encerradas que tiveram motorista, pra o passageiro
+// poder reabrir a conversa e mandar um recado mesmo depois que a viagem já
+// acabou — ex: esqueceu algo no carro. Ao tocar num item, abre o mesmo
+// ChatModal usado durante a corrida, só que carregando o histórico daquela
+// corrida específica e enviando por REST (funciona mesmo com a corrida já
+// finalizada, diferente do chat em tempo real).
+function MessagesView({ onBack }: { onBack: () => void }) {
+  const { user } = useAuth();
+  const [carregando, setCarregando] = useState(true);
+  const [erro, setErro] = useState<string | null>(null);
+  const [itens, setItens] = useState<HistoricoCorridaItem[]>([]);
+
+  const [conversaAberta, setConversaAberta] = useState<HistoricoCorridaItem | null>(null);
+  const [mensagens, setMensagens] = useState<MensagemChat[]>([]);
+  const [carregandoConversa, setCarregandoConversa] = useState(false);
+
+  const corridaAbertaIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    let ativo = true;
+    (async () => {
+      try {
+        const [historico] = await Promise.all([
+          rideService.listarHistoricoCorridas(),
+          // garante o socket conectado pra receber resposta do motorista em
+          // tempo real caso ele responda enquanto a conversa está aberta
+          conectarSoquete().catch(() => null),
+        ]);
+        if (ativo) setItens(historico);
+      } catch (err: any) {
+        if (ativo) setErro(err?.message ?? 'Não foi possível carregar suas mensagens.');
+      } finally {
+        if (ativo) setCarregando(false);
+      }
+    })();
+    return () => {
+      ativo = false;
+    };
+  }, []);
+
+  // Escuta mensagem nova enquanto uma conversa está aberta, pra resposta do
+  // motorista aparecer na hora sem precisar reabrir a tela.
+  useEffect(() => {
+    corridaAbertaIdRef.current = conversaAberta?.corrida.id ?? null;
+    if (!conversaAberta) return;
+
+    let cancelado = false;
+    let soquete: Awaited<ReturnType<typeof conectarSoquete>> | null = null;
+
+    (async () => {
+      soquete = await conectarSoquete().catch(() => null);
+      if (cancelado || !soquete) return;
+      soquete.on('corrida:mensagem', aoReceberMensagem);
+    })();
+
+    function aoReceberMensagem(mensagem: MensagemChat) {
+      if (mensagem.corridaId !== corridaAbertaIdRef.current) return;
+      setMensagens((atual) => {
+        if (atual.some((item) => item.id === mensagem.id)) return atual;
+        return [...atual, mensagem];
+      });
+    }
+
+    return () => {
+      cancelado = true;
+      soquete?.off('corrida:mensagem', aoReceberMensagem);
+    };
+  }, [conversaAberta]);
+
+  async function abrirConversa(item: HistoricoCorridaItem) {
+    setConversaAberta(item);
+    setMensagens([]);
+    setCarregandoConversa(true);
+    try {
+      const historicoMensagens = await rideService.listarMensagens(item.corrida.id);
+      setMensagens(historicoMensagens);
+    } catch (err: any) {
+      Alert.alert('Ops', err?.message ?? 'Não foi possível carregar essa conversa.');
+    } finally {
+      setCarregandoConversa(false);
+    }
+  }
+
+  async function enviarMensagem(texto: string) {
+    if (!conversaAberta) return;
+    try {
+      const mensagem = await rideService.enviarMensagemCorrida(conversaAberta.corrida.id, texto);
+      setMensagens((atual) => [...atual, mensagem]);
+    } catch (err: any) {
+      Alert.alert('Ops', err?.message ?? 'Não foi possível enviar sua mensagem.');
+    }
+  }
+
+  return (
+    <View style={styles.messagesWrap}>
+      <Header title="Mensagens" onBack={onBack} />
+      <Text style={styles.sectionHint}>
+        Precisou falar com o motorista depois da corrida? Toque numa viagem abaixo pra mandar
+        uma mensagem — por exemplo, se esqueceu algo no veículo.
+      </Text>
+
+      {carregando ? (
+        <ActivityIndicator color={colors.primary} style={styles.painelCarregando} />
+      ) : erro ? (
+        <Text style={styles.errorText}>{erro}</Text>
+      ) : itens.length === 0 ? (
+        <View style={styles.messagesVazio}>
+          <HistoryIcon size={32} color={colors.textMuted} strokeWidth={1.5} />
+          <Text style={styles.messagesVazioTexto}>
+            Suas corridas encerradas com motorista aparecem aqui pra você poder falar com eles
+            depois.
+          </Text>
+        </View>
+      ) : (
+        <FlatList
+          data={itens}
+          keyExtractor={(item) => item.corrida.id}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.messagesLista}
+          renderItem={({ item }) => (
+            <RideHistoryRow item={item} onPress={() => abrirConversa(item)} />
+          )}
+        />
+      )}
+
+      {!!conversaAberta && (
+        <ChatModal
+          visible={!!conversaAberta}
+          outroNome={conversaAberta.motorista.nome}
+          meuId={user?.id ?? ''}
+          mensagens={mensagens}
+          carregandoHistorico={carregandoConversa}
+          onEnviar={enviarMensagem}
+          onFechar={() => setConversaAberta(null)}
+        />
+      )}
+    </View>
+  );
+}
+
+function RideHistoryRow({ item, onPress }: { item: HistoricoCorridaItem; onPress: () => void }) {
+  const cancelada = item.corrida.status === 'cancelada';
+  return (
+    <Pressable
+      style={({ pressed }) => [styles.rideRow, pressed && styles.menuItemPressed]}
+      onPress={onPress}
+    >
+      <View style={styles.rideRowIcone}>
+        <UserIcon size={20} color={colors.textSecondary} />
+      </View>
+      <View style={styles.menuItemTextWrap}>
+        <Text style={styles.menuItemLabel}>{item.motorista.nome}</Text>
+        <Text style={styles.menuItemSublabel} numberOfLines={1}>
+          {formatarDataCorrida(item.corrida.criadoEm)}
+          {item.corrida.destino.endereco ? ` · ${item.corrida.destino.endereco}` : ''}
+        </Text>
+      </View>
+      {cancelada && (
+        <View style={styles.rideRowBadge}>
+          <Text style={styles.rideRowBadgeTexto}>Cancelada</Text>
+        </View>
+      )}
+      <ChevronRightIcon />
+    </Pressable>
+  );
+}
+
+function formatarDataCorrida(iso: string): string {
+  try {
+    return new Date(iso).toLocaleDateString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: '2-digit',
+    });
+  } catch {
+    return '';
+  }
+}
+
 // ---------- Peças compartilhadas ----------
 
 function Header({ title, onBack }: { title: string; onBack: () => void }) {
   return (
     <View style={styles.header}>
       <Pressable onPress={onBack} hitSlop={10} style={styles.backButton}>
-        <Text style={styles.backIcon}>‹</Text>
+        <ChevronLeftIcon size={22} color={colors.text} strokeWidth={2} />
       </Pressable>
       <Text style={styles.headerTitle}>{title}</Text>
       <View style={styles.backButton} />
@@ -418,13 +687,13 @@ function StatusCard({
   title,
   description,
 }: {
-  icon: string;
+  icon: React.ReactNode;
   title: string;
   description: string;
 }) {
   return (
     <View style={styles.statusCard}>
-      <Text style={styles.statusIcon}>{icon}</Text>
+      <View style={styles.statusIconWrap}>{icon}</View>
       <Text style={styles.statusTitle}>{title}</Text>
       <Text style={styles.statusDescription}>{description}</Text>
     </View>
@@ -466,9 +735,11 @@ const styles = StyleSheet.create({
   menuItemPressed: {
     opacity: 0.6,
   },
-  menuIcon: {
-    fontSize: 22,
+  menuIconWrap: {
     width: 36,
+    height: 22,
+    alignItems: 'flex-start',
+    justifyContent: 'center',
   },
   menuItemTextWrap: {
     flex: 1,
@@ -484,10 +755,6 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.textSecondary,
     marginTop: 2,
-  },
-  chevron: {
-    color: colors.textMuted,
-    fontSize: 20,
   },
   divider: {
     height: 1,
@@ -505,10 +772,6 @@ const styles = StyleSheet.create({
     height: 32,
     alignItems: 'flex-start',
     justifyContent: 'center',
-  },
-  backIcon: {
-    fontSize: 28,
-    color: colors.text,
   },
   headerTitle: {
     ...typography.h2,
@@ -543,9 +806,14 @@ const styles = StyleSheet.create({
     borderColor: colors.primary,
     backgroundColor: colors.primary + '1A',
   },
+  vehicleTypeConteudo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   vehicleTypeTexto: {
     ...typography.body,
     color: colors.textSecondary,
+    marginLeft: spacing.xs,
   },
   vehicleTypeTextoAtivo: {
     color: colors.primary,
@@ -572,8 +840,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: spacing.xl,
   },
-  statusIcon: {
-    fontSize: 40,
+  statusIconWrap: {
     marginBottom: spacing.sm,
   },
   statusTitle: {
@@ -587,5 +854,51 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     textAlign: 'center',
     lineHeight: 20,
+  },
+  messagesWrap: {
+    minHeight: 320,
+  },
+  messagesLista: {
+    paddingBottom: spacing.md,
+  },
+  messagesVazio: {
+    alignItems: 'center',
+    paddingVertical: spacing.xxl,
+    paddingHorizontal: spacing.lg,
+  },
+  messagesVazioTexto: {
+    ...typography.body,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginTop: spacing.sm,
+    lineHeight: 20,
+  },
+  rideRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  rideRowIcone: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.full,
+    backgroundColor: colors.surfaceAlt,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.sm,
+  },
+  rideRowBadge: {
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: radius.full,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    marginRight: spacing.sm,
+  },
+  rideRowBadgeTexto: {
+    ...typography.caption,
+    fontSize: 11,
+    color: colors.textMuted,
   },
 });
