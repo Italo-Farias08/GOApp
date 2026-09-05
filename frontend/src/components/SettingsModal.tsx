@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -507,6 +507,23 @@ function MessagesView({ onBack }: { onBack: () => void }) {
 
   const corridaAbertaIdRef = useRef<string | null>(null);
 
+  // O backend devolve uma linha por CORRIDA, não por motorista — então quem
+  // já andou várias vezes com o mesmo motorista via ele repetido na lista.
+  // Aqui reduz pra um item por motorista, ficando só com a corrida mais
+  // recente de cada um (a lista já vem ordenada por criado_em DESC lá no
+  // backend, então o primeiro item que aparece pra cada motoristaId já é o
+  // mais recente).
+  const itensPorMotorista = useMemo(() => {
+    const vistos = new Set<string>();
+    const unicos: HistoricoCorridaItem[] = [];
+    for (const item of itens) {
+      if (vistos.has(item.motorista.id)) continue;
+      vistos.add(item.motorista.id);
+      unicos.push(item);
+    }
+    return unicos;
+  }, [itens]);
+
   useEffect(() => {
     let ativo = true;
     (async () => {
@@ -594,7 +611,7 @@ function MessagesView({ onBack }: { onBack: () => void }) {
         <ActivityIndicator color={colors.primary} style={styles.painelCarregando} />
       ) : erro ? (
         <Text style={styles.errorText}>{erro}</Text>
-      ) : itens.length === 0 ? (
+      ) : itensPorMotorista.length === 0 ? (
         <View style={styles.messagesVazio}>
           <HistoryIcon size={32} color={colors.textMuted} strokeWidth={1.5} />
           <Text style={styles.messagesVazioTexto}>
@@ -604,8 +621,8 @@ function MessagesView({ onBack }: { onBack: () => void }) {
         </View>
       ) : (
         <FlatList
-          data={itens}
-          keyExtractor={(item) => item.corrida.id}
+          data={itensPorMotorista}
+          keyExtractor={(item) => item.motorista.id}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.messagesLista}
           renderItem={({ item }) => (

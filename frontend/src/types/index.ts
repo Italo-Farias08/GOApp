@@ -153,6 +153,18 @@ export type HistoricoCorridaItem = {
   };
 };
 
+// Espelho de HistoricoCorridaItem pro lado do motorista: mesma ideia, só que
+// traz os dados do PASSAGEIRO em vez do motorista — alimenta a tela
+// "Mensagens" do app do motorista.
+export type HistoricoCorridaMotoristaItem = {
+  corrida: Corrida;
+  passageiro: {
+    id: string;
+    nome: string;
+    avatarUrl?: string;
+  };
+};
+
 // Tipos de navegação — adicionar novas telas aqui conforme o app crescer
 export type RootStackParamList = {
   Login: undefined;

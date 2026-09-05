@@ -176,6 +176,29 @@ async function listarHistorico(req, res, next) {
   }
 }
 
+// GET /rides/history/driver
+//
+// Espelho de listarHistorico, só que do lado do motorista: corridas já
+// encerradas dele, com os dados do PASSAGEIRO — alimenta a tela "Mensagens"
+// do app do motorista, onde ele pode reabrir o chat de uma corrida antiga
+// (ex: passageiro esqueceu algo, ou perguntou algo depois da viagem).
+async function listarHistoricoMotorista(req, res, next) {
+  try {
+    const linhas = await corridaModelo.listarFinalizadasComPassageiroPorMotorista(req.usuarioId);
+    const historico = linhas.map((linha) => ({
+      corrida: corridaModelo.paraCorridaPublica(linha),
+      passageiro: {
+        id: linha.passageiro_id,
+        nome: linha.passageiro_nome,
+        avatarUrl: linha.passageiro_avatar_url || undefined,
+      },
+    }));
+    return res.json(historico);
+  } catch (erro) {
+    next(erro);
+  }
+}
+
 // POST /rides/:id/messages
 //
 // Manda uma mensagem pro outro lado da corrida (passageiro -> motorista ou
@@ -385,6 +408,7 @@ module.exports = {
   criar,
   buscarAtiva,
   detalhar,
+  listarHistoricoMotorista,
   aceitar,
   embarcar,
   cancelar,

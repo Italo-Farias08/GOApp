@@ -8,6 +8,7 @@ import type { Socket } from 'socket.io-client';
 import Button from '../components/Button';
 import CancelRideModal from '../components/CancelRideModal';
 import ChatModal from '../components/ChatModal';
+import DriverMessagesModal from '../components/DriverMessagesModal';
 import MapPin from '../components/MapPin';
 import StatusToast, { StatusToastTone } from '../components/StatusToast';
 import SwipeButton from '../components/SwipeButton';
@@ -196,6 +197,9 @@ export default function DriverHomeScreen() {
 
   // --- Chat com o passageiro ---
   const [chatVisivel, setChatVisivel] = useState(false);
+  // Mensagens pós-corrida (passageiros de viagens já encerradas que
+  // mandaram recado) — independente do chat da corrida ativa acima.
+  const [mensagensModalVisivel, setMensagensModalVisivel] = useState(false);
   const [mensagensChat, setMensagensChat] = useState<MensagemChat[]>([]);
   const [carregandoHistoricoChat, setCarregandoHistoricoChat] = useState(false);
   const [mensagensNaoLidas, setMensagensNaoLidas] = useState(0);
@@ -278,56 +282,76 @@ export default function DriverHomeScreen() {
   useEffect(() => {
     let ativo = true;
 
+    // IMPORTANTE: soquete é uma conexão singleton reaproveitada (ver
+    // socketService.ts) e MAIS DE UM componente pode escutar o mesmo evento
+    // ao mesmo tempo (ex: esta tela escuta "corrida:mensagem" pro chat da
+    // corrida ativa, e a tela de "Mensagens" pós-corrida escuta o mesmo
+    // evento pra conversa antiga aberta). Por isso cada handler é uma
+    // referência nomeada e o cleanup usa `.off(evento, handler)` — remove
+    // só ESTE listener. Um `.off(evento)` sem a referência removeria TODOS
+    // os listeners desse evento, inclusive os de outros componentes.
+    function aoReceberCorridaNova(corrida: Corrida) {
+      if (!ativo) return;
+      setCorridaRecebida((atual) => atual ?? corrida);
+    }
+
+    // Mensagem nova do chat — só aceita se for da corrida ativa. Se o chat
+    // estiver fechado no momento, conta como "não lida". Mensagens de
+    // corridas já encerradas não passam por aqui — quem cuida delas é o
+    // listener próprio da tela de "Mensagens" pós-corrida.
+    function aoReceberMensagem(mensagem: MensagemChat) {
+      if (!ativo || mensagem.corridaId !== corridaAtivaIdRef.current) return;
+      setMensagensChat((atual) => {
+        if (atual.some((item) => item.id === mensagem.id)) return atual;
+        return [...atual, mensagem];
+      });
+      setChatVisivel((visivelAtual) => {
+        if (!visivelAtual && mensagem.remetenteId !== userIdRef.current) {
+          setMensagensNaoLidas((n) => n + 1);
+        }
+        return visivelAtual;
+      });
+    }
+
+    function aoFicarIndisponivel({ corridaId }: { corridaId: string }) {
+      if (!ativo) return;
+      setCorridaRecebida((atual) => (atual?.id === corridaId ? null : atual));
+    }
+
+    // Regra: se foi o PASSAGEIRO que cancelou, a corrida acaba de vez pro
+    // motorista também (não tem mais ninguém pra buscar). Isso pode
+    // acontecer tanto numa oferta ainda não aceita quanto numa corrida já
+    // em andamento — em qualquer caso a tela volta pro estado anterior.
+    function aoCancelar({ corridaId, canceladoPor }: { corridaId: string; canceladoPor?: string }) {
+      if (!ativo) return;
+      setCorridaAtiva((atual) => {
+        if (atual?.id !== corridaId) return atual;
+        if (canceladoPor === 'passageiro') {
+          avisar('O passageiro cancelou a corrida.', 'warning');
+        }
+        return null;
+      });
+      setCorridaRecebida((atual) => (atual?.id === corridaId ? null : atual));
+    }
+
+    let soqueteLocal: Socket | null = null;
     (async () => {
-      const soquete = await conectarSoquete();
-      soqueteRef.current = soquete;
+      soqueteLocal = await conectarSoquete();
+      soqueteRef.current = soqueteLocal;
+      if (!ativo) return; // desmontou enquanto conectava — não registra nada
 
-      soquete.on('corrida:nova', (corrida: Corrida) => {
-        if (!ativo) return;
-        setCorridaRecebida((atual) => atual ?? corrida);
-      });
-
-      // Mensagem nova do chat — só aceita se for da corrida ativa. Se o chat
-      // estiver fechado no momento, conta como "não lida".
-      soquete.on('corrida:mensagem', (mensagem: MensagemChat) => {
-        if (!ativo || mensagem.corridaId !== corridaAtivaIdRef.current) return;
-        setMensagensChat((atual) => [...atual, mensagem]);
-        setChatVisivel((visivelAtual) => {
-          if (!visivelAtual && mensagem.remetenteId !== userIdRef.current) {
-            setMensagensNaoLidas((n) => n + 1);
-          }
-          return visivelAtual;
-        });
-      });
-
-      soquete.on('corrida:indisponivel', ({ corridaId }: { corridaId: string }) => {
-        if (!ativo) return;
-        setCorridaRecebida((atual) => (atual?.id === corridaId ? null : atual));
-      });
-
-      // Regra: se foi o PASSAGEIRO que cancelou, a corrida acaba de vez pro
-      // motorista também (não tem mais ninguém pra buscar). Isso pode
-      // acontecer tanto numa oferta ainda não aceita quanto numa corrida já
-      // em andamento — em qualquer caso a tela volta pro estado anterior.
-      soquete.on('corrida:cancelada', ({ corridaId, canceladoPor }: { corridaId: string; canceladoPor?: string }) => {
-        if (!ativo) return;
-        setCorridaAtiva((atual) => {
-          if (atual?.id !== corridaId) return atual;
-          if (canceladoPor === 'passageiro') {
-            avisar('O passageiro cancelou a corrida.', 'warning');
-          }
-          return null;
-        });
-        setCorridaRecebida((atual) => (atual?.id === corridaId ? null : atual));
-      });
+      soqueteLocal.on('corrida:nova', aoReceberCorridaNova);
+      soqueteLocal.on('corrida:mensagem', aoReceberMensagem);
+      soqueteLocal.on('corrida:indisponivel', aoFicarIndisponivel);
+      soqueteLocal.on('corrida:cancelada', aoCancelar);
     })();
 
     return () => {
       ativo = false;
-      soqueteRef.current?.off('corrida:nova');
-      soqueteRef.current?.off('corrida:mensagem');
-      soqueteRef.current?.off('corrida:indisponivel');
-      soqueteRef.current?.off('corrida:cancelada');
+      soqueteLocal?.off('corrida:nova', aoReceberCorridaNova);
+      soqueteLocal?.off('corrida:mensagem', aoReceberMensagem);
+      soqueteLocal?.off('corrida:indisponivel', aoFicarIndisponivel);
+      soqueteLocal?.off('corrida:cancelada', aoCancelar);
     };
   }, []);
 
@@ -530,18 +554,28 @@ export default function DriverHomeScreen() {
       )}
 
       <View style={[styles.topBar, { top: insets.top + spacing.sm }]}>
-        <Pressable
-          onPress={() => navigation.goBack()}
-          disabled={!!corridaAtiva}
-          style={({ pressed }) => [
-            styles.voltarBotao,
-            !!corridaAtiva && styles.voltarBotaoDesabilitado,
-            pressed && styles.pressedFeedback,
-          ]}
-        >
-          <ChevronLeftIcon size={14} color={colors.text} />
-          <Text style={styles.voltarTexto}>Modo passageiro</Text>
-        </Pressable>
+        <View style={styles.topBarGrupoEsquerda}>
+          <Pressable
+            onPress={() => navigation.goBack()}
+            disabled={!!corridaAtiva}
+            style={({ pressed }) => [
+              styles.voltarBotao,
+              !!corridaAtiva && styles.voltarBotaoDesabilitado,
+              pressed && styles.pressedFeedback,
+            ]}
+          >
+            <ChevronLeftIcon size={14} color={colors.text} />
+            <Text style={styles.voltarTexto}>Modo passageiro</Text>
+          </Pressable>
+
+          <Pressable
+            onPress={() => setMensagensModalVisivel(true)}
+            hitSlop={8}
+            style={({ pressed }) => [styles.mensagensBotao, pressed && styles.pressedFeedback]}
+          >
+            <ChatIcon size={16} color={colors.text} />
+          </Pressable>
+        </View>
 
         <View style={[styles.statusPill, disponivel && styles.statusPillOnline]}>
           <Animated.View
@@ -806,6 +840,11 @@ export default function DriverHomeScreen() {
         onEnviar={enviarMensagemChat}
         onFechar={() => setChatVisivel(false)}
       />
+
+      <DriverMessagesModal
+        visible={mensagensModalVisivel}
+        onClose={() => setMensagensModalVisivel(false)}
+      />
     </View>
   );
 }
@@ -836,6 +875,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
+  topBarGrupoEsquerda: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
   voltarBotao: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -843,6 +887,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderRadius: radius.full,
+    ...sombraFlutuante,
+  },
+  mensagensBotao: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
     ...sombraFlutuante,
   },
   voltarBotaoDesabilitado: { opacity: 0.4 },

@@ -201,6 +201,25 @@ async function listarFinalizadasComMotoristaPorPassageiro(passageiroId) {
   return resultado.rows;
 }
 
+// Espelho de listarFinalizadasComMotoristaPorPassageiro, só que do lado do
+// motorista: corridas encerradas dele, trazendo os dados do PASSAGEIRO (não
+// do motorista) — alimenta a tela "Mensagens" do app do motorista.
+async function listarFinalizadasComPassageiroPorMotorista(motoristaId) {
+  const resultado = await consultar(
+    `SELECT c.*,
+            u.nome AS passageiro_nome,
+            u.avatar_url AS passageiro_avatar_url
+     FROM corridas c
+     JOIN usuarios u ON u.id = c.passageiro_id
+     WHERE c.motorista_id = $1
+       AND c.status IN ('finalizada', 'cancelada')
+     ORDER BY c.criado_em DESC
+     LIMIT 30`,
+    [motoristaId]
+  );
+  return resultado.rows;
+}
+
 // Converte uma linha de mensagens_corrida pro formato que o front espera.
 function paraMensagemPublica(linha) {
   if (!linha) return null;
@@ -246,6 +265,7 @@ module.exports = {
   cancelarPeloMotorista,
   finalizar,
   listarFinalizadasComMotoristaPorPassageiro,
+  listarFinalizadasComPassageiroPorMotorista,
   paraMensagemPublica,
   salvarMensagem,
   listarMensagens,

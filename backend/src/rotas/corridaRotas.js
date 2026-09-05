@@ -11,6 +11,8 @@ roteador.get('/', corridaControlador.buscarAtiva);
 // Precisa vir ANTES de '/:id' — senão o Express entende "history" como um
 // valor de :id e essa rota nunca é alcançada.
 roteador.get('/history', corridaControlador.listarHistorico);
+// Mesma regra: precisa vir ANTES de '/:id'.
+roteador.get('/history/driver', corridaControlador.listarHistoricoMotorista);
 roteador.get('/:id', corridaControlador.detalhar);
 roteador.post('/:id/accept', corridaControlador.aceitar);
 roteador.post('/:id/pickup', corridaControlador.embarcar);

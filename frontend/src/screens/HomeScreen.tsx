@@ -392,82 +392,108 @@ export default function HomeScreen() {
   // do motorista ao vivo, finalizada, cancelada).
   useEffect(() => {
     let ativo = true;
-    let soquete: Socket | null = null;
 
+    // IMPORTANTE: soquete é uma conexão singleton reaproveitada (ver
+    // socketService.ts) e MAIS DE UM componente pode escutar o mesmo evento
+    // ao mesmo tempo (ex: esta tela escuta "corrida:mensagem" pro chat da
+    // corrida ativa, e a tela de "Mensagens" pós-corrida escuta o mesmo
+    // evento pra conversa antiga aberta). Por isso cada handler é uma
+    // referência nomeada e o cleanup usa `.off(evento, handler)` — remove
+    // só ESTE listener. Um `.off(evento)` sem a referência removeria TODOS
+    // os listeners desse evento, inclusive os de outros componentes — e
+    // registrar de novo sem tirar o antigo empilha um segundo listener,
+    // fazendo o mesmo evento disparar duas vezes (mensagem duplicada,
+    // "motorista aceitou" avisado 2x, etc).
+
+    // Mensagem nova do chat — só aceita se for da corrida atual. Se o chat
+    // estiver fechado no momento, conta como "não lida" pra dar sinal
+    // visual no botão de conversar. Mensagens de corridas já encerradas não
+    // passam por aqui — quem cuida delas é o listener da tela de
+    // "Mensagens" pós-corrida.
+    function aoReceberMensagem(mensagem: MensagemChat) {
+      if (!ativo || mensagem.corridaId !== corridaIdRef.current) return;
+      setMensagensChat((atual) => {
+        if (atual.some((item) => item.id === mensagem.id)) return atual;
+        return [...atual, mensagem];
+      });
+      setChatVisivel((visivelAtual) => {
+        if (!visivelAtual && mensagem.remetenteId !== userIdRef.current) {
+          setMensagensNaoLidas((n) => n + 1);
+        }
+        return visivelAtual;
+      });
+    }
+
+    function aoAceitar({ corridaId: id, motorista }: { corridaId: string; motorista: MotoristaInfo }) {
+      if (!ativo || id !== corridaIdRef.current) return;
+      setMotoristaAtribuido(motorista);
+      avisar(`${motorista.nome.split(' ')[0]} aceitou sua corrida e já está a caminho!`, 'success');
+    }
+
+    function aoAtualizarLocalizacao({ corridaId: id, latitude, longitude }: { corridaId: string; latitude: number; longitude: number }) {
+      if (!ativo || id !== corridaIdRef.current) return;
+      setLocalizacaoMotorista({ latitude, longitude });
+    }
+
+    // Motorista confirmou que pegou o passageiro — a partir daqui a
+    // corrida está "em_andamento", indo pro destino final.
+    function aoEmbarcar({ corridaId: id }: { corridaId: string }) {
+      if (!ativo || id !== corridaIdRef.current) return;
+      setEmbarcado(true);
+      avisar('Motorista confirmou o embarque. A caminho do seu destino!', 'success');
+    }
+
+    // Motorista cancelou depois de aceitar, mas a corrida ainda tem chance
+    // com outro motorista — não reseta a tela, só volta pro estado "procurando".
+    function aoMotoristaCancelar({ corridaId: id }: { corridaId: string }) {
+      if (!ativo || id !== corridaIdRef.current) return;
+      setMotoristaAtribuido(null);
+      setLocalizacaoMotorista(null);
+      avisar('Seu motorista precisou cancelar. Procurando outro motorista para você...', 'warning');
+    }
+
+    function aoFinalizar({ corridaId: id }: { corridaId: string }) {
+      if (!ativo || id !== corridaIdRef.current) return;
+      avisar('Corrida finalizada. Obrigado por viajar com o #GO!', 'success');
+      resetarCorrida();
+    }
+
+    function aoCancelar({ corridaId: id, canceladoPor, motivo }: { corridaId: string; canceladoPor?: string; motivo?: string }) {
+      if (!ativo || id !== corridaIdRef.current) return;
+      if (canceladoPor === 'sistema') {
+        avisar(motivo || 'Não encontramos um motorista disponível. Tente novamente.', 'danger');
+      } else if (canceladoPor === 'motorista') {
+        avisar('O motorista cancelou a corrida.', 'warning');
+      } else {
+        avisar('Corrida cancelada.', 'info');
+      }
+      resetarCorrida();
+    }
+
+    let soquete: Socket | null = null;
     (async () => {
       soquete = await conectarSoquete();
       soqueteRef.current = soquete;
+      if (!ativo) return; // desmontou enquanto conectava — não registra nada
 
-      // Mensagem nova do chat — só aceita se for da corrida atual. Se o chat
-      // estiver fechado no momento, conta como "não lida" pra dar sinal
-      // visual no botão de conversar.
-      soquete.on('corrida:mensagem', (mensagem: MensagemChat) => {
-        if (!ativo || mensagem.corridaId !== corridaIdRef.current) return;
-        setMensagensChat((atual) => [...atual, mensagem]);
-        setChatVisivel((visivelAtual) => {
-          if (!visivelAtual && mensagem.remetenteId !== userIdRef.current) {
-            setMensagensNaoLidas((n) => n + 1);
-          }
-          return visivelAtual;
-        });
-      });
-
-      soquete.on('corrida:aceita', ({ corridaId: id, motorista }: { corridaId: string; motorista: MotoristaInfo }) => {
-        if (!ativo || id !== corridaIdRef.current) return;
-        setMotoristaAtribuido(motorista);
-        avisar(`${motorista.nome.split(' ')[0]} aceitou sua corrida e já está a caminho!`, 'success');
-      });
-
-      soquete.on('corrida:localizacao_motorista', ({ corridaId: id, latitude, longitude }: { corridaId: string; latitude: number; longitude: number }) => {
-        if (!ativo || id !== corridaIdRef.current) return;
-        setLocalizacaoMotorista({ latitude, longitude });
-      });
-
-      // Motorista confirmou que pegou o passageiro — a partir daqui a
-      // corrida está "em_andamento", indo pro destino final.
-      soquete.on('corrida:embarque', ({ corridaId: id }: { corridaId: string }) => {
-        if (!ativo || id !== corridaIdRef.current) return;
-        setEmbarcado(true);
-        avisar('Motorista confirmou o embarque. A caminho do seu destino!', 'success');
-      });
-
-      // Motorista cancelou depois de aceitar, mas a corrida ainda tem chance
-      // com outro motorista — não reseta a tela, só volta pro estado "procurando".
-      soquete.on('corrida:motorista_cancelou', ({ corridaId: id }: { corridaId: string }) => {
-        if (!ativo || id !== corridaIdRef.current) return;
-        setMotoristaAtribuido(null);
-        setLocalizacaoMotorista(null);
-        avisar('Seu motorista precisou cancelar. Procurando outro motorista para você...', 'warning');
-      });
-
-      soquete.on('corrida:finalizada', ({ corridaId: id }: { corridaId: string }) => {
-        if (!ativo || id !== corridaIdRef.current) return;
-        avisar('Corrida finalizada. Obrigado por viajar com o #GO!', 'success');
-        resetarCorrida();
-      });
-
-      soquete.on('corrida:cancelada', ({ corridaId: id, canceladoPor, motivo }: { corridaId: string; canceladoPor?: string; motivo?: string }) => {
-        if (!ativo || id !== corridaIdRef.current) return;
-        if (canceladoPor === 'sistema') {
-          avisar(motivo || 'Não encontramos um motorista disponível. Tente novamente.', 'danger');
-        } else if (canceladoPor === 'motorista') {
-          avisar('O motorista cancelou a corrida.', 'warning');
-        } else {
-          avisar('Corrida cancelada.', 'info');
-        }
-        resetarCorrida();
-      });
+      soquete.on('corrida:mensagem', aoReceberMensagem);
+      soquete.on('corrida:aceita', aoAceitar);
+      soquete.on('corrida:localizacao_motorista', aoAtualizarLocalizacao);
+      soquete.on('corrida:embarque', aoEmbarcar);
+      soquete.on('corrida:motorista_cancelou', aoMotoristaCancelar);
+      soquete.on('corrida:finalizada', aoFinalizar);
+      soquete.on('corrida:cancelada', aoCancelar);
     })();
 
     return () => {
       ativo = false;
-      soquete?.off('corrida:mensagem');
-      soquete?.off('corrida:aceita');
-      soquete?.off('corrida:localizacao_motorista');
-      soquete?.off('corrida:embarque');
-      soquete?.off('corrida:motorista_cancelou');
-      soquete?.off('corrida:finalizada');
-      soquete?.off('corrida:cancelada');
+      soquete?.off('corrida:mensagem', aoReceberMensagem);
+      soquete?.off('corrida:aceita', aoAceitar);
+      soquete?.off('corrida:localizacao_motorista', aoAtualizarLocalizacao);
+      soquete?.off('corrida:embarque', aoEmbarcar);
+      soquete?.off('corrida:motorista_cancelou', aoMotoristaCancelar);
+      soquete?.off('corrida:finalizada', aoFinalizar);
+      soquete?.off('corrida:cancelada', aoCancelar);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

@@ -1,6 +1,6 @@
 import { api } from './api';
 import type { TipoVeiculo } from '../utils/precoCorrida';
-import type { Corrida, HistoricoCorridaItem, MensagemChat, MotoristaInfo, PontoCorrida } from '../types';
+import type { Corrida, HistoricoCorridaItem, HistoricoCorridaMotoristaItem, MensagemChat, MotoristaInfo, PontoCorrida } from '../types';
 
 type CriarCorridaPayload = {
   origem: PontoCorrida;
@@ -74,5 +74,13 @@ export async function enviarMensagemCorrida(id: string, texto: string): Promise<
 // — alimenta a lista da tela "Mensagens".
 export async function listarHistoricoCorridas(): Promise<HistoricoCorridaItem[]> {
   const { data } = await api.get<HistoricoCorridaItem[]>('/rides/history');
+  return data;
+}
+
+// Espelho de listarHistoricoCorridas pro lado do motorista — corridas já
+// encerradas dele, com os dados do passageiro. Alimenta a tela "Mensagens"
+// do app do motorista.
+export async function listarHistoricoCorridasMotorista(): Promise<HistoricoCorridaMotoristaItem[]> {
+  const { data } = await api.get<HistoricoCorridaMotoristaItem[]>('/rides/history/driver');
   return data;
 }
