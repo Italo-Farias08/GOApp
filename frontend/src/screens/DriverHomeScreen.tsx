@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, BackHandler, LayoutChangeEvent, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MapView, { Marker, Polyline, UrlTile } from 'react-native-maps';
 import type { Socket } from 'socket.io-client';
 import Button from '../components/Button';
@@ -9,7 +10,16 @@ import CancelRideModal from '../components/CancelRideModal';
 import ChatModal from '../components/ChatModal';
 import MapPin from '../components/MapPin';
 import StatusToast, { StatusToastTone } from '../components/StatusToast';
-import { CarIcon, ChatIcon, CheckIcon } from '../components/icons';
+import SwipeButton from '../components/SwipeButton';
+import {
+  AlertIcon,
+  CarIcon,
+  ChatIcon,
+  CheckIcon,
+  ChevronLeftIcon,
+  LocationIcon,
+  MotoIcon,
+} from '../components/icons';
 import { useAuth } from '../context/AuthContext';
 import { useDriverLocationWatcher } from '../hooks/useDriverLocationWatcher';
 import { useRota } from '../hooks/useRota';
@@ -30,9 +40,68 @@ const MOTIVOS_CANCELAMENTO_MOTORISTA = [
   'Outro motivo',
 ];
 
+// Sombra padrão dos elementos que "flutuam" sobre o mapa (pills do topo,
+// botão de recentralizar) — sem ela, esses elementos pareciam colados na
+// tela em vez de flutuando por cima do mapa.
+const sombraFlutuante = {
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 3 },
+  shadowOpacity: 0.3,
+  shadowRadius: 6,
+  elevation: 6,
+} as const;
+
+// Switch animado de "ficar online" — troca o botão de texto cheio por um
+// controle compacto, do jeito que apps de motorista de verdade fazem.
+function ToggleOnline({ value, onToggle }: { value: boolean; onToggle: () => void }) {
+  const anim = useRef(new Animated.Value(value ? 1 : 0)).current;
+
+  useEffect(() => {
+    Animated.spring(anim, {
+      toValue: value ? 1 : 0,
+      useNativeDriver: false,
+      friction: 7,
+      tension: 70,
+    }).start();
+  }, [value]);
+
+  const corTrilha = anim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [colors.surfaceAlt, colors.primary],
+  });
+  const deslocamentoThumb = anim.interpolate({ inputRange: [0, 1], outputRange: [2, 22] });
+
+  return (
+    <Pressable onPress={onToggle} hitSlop={10}>
+      <Animated.View style={[toggleStyles.trilha, { backgroundColor: corTrilha }]}>
+        <Animated.View style={[toggleStyles.thumb, { transform: [{ translateX: deslocamentoThumb }] }]} />
+      </Animated.View>
+    </Pressable>
+  );
+}
+
+const toggleStyles = StyleSheet.create({
+  trilha: {
+    width: 48,
+    height: 28,
+    borderRadius: 14,
+    padding: 2,
+    justifyContent: 'center',
+  },
+  thumb: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+  },
+});
+
 export default function DriverHomeScreen() {
   const { user } = useAuth();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const insets = useSafeAreaInsets();
+  // Primeiro nome só, pra caber bem na saudação do painel offline.
+  const primeiroNome = user?.name?.trim().split(/\s+/)[0] || 'motorista';
 
   const [disponivel, setDisponivel] = useState(false);
   const [corridaRecebida, setCorridaRecebida] = useState<Corrida | null>(null);
@@ -54,12 +123,76 @@ export default function DriverHomeScreen() {
   const mapRef = useRef<MapView>(null);
   const soqueteRef = useRef<Socket | null>(null);
 
+  // Altura real do painel inferior (varia conforme o estado: offline, nova
+  // corrida, corrida ativa) — usada só pra posicionar o botão flutuante de
+  // recentralizar sempre coladinho acima dele, sem sobrepor nada.
+  const [alturaPainel, setAlturaPainel] = useState(0);
+  function medirPainel(evento: LayoutChangeEvent) {
+    const altura = evento.nativeEvent.layout.height;
+    setAlturaPainel((atual) => (Math.abs(atual - altura) > 0.5 ? altura : atual));
+  }
+
+  // Desde quando o motorista está online nessa sessão de busca — só pra
+  // mostrar "Online há X min" no painel. Puramente local/visual, não muda
+  // nenhuma regra de negócio.
+  const [inicioSessao, setInicioSessao] = useState<number | null>(null);
+  const [, forcarRelogio] = useState(0);
+  useEffect(() => {
+    if (!disponivel) {
+      setInicioSessao(null);
+      return;
+    }
+    setInicioSessao(Date.now());
+    const intervalo = setInterval(() => forcarRelogio((n) => n + 1), 30000);
+    return () => clearInterval(intervalo);
+  }, [disponivel]);
+  const minutosOnline = inicioSessao ? Math.round((Date.now() - inicioSessao) / 60000) : 0;
+
+  function recentralizarMapa() {
+    if (!coords) return;
+    mapRef.current?.animateToRegion(
+      { latitude: coords.latitude, longitude: coords.longitude, latitudeDelta: 0.01, longitudeDelta: 0.01 },
+      450
+    );
+  }
+
   const avisoContadorRef = useRef(0);
   function avisar(mensagem: string, tom: StatusToastTone = 'info') {
     avisoContadorRef.current += 1;
     setToastTom(tom);
     setToastMensagem(mensagem + '\u200B'.repeat(avisoContadorRef.current % 2));
   }
+
+  // --- Trava de segurança: com uma corrida ativa, o motorista NÃO pode sair
+  // da tela por acidente. Antes, só o botão "Modo passageiro" ficava
+  // desabilitado — mas o gesto nativo de arrastar da borda pra voltar (iOS)
+  // e o botão físico de voltar (Android) continuavam funcionando por fora
+  // dele. Um arrasto mal feito no SwipeButton perto da borda esquerda podia
+  // disparar esse gesto e jogar o motorista de volta pra tela de passageiro
+  // no meio da corrida. Aqui a gente desliga o gesto e barra qualquer
+  // tentativa de navegação pra fora enquanto `corridaAtiva` existir.
+  useEffect(() => {
+    navigation.setOptions({ gestureEnabled: !corridaAtiva });
+  }, [corridaAtiva, navigation]);
+
+  useEffect(() => {
+    const cancelarSaida = navigation.addListener('beforeRemove', (evento) => {
+      if (!corridaAtiva) return;
+      evento.preventDefault();
+      avisar('Finalize ou cancele a corrida atual antes de sair.', 'warning');
+    });
+    return cancelarSaida;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [navigation, corridaAtiva]);
+
+  useEffect(() => {
+    const assinatura = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (!corridaAtiva) return false;
+      avisar('Finalize ou cancele a corrida atual antes de sair.', 'warning');
+      return true; // consome o back físico do Android, não deixa sair da tela
+    });
+    return () => assinatura.remove();
+  }, [corridaAtiva]);
 
   // --- Chat com o passageiro ---
   const [chatVisivel, setChatVisivel] = useState(false);
@@ -338,6 +471,9 @@ export default function DriverHomeScreen() {
   if (user?.driverStatus !== 'approved') {
     return (
       <View style={styles.bloqueado}>
+        <View style={styles.bloqueadoIconWrap}>
+          <AlertIcon size={26} color={colors.warning} />
+        </View>
         <Text style={styles.bloqueadoTitulo}>Modo motorista indisponível</Text>
         <Text style={styles.bloqueadoTexto}>Seu cadastro de motorista ainda não foi aprovado.</Text>
         <Button label="Voltar" onPress={() => navigation.goBack()} style={styles.bloqueadoBotao} />
@@ -380,7 +516,20 @@ export default function DriverHomeScreen() {
 
       <View pointerEvents="none" style={styles.mapBrightener} />
 
-      <View style={styles.topBar}>
+      {coords && (
+        <Pressable
+          onPress={recentralizarMapa}
+          style={({ pressed }) => [
+            styles.recentralizarBotao,
+            { bottom: alturaPainel + spacing.md },
+            pressed && styles.pressedFeedback,
+          ]}
+        >
+          <LocationIcon size={20} color={colors.text} />
+        </Pressable>
+      )}
+
+      <View style={[styles.topBar, { top: insets.top + spacing.sm }]}>
         <Pressable
           onPress={() => navigation.goBack()}
           disabled={!!corridaAtiva}
@@ -390,7 +539,8 @@ export default function DriverHomeScreen() {
             pressed && styles.pressedFeedback,
           ]}
         >
-          <Text style={styles.voltarTexto}>‹ Modo passageiro</Text>
+          <ChevronLeftIcon size={14} color={colors.text} />
+          <Text style={styles.voltarTexto}>Modo passageiro</Text>
         </Pressable>
 
         <View style={[styles.statusPill, disponivel && styles.statusPillOnline]}>
@@ -415,29 +565,48 @@ export default function DriverHomeScreen() {
       </View>
 
       {!corridaAtiva && !corridaRecebida && (
-        <View style={styles.painelInferior}>
-          {!!erro && <Text style={styles.erroTexto}>{erro}</Text>}
-          <Text style={styles.painelTitulo}>
-            {disponivel ? 'Procurando corridas perto de você...' : 'Você está offline'}
-          </Text>
-          <Text style={styles.painelSubtitulo}>
-            {disponivel
-              ? 'Assim que uma corrida aparecer por perto, ela chega aqui na hora.'
-              : 'Fique online pra começar a receber pedidos de corrida.'}
-          </Text>
-          <Button
-            label={disponivel ? 'Ficar offline' : 'Ficar online'}
-            variant={disponivel ? 'secondary' : 'primary'}
-            onPress={() => setDisponivel((atual) => !atual)}
-            style={styles.painelBotao}
-          />
+        <View
+          style={[styles.painelInferior, { paddingBottom: spacing.xl + insets.bottom }]}
+          onLayout={medirPainel}
+        >
+          <View style={styles.grabber} />
+          {!!erro && (
+            <View style={styles.erroLinha}>
+              <AlertIcon size={14} color={colors.danger} />
+              <Text style={styles.erroTexto}>{erro}</Text>
+            </View>
+          )}
+          <View style={styles.statusHeaderRow}>
+            <View style={styles.statusHeaderTextos}>
+              <Text style={styles.painelTitulo}>
+                {disponivel ? 'Você está online' : `Olá, ${primeiroNome}`}
+              </Text>
+              <Text style={styles.painelSubtitulo}>
+                {disponivel
+                  ? 'Procurando corridas perto de você...'
+                  : 'Fique online pra começar a receber pedidos de corrida.'}
+              </Text>
+            </View>
+            <View style={styles.toggleColuna}>
+              <ToggleOnline value={disponivel} onToggle={() => setDisponivel((atual) => !atual)} />
+              <Text style={styles.toggleLegenda}>{disponivel ? 'Online' : 'Offline'}</Text>
+            </View>
+          </View>
+          {disponivel && (
+            <View style={styles.sessaoPill}>
+              <View style={styles.sessaoPonto} />
+              <Text style={styles.sessaoTexto}>Online há {formatarDuracao(minutosOnline)}</Text>
+            </View>
+          )}
         </View>
       )}
 
       {corridaRecebida && (
         <Animated.View
+          onLayout={medirPainel}
           style={[
             styles.painelInferior,
+            { paddingBottom: spacing.xl + insets.bottom },
             {
               opacity: novaCorridaAnim,
               transform: [
@@ -451,7 +620,17 @@ export default function DriverHomeScreen() {
             },
           ]}
         >
-          <Text style={styles.novaCorridaTitulo}>Nova corrida</Text>
+          <View style={styles.grabber} />
+          <View style={styles.painelHeaderComIcone}>
+            <View style={styles.veiculoAvatar}>
+              {corridaRecebida.tipoVeiculo === 'moto' ? (
+                <MotoIcon size={20} color={colors.primary} />
+              ) : (
+                <CarIcon size={20} color={colors.primary} />
+              )}
+            </View>
+            <Text style={styles.novaCorridaTitulo}>Nova corrida</Text>
+          </View>
           <View style={styles.novaCorridaLinha}>
             <View style={[styles.pontoRota, styles.pontoOrigem]} />
             <Text style={styles.novaCorridaEndereco} numberOfLines={1}>
@@ -489,14 +668,27 @@ export default function DriverHomeScreen() {
       )}
 
       {corridaAtiva && !embarcado && (
-        <View style={styles.painelInferior}>
+        <View
+          style={[styles.painelInferior, { paddingBottom: spacing.xl + insets.bottom }]}
+          onLayout={medirPainel}
+        >
+          <View style={styles.grabber} />
           <View style={styles.corridaAtivaTopo}>
             <View style={styles.corridaAtivaBadge}>
               <CheckIcon size={11} color={colors.background} />
             </View>
             <Text style={styles.corridaAtivaTexto}>Corrida aceita</Text>
           </View>
-          <Text style={styles.novaCorridaTitulo}>A caminho do passageiro</Text>
+          <View style={styles.painelHeaderComIcone}>
+            <View style={styles.veiculoAvatar}>
+              {corridaAtiva.tipoVeiculo === 'moto' ? (
+                <MotoIcon size={20} color={colors.primary} />
+              ) : (
+                <CarIcon size={20} color={colors.primary} />
+              )}
+            </View>
+            <Text style={styles.novaCorridaTitulo}>A caminho do passageiro</Text>
+          </View>
           <View style={styles.novaCorridaLinha}>
             <View style={[styles.pontoRota, styles.pontoOrigem]} />
             <Text style={styles.novaCorridaEndereco} numberOfLines={1}>
@@ -509,9 +701,9 @@ export default function DriverHomeScreen() {
               {formatarDuracao(rota.duracaoMin)}
             </Text>
           )}
-          <Button
-            label="Cheguei · Confirmar embarque"
-            onPress={confirmarEmbarque}
+          <SwipeButton
+            label="Arraste para confirmar · Cheguei"
+            onConfirm={confirmarEmbarque}
             loading={embarcando}
             disabled={cancelando}
             style={styles.painelBotao}
@@ -539,14 +731,27 @@ export default function DriverHomeScreen() {
       )}
 
       {corridaAtiva && embarcado && (
-        <View style={styles.painelInferior}>
+        <View
+          style={[styles.painelInferior, { paddingBottom: spacing.xl + insets.bottom }]}
+          onLayout={medirPainel}
+        >
+          <View style={styles.grabber} />
           <View style={styles.corridaAtivaTopo}>
             <View style={styles.corridaAtivaBadge}>
               <CheckIcon size={11} color={colors.background} />
             </View>
             <Text style={styles.corridaAtivaTexto}>Passageiro a bordo</Text>
           </View>
-          <Text style={styles.novaCorridaTitulo}>A caminho do destino</Text>
+          <View style={styles.painelHeaderComIcone}>
+            <View style={styles.veiculoAvatar}>
+              {corridaAtiva.tipoVeiculo === 'moto' ? (
+                <MotoIcon size={20} color={colors.primary} />
+              ) : (
+                <CarIcon size={20} color={colors.primary} />
+              )}
+            </View>
+            <Text style={styles.novaCorridaTitulo}>A caminho do destino</Text>
+          </View>
           <View style={styles.novaCorridaLinha}>
             <View style={[styles.pontoRota, styles.pontoDestino]} />
             <Text style={styles.novaCorridaEndereco} numberOfLines={1}>
@@ -580,7 +785,7 @@ export default function DriverHomeScreen() {
         </View>
       )}
 
-      <StatusToast message={toastMensagem} tone={toastTom} topOffset={spacing.xxl + spacing.xl + spacing.md} />
+      <StatusToast message={toastMensagem} tone={toastTom} topOffset={insets.top + spacing.xxl + spacing.xs} />
 
       <CancelRideModal
         visible={cancelamentoVisivel}
@@ -621,10 +826,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 2,
     borderColor: colors.background,
+    ...sombraFlutuante,
   },
   topBar: {
     position: 'absolute',
-    top: spacing.xxl,
     left: spacing.lg,
     right: spacing.lg,
     flexDirection: 'row',
@@ -632,13 +837,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   voltarBotao: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: colors.surface,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderRadius: radius.full,
+    ...sombraFlutuante,
   },
   voltarBotaoDesabilitado: { opacity: 0.4 },
-  voltarTexto: { ...typography.caption, color: colors.text },
+  voltarTexto: { ...typography.caption, color: colors.text, marginLeft: 4 },
   pressedFeedback: { opacity: 0.65 },
   statusPill: {
     flexDirection: 'row',
@@ -647,8 +855,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderRadius: radius.full,
+    ...sombraFlutuante,
   },
   statusPillOnline: { borderWidth: 1, borderColor: colors.primary },
+  recentralizarBotao: {
+    position: 'absolute',
+    right: spacing.lg,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...sombraFlutuante,
+  },
   statusPonto: {
     width: 8,
     height: 8,
@@ -674,7 +896,22 @@ const styles = StyleSheet.create({
     shadowRadius: 14,
     elevation: 10,
   },
-  erroTexto: { ...typography.caption, color: colors.danger, marginBottom: spacing.sm },
+  // Alcinha no topo do painel — mesmo sinal visual de "bottom sheet" usado
+  // na tela do passageiro, dá a sensação de painel que pode ser puxado.
+  grabber: {
+    alignSelf: 'center',
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.border,
+    marginBottom: spacing.md,
+  },
+  erroLinha: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  erroTexto: { ...typography.caption, color: colors.danger, marginLeft: spacing.xs, flex: 1 },
   painelTitulo: { ...typography.h2, color: colors.text, marginBottom: spacing.xs },
   painelSubtitulo: {
     ...typography.caption,
@@ -683,6 +920,54 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   painelBotao: { marginTop: spacing.xs },
+  // Cabeçalho do painel offline: saudação/status de um lado, switch do outro.
+  statusHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  statusHeaderTextos: { flex: 1, marginRight: spacing.md },
+  toggleColuna: { alignItems: 'center' },
+  toggleLegenda: {
+    ...typography.caption,
+    fontSize: 11,
+    color: colors.textSecondary,
+    marginTop: spacing.xs,
+  },
+  // Chipzinho "Online há X min" — puramente informativo, sessão local.
+  sessaoPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: colors.surfaceAlt,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+    borderRadius: radius.full,
+    marginTop: spacing.md,
+  },
+  sessaoPonto: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.primary,
+    marginRight: spacing.xs,
+  },
+  sessaoTexto: { ...typography.caption, fontSize: 12, color: colors.text },
+  // Cabeçalho com avatar do veículo, usado nos cards de corrida (nova
+  // corrida / a caminho do passageiro / a caminho do destino).
+  painelHeaderComIcone: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  veiculoAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.surfaceAlt,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.sm,
+  },
   chatBotao: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -733,7 +1018,7 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontWeight: '700',
   },
-  novaCorridaTitulo: { ...typography.h2, color: colors.text, marginBottom: spacing.md },
+  novaCorridaTitulo: { ...typography.h2, color: colors.text, flex: 1 },
   novaCorridaLinha: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.sm },
   pontoRota: { width: 8, height: 8, borderRadius: 4, marginRight: spacing.sm },
   pontoOrigem: { backgroundColor: colors.primary },
@@ -757,6 +1042,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: colors.background,
     padding: spacing.xl,
+  },
+  bloqueadoIconWrap: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: 'rgba(255,176,32,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.lg,
   },
   bloqueadoTitulo: { ...typography.h2, color: colors.text, marginBottom: spacing.sm, textAlign: 'center' },
   bloqueadoTexto: {

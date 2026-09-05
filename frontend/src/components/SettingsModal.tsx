@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAuth } from '../context/AuthContext';
@@ -136,8 +136,7 @@ function AccountView({ onBack }: { onBack: () => void }) {
     <ScrollView showsVerticalScrollIndicator={false}>
       <Header title="Conta" onBack={onBack} />
       <Text style={styles.sectionHint}>
-        Edite suas credenciais abaixo. Isso ainda não é validado nem enviado a um backend real —
-        só deixa tudo pronto pra quando ele existir.
+        Edite suas credenciais abaixo.
       </Text>
 
       <Input label="Nome" value={name} onChangeText={setName} placeholder="Seu nome completo" />
@@ -169,7 +168,6 @@ function AccountView({ onBack }: { onBack: () => void }) {
 
 function DriverView({ onBack, onClose }: { onBack: () => void; onClose: () => void }) {
   const { user, updateDriverStatus } = useAuth();
-  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [cnhNumber, setCnhNumber] = useState('');
   const [cnhCategory, setCnhCategory] = useState('');
   const [vehicleType, setVehicleType] = useState<TipoVeiculo>('carro');
@@ -217,25 +215,7 @@ function DriverView({ onBack, onClose }: { onBack: () => void; onClose: () => vo
   }
 
   if (status === 'approved') {
-    return (
-      <View>
-        <Header title="Motorista" onBack={onBack} />
-        <StatusCard
-          icon="🎉"
-          title="Você já é motorista GO"
-          description="Seu cadastro foi aprovado. Toque abaixo pra começar a receber corridas."
-        />
-        <Button
-          label="Entrar no modo motorista"
-          onPress={() => {
-            onBack();
-            onClose();
-            navigation.navigate('DriverHome');
-          }}
-          style={styles.actionButton}
-        />
-      </View>
-    );
+    return <DriverVehiclePanel onBack={onBack} onClose={onClose} />;
   }
 
   return (
@@ -283,6 +263,138 @@ function DriverView({ onBack, onClose }: { onBack: () => void; onClose: () => vo
       {!!error && <Text style={styles.errorText}>{error}</Text>}
 
       <Button label="Enviar cadastro" onPress={handleApply} loading={loading} style={styles.actionButton} />
+    </ScrollView>
+  );
+}
+
+// ---------- Painel do motorista aprovado (dados do veículo) ----------
+
+function DriverVehiclePanel({ onBack, onClose }: { onBack: () => void; onClose: () => void }) {
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const [carregando, setCarregando] = useState(true);
+  const [salvando, setSalvando] = useState(false);
+  const [erroCarregar, setErroCarregar] = useState<string | null>(null);
+  const [erroSalvar, setErroSalvar] = useState<string | null>(null);
+  const [salvo, setSalvo] = useState(false);
+
+  const [cnhNumber, setCnhNumber] = useState('');
+  const [cnhCategory, setCnhCategory] = useState('');
+  const [vehicleType, setVehicleType] = useState<TipoVeiculo>('carro');
+  const [vehiclePlate, setVehiclePlate] = useState('');
+  const [vehicleModel, setVehicleModel] = useState('');
+  const [vehicleColor, setVehicleColor] = useState('');
+  const [vehicleYear, setVehicleYear] = useState('');
+
+  useEffect(() => {
+    let ativo = true;
+    (async () => {
+      try {
+        const perfil = await driverService.fetchMyDriverProfile();
+        if (!ativo) return;
+        setCnhNumber(perfil.cnhNumber ?? '');
+        setCnhCategory(perfil.cnhCategory ?? '');
+        setVehicleType(perfil.vehicleType ?? 'carro');
+        setVehiclePlate(perfil.vehiclePlate ?? '');
+        setVehicleModel(perfil.vehicleModel ?? '');
+        setVehicleColor(perfil.vehicleColor ?? '');
+        setVehicleYear(perfil.vehicleYear ?? '');
+      } catch (err: any) {
+        if (ativo) setErroCarregar(err?.message ?? 'Não foi possível carregar seus dados.');
+      } finally {
+        if (ativo) setCarregando(false);
+      }
+    })();
+    return () => {
+      ativo = false;
+    };
+  }, []);
+
+  async function handleSalvar() {
+    setErroSalvar(null);
+    setSalvo(false);
+    setSalvando(true);
+    try {
+      await driverService.updateVehicle({
+        cnhNumber: cnhNumber.trim(),
+        cnhCategory: cnhCategory.trim(),
+        vehicleType,
+        vehiclePlate: vehiclePlate.trim(),
+        vehicleModel: vehicleModel.trim(),
+        vehicleColor: vehicleColor.trim(),
+        vehicleYear: vehicleYear.trim(),
+      });
+      setSalvo(true);
+    } catch (err: any) {
+      setErroSalvar(err?.message ?? 'Não foi possível salvar os dados.');
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  return (
+    <ScrollView showsVerticalScrollIndicator={false}>
+      <Header title="Motorista" onBack={onBack} />
+
+      <StatusCard
+        icon="🎉"
+        title="Você já é motorista GO"
+        description="Confira ou atualize os dados do seu veículo abaixo sempre que precisar."
+      />
+
+      <Button
+        label="Entrar no modo motorista"
+        onPress={() => {
+          onBack();
+          onClose();
+          navigation.navigate('DriverHome');
+        }}
+        style={styles.actionButton}
+      />
+
+      <View style={styles.divider} />
+
+      <Text style={styles.fieldLabel}>Dados do veículo e da CNH</Text>
+
+      {carregando ? (
+        <ActivityIndicator color={colors.primary} style={styles.painelCarregando} />
+      ) : erroCarregar ? (
+        <Text style={styles.errorText}>{erroCarregar}</Text>
+      ) : (
+        <>
+          <Input label="Número da CNH" value={cnhNumber} onChangeText={setCnhNumber} placeholder="00000000000" keyboardType="number-pad" />
+          <Input label="Categoria da CNH" value={cnhCategory} onChangeText={setCnhCategory} placeholder="Ex: B" autoCapitalize="characters" />
+
+          <Text style={styles.fieldLabel}>Tipo de veículo</Text>
+          <View style={styles.vehicleTypeRow}>
+            <Pressable
+              onPress={() => setVehicleType('carro')}
+              style={[styles.vehicleTypeButton, vehicleType === 'carro' && styles.vehicleTypeButtonAtivo]}
+            >
+              <Text style={[styles.vehicleTypeTexto, vehicleType === 'carro' && styles.vehicleTypeTextoAtivo]}>
+                🚗 Carro
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setVehicleType('moto')}
+              style={[styles.vehicleTypeButton, vehicleType === 'moto' && styles.vehicleTypeButtonAtivo]}
+            >
+              <Text style={[styles.vehicleTypeTexto, vehicleType === 'moto' && styles.vehicleTypeTextoAtivo]}>
+                🏍️ Moto
+              </Text>
+            </Pressable>
+          </View>
+
+          <Input label="Placa do veículo" value={vehiclePlate} onChangeText={setVehiclePlate} placeholder="ABC1D23" autoCapitalize="characters" />
+          <Input label="Modelo do veículo" value={vehicleModel} onChangeText={setVehicleModel} placeholder="Ex: Onix 2020" />
+          <Input label="Cor do veículo" value={vehicleColor} onChangeText={setVehicleColor} placeholder="Ex: Prata" />
+          <Input label="Ano do veículo" value={vehicleYear} onChangeText={setVehicleYear} placeholder="Ex: 2020" keyboardType="number-pad" />
+
+          {!!erroSalvar && <Text style={styles.errorText}>{erroSalvar}</Text>}
+          {salvo && !erroSalvar && <Text style={styles.savedText}>Dados do veículo atualizados ✓</Text>}
+
+          <Button label="Salvar dados do veículo" onPress={handleSalvar} loading={salvando} style={styles.actionButton} />
+        </>
+      )}
     </ScrollView>
   );
 }
@@ -452,6 +564,9 @@ const styles = StyleSheet.create({
   actionButton: {
     marginTop: spacing.sm,
     marginBottom: spacing.md,
+  },
+  painelCarregando: {
+    marginVertical: spacing.xl,
   },
   statusCard: {
     alignItems: 'center',

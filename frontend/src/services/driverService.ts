@@ -1,5 +1,5 @@
 import { api } from './api';
-import type { DriverApplicationPayload, DriverStatus } from '../types';
+import type { DriverApplicationPayload, DriverProfile, DriverStatus, VehicleUpdatePayload } from '../types';
 
 // Mesmo esquema do authService: enquanto o backend não existe, mockamos a
 // resposta pra não travar o front. Trocar pra false (ou ligar em env var)
@@ -36,4 +36,45 @@ export async function fetchDriverStatus(): Promise<DriverStatus> {
   // Formato esperado do backend: GET /driver/status -> { status }
   const { data } = await api.get<{ status: DriverStatus }>('/driver/status');
   return data.status;
+}
+
+// Busca o cadastro completo (veículo + CNH) do motorista logado — usado no
+// painel "Motorista" pra pré-preencher o formulário de edição.
+export async function fetchMyDriverProfile(): Promise<DriverProfile> {
+  if (USE_MOCK) {
+    return mockDelay<DriverProfile>({
+      status: 'approved',
+      cnhNumber: '00000000000',
+      cnhCategory: 'B',
+      vehicleType: 'carro',
+      vehiclePlate: 'ABC1D23',
+      vehicleModel: 'Onix',
+      vehicleColor: 'Prata',
+      vehicleYear: '2020',
+    });
+  }
+
+  // Formato esperado do backend: GET /driver/me -> DriverProfile
+  const { data } = await api.get<DriverProfile>('/driver/me');
+  return data;
+}
+
+// Motorista já aprovado edita os dados do próprio veículo/CNH.
+export async function updateVehicle(payload: VehicleUpdatePayload): Promise<DriverProfile> {
+  if (USE_MOCK) {
+    return mockDelay<DriverProfile>({
+      status: 'approved',
+      cnhNumber: payload.cnhNumber ?? '00000000000',
+      cnhCategory: payload.cnhCategory ?? 'B',
+      vehicleType: payload.vehicleType ?? 'carro',
+      vehiclePlate: payload.vehiclePlate ?? 'ABC1D23',
+      vehicleModel: payload.vehicleModel ?? 'Onix',
+      vehicleColor: payload.vehicleColor ?? 'Prata',
+      vehicleYear: payload.vehicleYear ?? '2020',
+    });
+  }
+
+  // Formato esperado do backend: PUT /driver/vehicle -> DriverProfile
+  const { data } = await api.put<DriverProfile>('/driver/vehicle', payload);
+  return data;
 }

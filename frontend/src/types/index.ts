@@ -65,6 +65,22 @@ export type DriverApplicationPayload = {
   vehicleYear: string;
 };
 
+// Cadastro completo do motorista já aprovado — usado no painel "Motorista"
+// pra mostrar e editar os dados do veículo/CNH.
+export type DriverProfile = {
+  status: DriverStatus;
+  cnhNumber: string;
+  cnhCategory: string;
+  vehicleType: TipoVeiculo;
+  vehiclePlate: string;
+  vehicleModel: string;
+  vehicleColor: string;
+  vehicleYear: string;
+};
+
+// Edição do veículo/CNH — todos os campos opcionais, só manda o que mudou.
+export type VehicleUpdatePayload = Partial<DriverApplicationPayload>;
+
 // --- Corridas / tempo real ---
 
 export type PontoCorrida = {

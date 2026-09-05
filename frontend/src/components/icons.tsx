@@ -180,6 +180,38 @@ export function ChatIcon({ size = 18, color = '#0B0B0F', strokeWidth = 1.8 }: Ic
   );
 }
 
+// Ícone de seta pra esquerda — usado no botão de voltar (navegação),
+// deliberadamente vetorial em vez do glifo "‹" solto.
+export function ChevronLeftIcon({ size = 20, color = '#0B0B0F', strokeWidth = 2 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M15 5 L9 12 L15 19"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
+// Ícone de seta pra direita — usado no "puxador" do botão de arrastar
+// (dá a dica visual de "arraste pra cá" antes mesmo de tocar).
+export function ArrowRightIcon({ size = 20, color = '#0B0B0F', strokeWidth = 2 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Line x1="4" y1="12" x2="18" y2="12" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" />
+      <Path
+        d="M13 6.5 L19 12 L13 17.5"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
 // Ícone de enviar (avião de papel) — usado no botão de enviar mensagem do chat.
 export function SendIcon({ size = 18, color = '#0B0B0F', strokeWidth = 1.8 }: IconProps) {
   return (

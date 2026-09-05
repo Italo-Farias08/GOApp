@@ -52,9 +52,47 @@ async function atualizarStatusPorUsuario(usuarioId, status) {
   return resultado.rows[0];
 }
 
+// Atualiza os dados de veículo/CNH da própria solicitação (a mais recente)
+// do motorista já aprovado. COALESCE mantém o valor antigo em qualquer
+// campo que não vier no corpo da requisição.
+async function atualizarVeiculoPorUsuario(usuarioId, {
+  cnhNumero,
+  cnhCategoria,
+  veiculoTipo,
+  veiculoPlaca,
+  veiculoModelo,
+  veiculoCor,
+  veiculoAno,
+}) {
+  const resultado = await consultar(
+    `UPDATE motoristas SET
+       cnh_numero = COALESCE($2, cnh_numero),
+       cnh_categoria = COALESCE($3, cnh_categoria),
+       veiculo_tipo = COALESCE($4, veiculo_tipo),
+       veiculo_placa = COALESCE($5, veiculo_placa),
+       veiculo_modelo = COALESCE($6, veiculo_modelo),
+       veiculo_cor = COALESCE($7, veiculo_cor),
+       veiculo_ano = COALESCE($8, veiculo_ano)
+     WHERE usuario_id = $1
+     RETURNING *`,
+    [
+      usuarioId,
+      cnhNumero || null,
+      cnhCategoria || null,
+      veiculoTipo || null,
+      veiculoPlaca || null,
+      veiculoModelo || null,
+      veiculoCor || null,
+      veiculoAno || null,
+    ]
+  );
+  return resultado.rows[0];
+}
+
 module.exports = {
   criarSolicitacao,
   buscarUltimaSolicitacaoPorUsuario,
   listarPendentes,
   atualizarStatusPorUsuario,
+  atualizarVeiculoPorUsuario,
 };

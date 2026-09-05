@@ -858,14 +858,20 @@ export default function HomeScreen() {
                 </View>
               )}
             </View>
-
-            {expandido && !destinoSelecionado && !corridaConfirmada && sugestoes.length === 0 && (
-              <View style={styles.promoSecao}>
-                <Text style={styles.promoLabel}>Promoções pra você</Text>
-                <PromoBanners banners={BANNERS} destaque />
-              </View>
-            )}
           </View>
+
+          {/* Fora do cabecalhoArrastavel de propósito: aquele container tem
+              padding lateral (spacing.lg) pro resto do conteúdo, e isso
+              cortava o carrossel antes da borda de verdade da tela. Aqui
+              fora ele nasce sem nenhum padding herdado — só o rótulo de
+              texto abaixo é que ganha o respiro lateral, pra ficar alinhado
+              com o resto, o carrossel em si vai de ponta a ponta. */}
+          {expandido && !destinoSelecionado && !corridaConfirmada && sugestoes.length === 0 && (
+            <View style={styles.promoSecao}>
+              <Text style={styles.promoLabel}>Promoções pra você</Text>
+              <PromoBanners banners={BANNERS} destaque />
+            </View>
+          )}
 
           <ScrollView
             style={styles.sheetScroll}
@@ -1579,6 +1585,10 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontWeight: '600',
     marginBottom: spacing.sm,
+    // O carrossel embaixo agora não tem padding nenhum (vai de ponta a
+    // ponta na tela) — então é o rótulo que precisa desse respiro lateral
+    // pra ficar alinhado com o resto do conteúdo da folha.
+    paddingHorizontal: spacing.lg,
   },
   confirmButtonWrapper: {
     marginHorizontal: spacing.lg,

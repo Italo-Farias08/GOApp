@@ -7,6 +7,8 @@ const roteador = express.Router();
 
 roteador.post('/apply', autenticacaoIntermediario, motoristaControlador.solicitarCadastro);
 roteador.get('/status', autenticacaoIntermediario, motoristaControlador.consultarStatus);
+roteador.get('/me', autenticacaoIntermediario, motoristaControlador.consultarMeuCadastro);
+roteador.put('/vehicle', autenticacaoIntermediario, motoristaControlador.atualizarVeiculo);
 
 // Rotas administrativas — aprovar/reprovar cadastro de motorista.
 // Sem painel de admin ainda: chame com o header x-admin-secret.

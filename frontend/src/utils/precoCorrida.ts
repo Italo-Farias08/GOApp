@@ -9,8 +9,8 @@ type Tarifa = {
 };
 
 const TARIFAS: Record<TipoVeiculo, Tarifa> = {
-  carro: { bandeirada: 2.5, porKm: 1.2, porMinuto: 0.1, minimo: 6 },
-  moto: { bandeirada: 2, porKm: 0.8, porMinuto: 0.08, minimo: 4 },
+  carro: { bandeirada: 2.5, porKm: 1.9, porMinuto: 0.1, minimo: 7.10 },
+  moto: { bandeirada: 2, porKm: 1.2, porMinuto: 0.08, minimo: 4.30 },
 };
 
 type FaixaHorario = {
