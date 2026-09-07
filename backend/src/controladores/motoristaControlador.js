@@ -1,5 +1,6 @@
 const usuarioModelo = require('../modelos/usuarioModelo');
 const motoristaModelo = require('../modelos/motoristaModelo');
+const corridaModelo = require('../modelos/corridaModelo');
 const { ErroHttp } = require('../intermediarios/tratadorErros');
 const soquete = require('../tempoReal/servidorSoquete');
 
@@ -133,6 +134,31 @@ async function atualizarVeiculo(req, res, next) {
   }
 }
 
+// GET /driver/today-summary
+//
+// Resumo do dia do motorista logado: quantas corridas ele já finalizou hoje
+// e quanto ele lucrou nelas — alimenta o "Painel do Motoboy" nas
+// configurações do app. Exclusivo pra motoristas aprovados com veículo do
+// tipo moto (é isso que faz o app tratar o usuário como "motoboy" ou não).
+async function resumoHoje(req, res, next) {
+  try {
+    const usuario = await usuarioModelo.buscarPorId(req.usuarioId);
+    if (!usuario || usuario.status_motorista !== 'approved') {
+      throw new ErroHttp(403, 'Só motoristas aprovados têm painel do motoboy.');
+    }
+
+    const solicitacao = await motoristaModelo.buscarUltimaSolicitacaoPorUsuario(req.usuarioId);
+    if (!solicitacao || solicitacao.veiculo_tipo !== 'moto') {
+      throw new ErroHttp(403, 'Este painel é exclusivo para motoboys (veículo do tipo moto).');
+    }
+
+    const resumo = await corridaModelo.resumoHojePorMotorista(req.usuarioId);
+    return res.json(resumo);
+  } catch (erro) {
+    next(erro);
+  }
+}
+
 // GET /driver/pending (admin)
 async function listarPendentes(req, res, next) {
   try {
@@ -171,6 +197,7 @@ module.exports = {
   consultarStatus,
   consultarMeuCadastro,
   atualizarVeiculo,
+  resumoHoje,
   listarPendentes,
   aprovar,
 };

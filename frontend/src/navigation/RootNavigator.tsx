@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import DriverHomeScreen from '../screens/DriverHomeScreen';
 import HomeScreen from '../screens/HomeScreen';
 import LoginScreen from '../screens/LoginScreen';
+import MotoboyPanelScreen from '../screens/MotoboyPanelScreen';
 import RegisterScreen from '../screens/RegisterScreen';
 import VerifyEmailScreen from '../screens/VerifyEmailScreen';
 import { colors } from '../theme/theme';
@@ -43,6 +44,7 @@ export default function RootNavigator() {
           <>
             <Stack.Screen name="Home" component={HomeScreen} />
             <Stack.Screen name="DriverHome" component={DriverHomeScreen} />
+            <Stack.Screen name="MotoboyPanel" component={MotoboyPanelScreen} />
           </>
         ) : (
           <>

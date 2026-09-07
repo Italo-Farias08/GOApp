@@ -33,6 +33,7 @@ import {
   ChevronLeftIcon,
   ExitIcon,
   HistoryIcon,
+  MoneyIcon,
   MotoIcon,
   UserIcon,
 } from './icons';
@@ -45,6 +46,7 @@ type Props = {
 };
 
 export default function SettingsModal({ visible, onClose }: Props) {
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { user, signOut } = useAuth();
   const [view, setView] = useState<ModalView>('menu');
 
@@ -59,6 +61,13 @@ export default function SettingsModal({ visible, onClose }: Props) {
     handleClose();
   }
 
+  // Aberto pra qualquer usuário (cliente ou motorista) — quem não é motoboy
+  // vê um aviso dentro da própria tela, em vez de o item nem aparecer aqui.
+  function handleOpenMotoboyPanel() {
+    handleClose();
+    navigation.navigate('MotoboyPanel');
+  }
+
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={handleClose}>
       <Pressable style={styles.backdrop} onPress={handleClose} />
@@ -71,6 +80,7 @@ export default function SettingsModal({ visible, onClose }: Props) {
             onSelectAccount={() => setView('account')}
             onSelectDriver={() => setView('driver')}
             onSelectMessages={() => setView('messages')}
+            onSelectMotoboyPanel={handleOpenMotoboyPanel}
             onSignOut={handleSignOut}
           />
         )}
@@ -89,12 +99,14 @@ function MenuView({
   onSelectAccount,
   onSelectDriver,
   onSelectMessages,
+  onSelectMotoboyPanel,
   onSignOut,
 }: {
   userName?: string;
   onSelectAccount: () => void;
   onSelectDriver: () => void;
   onSelectMessages: () => void;
+  onSelectMotoboyPanel: () => void;
   onSignOut: () => void;
 }) {
   return (
@@ -118,6 +130,12 @@ function MenuView({
         label="Motorista"
         sublabel="Cadastre-se pra dirigir no GO"
         onPress={onSelectDriver}
+      />
+      <MenuItem
+        renderIcon={(cor) => <MoneyIcon size={22} color={cor} />}
+        label="Painel do Motoboy"
+        sublabel="Corridas e valor lucrado hoje"
+        onPress={onSelectMotoboyPanel}
       />
 
       <View style={styles.divider} />

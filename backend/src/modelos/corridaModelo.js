@@ -308,6 +308,27 @@ async function listarFinalizadasComPassageiroPorMotorista(motoristaId) {
   return resultado.rows;
 }
 
+// Resumo do dia do motorista logado: quantas corridas ele já finalizou hoje
+// e quanto ele lucrou nelas (soma do `preco`) — alimenta o "Painel do
+// Motoboy" nas configurações do app. Considera o dia pela data de criação da
+// corrida (não existe coluna de "finalizado_em" na tabela).
+async function resumoHojePorMotorista(motoristaId) {
+  const resultado = await consultar(
+    `SELECT COUNT(*)::int AS total_corridas,
+            COALESCE(SUM(preco), 0) AS total_valor
+     FROM corridas
+     WHERE motorista_id = $1
+       AND status = 'finalizada'
+       AND criado_em::date = CURRENT_DATE`,
+    [motoristaId]
+  );
+  const linha = resultado.rows[0];
+  return {
+    corridasHoje: Number(linha.total_corridas),
+    valorHoje: Number(linha.total_valor),
+  };
+}
+
 // Converte uma linha de mensagens_corrida pro formato que o front espera.
 function paraMensagemPublica(linha) {
   if (!linha) return null;
@@ -357,6 +378,7 @@ module.exports = {
   finalizarComPixAprovado,
   listarFinalizadasComMotoristaPorPassageiro,
   listarFinalizadasComPassageiroPorMotorista,
+  resumoHojePorMotorista,
   paraMensagemPublica,
   salvarMensagem,
   listarMensagens,

@@ -1,5 +1,11 @@
 import { api } from './api';
-import type { DriverApplicationPayload, DriverProfile, DriverStatus, VehicleUpdatePayload } from '../types';
+import type {
+  DriverApplicationPayload,
+  DriverProfile,
+  DriverStatus,
+  ResumoMotoboyHoje,
+  VehicleUpdatePayload,
+} from '../types';
 
 // Mesmo esquema do authService: enquanto o backend não existe, mockamos a
 // resposta pra não travar o front. Trocar pra false (ou ligar em env var)
@@ -76,5 +82,19 @@ export async function updateVehicle(payload: VehicleUpdatePayload): Promise<Driv
 
   // Formato esperado do backend: PUT /driver/vehicle -> DriverProfile
   const { data } = await api.put<DriverProfile>('/driver/vehicle', payload);
+  return data;
+}
+
+// Resumo do dia do motorista logado (corridas de hoje + valor lucrado hoje)
+// — usado no "Painel do Motoboy". O backend já garante que só motorista
+// aprovado com veículo do tipo moto recebe uma resposta 200 aqui; qualquer
+// outro caso cai no catch da tela como "não é motoboy".
+export async function fetchTodaySummary(): Promise<ResumoMotoboyHoje> {
+  if (USE_MOCK) {
+    return mockDelay<ResumoMotoboyHoje>({ corridasHoje: 0, valorHoje: 0 });
+  }
+
+  // Formato esperado do backend: GET /driver/today-summary -> ResumoMotoboyHoje
+  const { data } = await api.get<ResumoMotoboyHoje>('/driver/today-summary');
   return data;
 }

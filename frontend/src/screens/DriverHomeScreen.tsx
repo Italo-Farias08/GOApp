@@ -9,7 +9,9 @@ import Button from '../components/Button';
 import CancelRideModal from '../components/CancelRideModal';
 import ChatModal from '../components/ChatModal';
 import DriverMessagesModal from '../components/DriverMessagesModal';
+import FinalizarCorridaModal, { FormaFinalizacao } from '../components/FinalizarCorridaModal';
 import MapPin from '../components/MapPin';
+import PixPaymentModal from '../components/PixPaymentModal';
 import StatusToast, { StatusToastTone } from '../components/StatusToast';
 import SwipeButton from '../components/SwipeButton';
 import {
@@ -27,10 +29,11 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { useDriverLocationWatcher } from '../hooks/useDriverLocationWatcher';
 import { useRota } from '../hooks/useRota';
+import * as paymentService from '../services/paymentService';
 import * as rideService from '../services/rideService';
 import { conectarSoquete } from '../services/socketService';
 import { colors, radius, spacing, typography } from '../theme/theme';
-import type { Corrida, FormaPagamento, MensagemChat, RootStackParamList } from '../types';
+import type { Corrida, FormaPagamento, MensagemChat, PagamentoPix, RootStackParamList } from '../types';
 import { formatarDistancia, formatarDuracao, formatarMoeda } from '../utils/precoCorrida';
 import { STADIA_TILE_URL } from '../utils/mapaConfig';
 
@@ -124,6 +127,13 @@ export default function DriverHomeScreen() {
   const [aceitando, setAceitando] = useState(false);
   const [embarcando, setEmbarcando] = useState(false);
   const [finalizando, setFinalizando] = useState(false);
+  // --- Finalização com escolha de pagamento (Pix / Dinheiro / Não pagou) ---
+  const [metodoPagamentoVisivel, setMetodoPagamentoVisivel] = useState(false);
+  const [pixModalVisivel, setPixModalVisivel] = useState(false);
+  const [gerandoPix, setGerandoPix] = useState(false);
+  const [pagamentoPix, setPagamentoPix] = useState<PagamentoPix | null>(null);
+  const [marcandoNaoPagou, setMarcandoNaoPagou] = useState(false);
+  const pollingPixRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [cancelando, setCancelando] = useState(false);
   const [cancelamentoVisivel, setCancelamentoVisivel] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -457,18 +467,132 @@ export default function DriverHomeScreen() {
     }
   }
 
-  async function finalizarCorridaAtiva() {
+  // Toca em "Finalizar corrida" -> abre o modal de escolha de pagamento em
+  // vez de encerrar direto. A corrida só é finalizada de fato depois que o
+  // motorista escolhe uma das três opções (ver escolherFormaFinalizacao).
+  function abrirFinalizacao() {
+    if (!corridaAtiva) return;
+    setMetodoPagamentoVisivel(true);
+  }
+
+  function pararPollingPix() {
+    if (pollingPixRef.current) {
+      clearInterval(pollingPixRef.current);
+      pollingPixRef.current = null;
+    }
+  }
+
+  useEffect(() => pararPollingPix, []);
+
+  async function escolherFormaFinalizacao(forma: FormaFinalizacao) {
+    if (!corridaAtiva) return;
+
+    if (forma === 'pix') {
+      setMetodoPagamentoVisivel(false);
+      await iniciarFinalizacaoPix();
+      return;
+    }
+
+    if (forma === 'dinheiro') {
+      await finalizarComDinheiro();
+      return;
+    }
+
+    await finalizarComoNaoPago();
+  }
+
+  async function finalizarComDinheiro() {
     if (!corridaAtiva) return;
     setFinalizando(true);
     try {
-      await rideService.finalizarCorrida(corridaAtiva.id);
-      avisar('Corrida finalizada com sucesso!', 'success');
-    } catch {
-      // segue liberando a tela mesmo se a chamada falhar
+      await rideService.finalizarComDinheiro(corridaAtiva.id);
+      avisar('Corrida finalizada — pagamento em dinheiro confirmado!', 'success');
+    } catch (err: any) {
+      avisar(err?.response?.data?.message ?? 'Não foi possível finalizar a corrida agora.', 'danger');
+      return;
     } finally {
-      setCorridaAtiva(null);
       setFinalizando(false);
     }
+    setMetodoPagamentoVisivel(false);
+    setCorridaAtiva(null);
+  }
+
+  async function finalizarComoNaoPago() {
+    if (!corridaAtiva) return;
+    setFinalizando(true);
+    setMarcandoNaoPagou(true);
+    try {
+      await rideService.finalizarComoNaoPago(corridaAtiva.id);
+      avisar('Corrida finalizada. O valor será cobrado na próxima viagem do passageiro.', 'warning');
+    } catch (err: any) {
+      avisar(err?.response?.data?.message ?? 'Não foi possível finalizar a corrida agora.', 'danger');
+      setMarcandoNaoPagou(false);
+      setFinalizando(false);
+      return;
+    }
+    pararPollingPix();
+    setFinalizando(false);
+    setMarcandoNaoPagou(false);
+    setMetodoPagamentoVisivel(false);
+    setPixModalVisivel(false);
+    setPagamentoPix(null);
+    setCorridaAtiva(null);
+  }
+
+  // Gera a cobrança Pix no Mercado Pago pelo valor da corrida e abre o modal
+  // com o QR code. Diferente do Pix pré-pago do passageiro, aqui a corrida
+  // JÁ existe — ela só é finalizada quando o pagamento é confirmado (ver
+  // iniciarPollingPix).
+  async function iniciarFinalizacaoPix() {
+    if (!corridaAtiva) return;
+    setPixModalVisivel(true);
+    setGerandoPix(true);
+    setPagamentoPix(null);
+    try {
+      const pagamento = await rideService.iniciarFinalizacaoPix(corridaAtiva.id);
+      setPagamentoPix(pagamento);
+      iniciarPollingPix(pagamento.id);
+    } catch (err: any) {
+      setPixModalVisivel(false);
+      avisar(err?.response?.data?.message ?? 'Não foi possível gerar o Pix. Tente novamente.', 'danger');
+    } finally {
+      setGerandoPix(false);
+    }
+  }
+
+  // Fica perguntando pro backend se o Pix já foi pago — assim que aprovar, o
+  // backend já finalizou a corrida sozinho, então só falta a tela "sair" da
+  // corrida ativa.
+  function iniciarPollingPix(pagamentoId: string) {
+    pararPollingPix();
+    pollingPixRef.current = setInterval(async () => {
+      try {
+        const atualizado = await paymentService.consultarPagamentoPix(pagamentoId);
+        setPagamentoPix(atualizado);
+
+        if (atualizado.status === 'aprovado') {
+          pararPollingPix();
+          setPixModalVisivel(false);
+          setPagamentoPix(null);
+          avisar('Pix recebido! Corrida finalizada.', 'success');
+          setCorridaAtiva(null);
+        } else if (atualizado.status === 'recusado' || atualizado.status === 'expirado') {
+          pararPollingPix();
+        }
+      } catch {
+        // Falha pontual de rede — a próxima tentativa do intervalo já
+        // tenta de novo, não precisa travar a tela por isso.
+      }
+    }, 3000);
+  }
+
+  // Fecha o QR code e volta pro modal de escolha — a corrida continua ativa,
+  // o motorista pode tentar outra forma de pagamento.
+  function fecharPixModal() {
+    pararPollingPix();
+    setPixModalVisivel(false);
+    setPagamentoPix(null);
+    setMetodoPagamentoVisivel(true);
   }
 
   // Regra: o motorista só pode cancelar uma corrida que ele mesmo aceitou e
@@ -877,8 +1001,8 @@ export default function DriverHomeScreen() {
           </Pressable>
           <Button
             label="Finalizar corrida"
-            onPress={finalizarCorridaAtiva}
-            loading={finalizando}
+            onPress={abrirFinalizacao}
+            loading={finalizando && !pixModalVisivel}
             style={styles.painelBotao}
           />
         </View>
@@ -894,6 +1018,23 @@ export default function DriverHomeScreen() {
         carregando={cancelando}
         onConfirmar={confirmarCancelamentoAtiva}
         onFechar={() => setCancelamentoVisivel(false)}
+      />
+
+      <FinalizarCorridaModal
+        visible={metodoPagamentoVisivel}
+        valor={corridaAtiva?.preco ?? 0}
+        carregando={finalizando}
+        onEscolher={escolherFormaFinalizacao}
+        onFechar={() => setMetodoPagamentoVisivel(false)}
+      />
+
+      <PixPaymentModal
+        visible={pixModalVisivel}
+        gerando={gerandoPix}
+        pagamento={pagamentoPix}
+        onFechar={fecharPixModal}
+        onNaoPagou={finalizarComoNaoPago}
+        marcandoNaoPagou={marcandoNaoPagou}
       />
 
       <ChatModal

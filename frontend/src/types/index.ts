@@ -81,6 +81,13 @@ export type DriverProfile = {
 // Edição do veículo/CNH — todos os campos opcionais, só manda o que mudou.
 export type VehicleUpdatePayload = Partial<DriverApplicationPayload>;
 
+// Resumo do dia do motorista logado — corridas finalizadas hoje e quanto ele
+// lucrou nelas. Alimenta o "Painel do Motoboy" nas configurações do app.
+export type ResumoMotoboyHoje = {
+  corridasHoje: number;
+  valorHoje: number;
+};
+
 // --- Corridas / tempo real ---
 
 export type PontoCorrida = {
@@ -209,4 +216,5 @@ export type RootStackParamList = {
   VerifyEmail: { email: string };
   Home: undefined;
   DriverHome: undefined;
+  MotoboyPanel: undefined;
 };
