@@ -27,6 +27,18 @@ function paraCorridaPublica(linha) {
     duracaoMin: Number(linha.duracao_min),
     formaPagamento: linha.forma_pagamento || 'dinheiro',
     status: linha.status,
+    // Pagamento em si — separado do status da corrida porque uma corrida
+    // "finalizada" pode não ter sido paga (motorista marcou "não pagou").
+    statusPagamento: linha.status_pagamento || 'pendente',
+    pagoEm: linha.pago_em || undefined,
+    // Tarifa desta corrida sem nenhuma dívida de corrida anterior embutida.
+    precoOriginal: linha.preco_original != null ? Number(linha.preco_original) : Number(linha.preco),
+    // Diferença entre `preco` e `precoOriginal` — é o valor de dívida(s)
+    // antiga(s) que foi somado ao preço desta corrida, se houver.
+    dividaAplicada:
+      linha.preco_original != null && Number(linha.preco) > Number(linha.preco_original)
+        ? Number((Number(linha.preco) - Number(linha.preco_original)).toFixed(2))
+        : 0,
     criadoEm: linha.criado_em,
     embarqueEm: linha.embarque_em || undefined,
     canceladoPor: linha.cancelado_por || undefined,
@@ -37,13 +49,25 @@ function paraCorridaPublica(linha) {
   };
 }
 
-async function criar({ passageiroId, origem, destino, tipoVeiculo, preco, distanciaKm, duracaoMin, formaPagamento }) {
+async function criar({
+  passageiroId,
+  origem,
+  destino,
+  tipoVeiculo,
+  preco,
+  precoOriginal,
+  distanciaKm,
+  duracaoMin,
+  formaPagamento,
+  dividasIncluidas,
+}) {
   const resultado = await consultar(
     `INSERT INTO corridas
        (passageiro_id, origem_latitude, origem_longitude, origem_endereco,
         destino_latitude, destino_longitude, destino_endereco,
-        tipo_veiculo, preco, distancia_km, duracao_min, forma_pagamento)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        tipo_veiculo, preco, preco_original, distancia_km, duracao_min,
+        forma_pagamento, dividas_incluidas)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
      RETURNING *`,
     [
       passageiroId,
@@ -55,9 +79,12 @@ async function criar({ passageiroId, origem, destino, tipoVeiculo, preco, distan
       destino.endereco || null,
       tipoVeiculo,
       preco,
+      // Se não vier explícito, assume que o preço já é "limpo" (sem dívida).
+      precoOriginal != null ? precoOriginal : preco,
       distanciaKm,
       duracaoMin,
       formaPagamento || 'dinheiro',
+      JSON.stringify(dividasIncluidas || []),
     ]
   );
   return resultado.rows[0];
@@ -176,6 +203,60 @@ async function cancelarPeloMotorista(id, motoristaId, motivo) {
   return resultado.rows[0] || null;
 }
 
+// Finaliza recebendo o pagamento em DINHEIRO na hora — motorista confirmou
+// que já embolsou o valor, então marca paga e encerra tudo de uma vez.
+// Só quem está atribuído à corrida pode chamar (checado no controlador).
+async function finalizarComDinheiro(id) {
+  const resultado = await consultar(
+    `UPDATE corridas SET
+       status = 'finalizada',
+       finalizada_em = NOW(),
+       status_pagamento = 'pago',
+       pago_em = NOW()
+     WHERE id = $1 AND status = 'em_andamento'
+     RETURNING *`,
+    [id]
+  );
+  return resultado.rows[0] || null;
+}
+
+// Finaliza marcando que o passageiro NÃO pagou — a corrida encerra mesmo
+// assim (o motorista fica livre pra receber outras), e a cobrança vira uma
+// dívida que será somada na próxima corrida desse passageiro (ver
+// dividaModelo + corridaServico.criarEDespachar).
+async function finalizarComoNaoPago(id) {
+  const resultado = await consultar(
+    `UPDATE corridas SET
+       status = 'finalizada',
+       finalizada_em = NOW(),
+       status_pagamento = 'nao_pago'
+     WHERE id = $1 AND status = 'em_andamento'
+     RETURNING *`,
+    [id]
+  );
+  return resultado.rows[0] || null;
+}
+
+// Finaliza depois que o Pix gerado ao término da corrida foi APROVADO —
+// chamado pelo polling/webhook do Mercado Pago, então não recebe motoristaId
+// (quem confirma é o gateway de pagamento, não uma ação direta do usuário).
+async function finalizarComPixAprovado(id) {
+  const resultado = await consultar(
+    `UPDATE corridas SET
+       status = 'finalizada',
+       finalizada_em = NOW(),
+       status_pagamento = 'pago',
+       pago_em = NOW()
+     WHERE id = $1 AND status = 'em_andamento'
+     RETURNING *`,
+    [id]
+  );
+  return resultado.rows[0] || null;
+}
+
+// Mantida por compatibilidade — finaliza sem mexer no status de pagamento
+// (não é mais chamada pelo fluxo normal, que agora sempre passa por uma das
+// três funções acima, mas fica disponível caso algo externo dependa dela).
 async function finalizar(id) {
   const resultado = await consultar(
     `UPDATE corridas SET status = 'finalizada', finalizada_em = NOW()
@@ -271,6 +352,9 @@ module.exports = {
   cancelarPeloPassageiro,
   cancelarPeloMotorista,
   finalizar,
+  finalizarComDinheiro,
+  finalizarComoNaoPago,
+  finalizarComPixAprovado,
   listarFinalizadasComMotoristaPorPassageiro,
   listarFinalizadasComPassageiroPorMotorista,
   paraMensagemPublica,

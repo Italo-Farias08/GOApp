@@ -5,6 +5,7 @@ const pagamentoPixModelo = require('../modelos/pagamentoPixModelo');
 const corridaServico = require('../servicos/corridaServico');
 const mercadoPago = require('../utilitarios/mercadoPago');
 const { ErroHttp } = require('../intermediarios/tratadorErros');
+const soquete = require('../tempoReal/servidorSoquete');
 
 // Quanto tempo o QR code fica válido antes do app desistir de esperar.
 const MINUTOS_EXPIRACAO_PIX = 15;
@@ -112,12 +113,46 @@ async function confirmarCorridaSePago(pagamento) {
   return pagamentoPixModelo.vincularCorrida(pagamento.id, corridaId);
 }
 
+// Espelho de confirmarCorridaSePago, mas pro Pix POS-pago (gerado pelo
+// motorista ao finalizar uma corrida que já existe): em vez de CRIAR a
+// corrida, FINALIZA a que já está em andamento, quita as dívidas antigas
+// que porventura estivessem embutidas no preço e avisa o passageiro em
+// tempo real — igual acontece pros outros dois jeitos de finalizar
+// (dinheiro / não pagou). Também é idempotente: se a corrida dessa cobrança
+// já estiver finalizada, não faz nada de novo.
+async function confirmarFinalizacaoSePago(pagamento) {
+  if (pagamento.status !== 'aprovado' || !pagamento.corrida_id) {
+    return pagamento;
+  }
+
+  const corridaAtual = await corridaModelo.buscarPorId(pagamento.corrida_id);
+  if (!corridaAtual || corridaAtual.status !== 'em_andamento') {
+    // Já foi finalizada antes (webhook e polling confirmando quase juntos)
+    // — nada a fazer, só devolve o pagamento como está.
+    return pagamento;
+  }
+
+  const corridaFinalizada = await corridaModelo.finalizarComPixAprovado(pagamento.corrida_id);
+  if (corridaFinalizada) {
+    await corridaServico.quitarDividasDaCorrida(corridaFinalizada);
+    soquete.notificarCorridaFinalizada({
+      corridaId: corridaFinalizada.id,
+      passageiroId: corridaFinalizada.passageiro_id,
+    });
+  }
+
+  return pagamento;
+}
+
 // GET /payments/pix/:id
 //
 // O app fica chamando essa rota enquanto mostra o QR code. Além de devolver
 // o status já salvo, ela também consulta o Mercado Pago de novo enquanto
 // ainda estiver "pendente" — segurança extra caso o webhook demore ou não
-// esteja configurado ainda.
+// esteja configurado ainda. Serve tanto pro Pix pré-pago (cria a corrida
+// quando aprova) quanto pro Pix gerado pelo motorista ao finalizar
+// (finaliza a corrida já existente quando aprova) — o campo `tipo` do
+// pagamento decide qual dos dois acontece.
 async function status(req, res, next) {
   try {
     let pagamento = await pagamentoPixModelo.buscarPorId(req.params.id);
@@ -137,7 +172,9 @@ async function status(req, res, next) {
       }
     }
 
-    pagamento = await confirmarCorridaSePago(pagamento);
+    pagamento = pagamento.tipo === 'pos_pago'
+      ? await confirmarFinalizacaoSePago(pagamento)
+      : await confirmarCorridaSePago(pagamento);
 
     return res.json(pagamentoPixModelo.paraPagamentoPublico(pagamento));
   } catch (erro) {
@@ -163,7 +200,11 @@ async function webhook(req, res) {
         const statusTraduzido = traduzirStatusMercadoPago(pagamentoMp.status);
         if (statusTraduzido !== 'pendente') {
           const atualizado = await pagamentoPixModelo.atualizarStatus(pagamentoLocal.id, statusTraduzido);
-          await confirmarCorridaSePago(atualizado);
+          if (atualizado.tipo === 'pos_pago') {
+            await confirmarFinalizacaoSePago(atualizado);
+          } else {
+            await confirmarCorridaSePago(atualizado);
+          }
         }
       }
     }

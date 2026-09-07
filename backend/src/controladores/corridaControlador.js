@@ -1,9 +1,18 @@
+const crypto = require('crypto');
 const corridaModelo = require('../modelos/corridaModelo');
 const usuarioModelo = require('../modelos/usuarioModelo');
 const motoristaModelo = require('../modelos/motoristaModelo');
+const dividaModelo = require('../modelos/dividaModelo');
+const pagamentoPixModelo = require('../modelos/pagamentoPixModelo');
 const corridaServico = require('../servicos/corridaServico');
+const mercadoPago = require('../utilitarios/mercadoPago');
 const { ErroHttp } = require('../intermediarios/tratadorErros');
 const soquete = require('../tempoReal/servidorSoquete');
+
+// Quanto tempo o QR code do Pix gerado ao FINALIZAR a corrida fica válido.
+// Mais curto que o do pré-pago (15 min) porque aqui o passageiro já está
+// parado na frente do motorista, esperando pra pagar.
+const MINUTOS_EXPIRACAO_PIX_FINALIZACAO = 10;
 
 // POST /rides
 // Criação direta — usada quando a forma de pagamento é "dinheiro" ou "pix"
@@ -367,18 +376,34 @@ async function cancelar(req, res, next) {
   }
 }
 
+// Confere que quem está chamando é o motorista da corrida e que ela ainda
+// está "em_andamento" (passageiro já embarcado) — checagem repetida pelos
+// três jeitos de finalizar (dinheiro, não pagou, Pix), então ficou num só
+// lugar.
+async function validarCorridaParaFinalizar(corridaId, motoristaId) {
+  const corrida = await corridaModelo.buscarPorId(corridaId);
+  if (!corrida) throw new ErroHttp(404, 'Corrida não encontrada.');
+  if (corrida.motorista_id !== motoristaId) {
+    throw new ErroHttp(403, 'Só o motorista da corrida pode finalizá-la.');
+  }
+  if (corrida.status !== 'em_andamento') {
+    throw new ErroHttp(409, 'Essa corrida não pode ser finalizada agora. Confirme o embarque do passageiro primeiro.');
+  }
+  return corrida;
+}
+
 // POST /rides/:id/finish
+//
+// Mantida por compatibilidade com versões antigas do app — finaliza sem
+// passar pela escolha de forma de pagamento. O fluxo atual (modal "Pix /
+// Dinheiro / Não pagou" ao finalizar) usa as três rotas abaixo.
 async function finalizar(req, res, next) {
   try {
-    const corrida = await corridaModelo.buscarPorId(req.params.id);
-    if (!corrida) throw new ErroHttp(404, 'Corrida não encontrada.');
-    if (corrida.motorista_id !== req.usuarioId) {
-      throw new ErroHttp(403, 'Só o motorista da corrida pode finalizá-la.');
-    }
+    await validarCorridaParaFinalizar(req.params.id, req.usuarioId);
 
     const corridaFinalizada = await corridaModelo.finalizar(req.params.id);
     if (!corridaFinalizada) {
-      throw new ErroHttp(409, 'Essa corrida não pode ser finalizada agora. Confirme o embarque do passageiro primeiro.');
+      throw new ErroHttp(409, 'Essa corrida não pode ser finalizada agora.');
     }
 
     soquete.notificarCorridaFinalizada({
@@ -387,6 +412,121 @@ async function finalizar(req, res, next) {
     });
 
     return res.json(corridaModelo.paraCorridaPublica(corridaFinalizada));
+  } catch (erro) {
+    next(erro);
+  }
+}
+
+// POST /rides/:id/finish/cash
+//
+// Motorista confirma que recebeu o valor em DINHEIRO na mão — finaliza a
+// corrida na hora, marcando o pagamento como concluído. Se essa corrida
+// trazia dívida(s) de uma viagem anterior embutida no preço, quita todas e
+// credita quem tinha ficado sem receber.
+async function finalizarComDinheiro(req, res, next) {
+  try {
+    await validarCorridaParaFinalizar(req.params.id, req.usuarioId);
+
+    const corridaFinalizada = await corridaModelo.finalizarComDinheiro(req.params.id);
+    if (!corridaFinalizada) {
+      throw new ErroHttp(409, 'Essa corrida não pode ser finalizada agora.');
+    }
+
+    await corridaServico.quitarDividasDaCorrida(corridaFinalizada);
+
+    soquete.notificarCorridaFinalizada({
+      corridaId: corridaFinalizada.id,
+      passageiroId: corridaFinalizada.passageiro_id,
+    });
+
+    return res.json(corridaModelo.paraCorridaPublica(corridaFinalizada));
+  } catch (erro) {
+    next(erro);
+  }
+}
+
+// POST /rides/:id/finish/unpaid
+//
+// Motorista marca que o passageiro NÃO pagou. A corrida encerra do mesmo
+// jeito (o motorista fica livre pra pegar outra), mas o valor DESSA corrida
+// (sem contar nenhuma dívida antiga que já viesse embutida nela — essa
+// continua pendente sozinha) vira uma dívida nova do passageiro, cobrada
+// automaticamente na tarifa da próxima corrida que ele pedir.
+async function finalizarComoNaoPago(req, res, next) {
+  try {
+    const corrida = await validarCorridaParaFinalizar(req.params.id, req.usuarioId);
+
+    const corridaFinalizada = await corridaModelo.finalizarComoNaoPago(req.params.id);
+    if (!corridaFinalizada) {
+      throw new ErroHttp(409, 'Essa corrida não pode ser finalizada agora.');
+    }
+
+    await dividaModelo.criar({
+      passageiroId: corridaFinalizada.passageiro_id,
+      motoristaCredorId: req.usuarioId,
+      corridaOrigemId: corridaFinalizada.id,
+      valor: corrida.preco_original,
+    });
+
+    soquete.notificarCorridaFinalizada({
+      corridaId: corridaFinalizada.id,
+      passageiroId: corridaFinalizada.passageiro_id,
+    });
+
+    return res.json(corridaModelo.paraCorridaPublica(corridaFinalizada));
+  } catch (erro) {
+    next(erro);
+  }
+}
+
+// Nem todo usuário tem email cadastrado — o Mercado Pago exige um
+// payer.email pra gerar o Pix, então sintetiza um a partir do ID quando
+// faltar (mesma lógica do pagamentoControlador, pro Pix pré-pago).
+function obterEmailPagador(usuario) {
+  return usuario.email || `${usuario.id}@passageiro.goapp.com`;
+}
+
+// POST /rides/:id/finish/pix
+//
+// Motorista escolhe "Pix" no modal de finalização — gera a cobrança no
+// Mercado Pago pelo valor da corrida (já incluindo dívida antiga, se
+// houver) e devolve o QR code + código "copia e cola" pro passageiro pagar
+// ali na hora. A corrida SÓ é finalizada de fato depois que o pagamento é
+// confirmado — ver pagamentoControlador.status, que agora também cobre esse
+// caso (Pix do tipo 'pos_pago').
+async function iniciarFinalizacaoPix(req, res, next) {
+  try {
+    const corrida = await validarCorridaParaFinalizar(req.params.id, req.usuarioId);
+
+    const passageiro = await usuarioModelo.buscarPorId(corrida.passageiro_id);
+    if (!passageiro) throw new ErroHttp(404, 'Passageiro não encontrado.');
+
+    const pagamentoMp = await mercadoPago.criarPagamentoPix({
+      valor: corrida.preco,
+      descricao: `Corrida #GO (${corrida.tipo_veiculo})`,
+      emailPagador: obterEmailPagador(passageiro),
+      referenciaExterna: corrida.id,
+      idempotencyKey: crypto.randomUUID(),
+    });
+
+    const dadosPix = pagamentoMp.point_of_interaction?.transaction_data;
+    if (!dadosPix?.qr_code) {
+      throw new ErroHttp(502, 'O Mercado Pago não retornou o QR code do Pix.');
+    }
+
+    const expiraEm = new Date(Date.now() + MINUTOS_EXPIRACAO_PIX_FINALIZACAO * 60 * 1000);
+
+    const pagamento = await pagamentoPixModelo.criarPosPago({
+      passageiroId: corrida.passageiro_id,
+      corridaId: corrida.id,
+      mercadoPagoId: String(pagamentoMp.id),
+      valor: corrida.preco,
+      qrCode: dadosPix.qr_code,
+      qrCodeBase64: dadosPix.qr_code_base64,
+      expiraEm,
+    });
+
+    return res.status(201).json(pagamentoPixModelo.paraPagamentoPublico(pagamento));
   } catch (erro) {
     next(erro);
   }
@@ -401,6 +541,9 @@ module.exports = {
   embarcar,
   cancelar,
   finalizar,
+  finalizarComDinheiro,
+  finalizarComoNaoPago,
+  iniciarFinalizacaoPix,
   listarHistorico,
   listarMensagens,
   enviarMensagem,

@@ -110,6 +110,11 @@ export type StatusCorrida = 'procurando' | 'aceita' | 'em_andamento' | 'finaliza
 // 'pix_prepago' -> paga por QR code ANTES da corrida ser despachada
 export type FormaPagamento = 'dinheiro' | 'pix' | 'pix_prepago';
 
+// Pagamento da corrida em si (separado do status da corrida) — uma corrida
+// pode estar "finalizada" e mesmo assim continuar 'nao_pago', se o
+// motorista marcou que o passageiro não pagou.
+export type StatusPagamentoCorrida = 'pendente' | 'pago' | 'nao_pago';
+
 // Quem foi responsável pelo cancelamento — usado pra escolher a mensagem
 // certa na tela (ex: "você cancelou" vs "o motorista cancelou").
 export type CanceladoPor = 'passageiro' | 'motorista' | 'sistema';
@@ -130,6 +135,13 @@ export type Corrida = {
   duracaoMin: number;
   formaPagamento: FormaPagamento;
   status: StatusCorrida;
+  statusPagamento: StatusPagamentoCorrida;
+  pagoEm?: string;
+  // Tarifa desta corrida sem nenhuma dívida de corrida anterior embutida.
+  precoOriginal: number;
+  // Valor de dívida antiga (de uma corrida não paga) que foi somado ao
+  // `preco` desta corrida — 0 quando não há nenhuma dívida pendente.
+  dividaAplicada: number;
   criadoEm: string;
   embarqueEm?: string;
   canceladoPor?: CanceladoPor;
@@ -181,8 +193,11 @@ export type PagamentoPix = {
   valor: number;
   qrCode: string; // código "copia e cola"
   qrCodeBase64: string; // imagem do QR code (PNG em base64)
-  // Só vem preenchido quando status === 'aprovado' — é a corrida criada
-  // automaticamente assim que o pagamento é confirmado.
+  // 'prepago'  -> gerado ANTES da corrida existir (tela do passageiro);
+  //               corridaId só vem preenchido quando status === 'aprovado'.
+  // 'pos_pago' -> gerado pelo motorista ao FINALIZAR a corrida; corridaId
+  //               já vem preenchido desde a criação.
+  tipo: 'prepago' | 'pos_pago';
   corridaId?: string;
   expiraEm: string;
 };

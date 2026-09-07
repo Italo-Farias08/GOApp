@@ -18,6 +18,10 @@ roteador.post('/:id/accept', corridaControlador.aceitar);
 roteador.post('/:id/pickup', corridaControlador.embarcar);
 roteador.post('/:id/cancel', corridaControlador.cancelar);
 roteador.post('/:id/finish', corridaControlador.finalizar);
+// Escolha de forma de pagamento no modal de finalização do motorista.
+roteador.post('/:id/finish/cash', corridaControlador.finalizarComDinheiro);
+roteador.post('/:id/finish/unpaid', corridaControlador.finalizarComoNaoPago);
+roteador.post('/:id/finish/pix', corridaControlador.iniciarFinalizacaoPix);
 roteador.get('/:id/messages', corridaControlador.listarMensagens);
 roteador.post('/:id/messages', corridaControlador.enviarMensagem);
 

@@ -9,21 +9,38 @@ function paraPagamentoPublico(linha) {
     valor: Number(linha.valor),
     qrCode: linha.qr_code, // código "copia e cola"
     qrCodeBase64: linha.qr_code_base64, // imagem do QR code em base64 (PNG)
-    corridaId: linha.corrida_id || undefined, // só vem preenchido depois de aprovado
+    corridaId: linha.corrida_id || undefined, // pré-pago: só vem depois de aprovado. pós-pago: vem desde a criação.
+    // 'prepago'  -> gerado ANTES da corrida existir (tela do passageiro)
+    // 'pos_pago' -> gerado pelo motorista ao FINALIZAR uma corrida já existente
+    tipo: linha.tipo || 'prepago',
     expiraEm: linha.expira_em,
   };
 }
 
-// Cria o registro local da cobrança Pix — guarda os dados da corrida ainda
-// NÃO criada em `dados_corrida`, porque a corrida só nasce de fato depois
-// que o pagamento é aprovado.
+// Cria o registro local da cobrança Pix PRÉ-paga — guarda os dados da
+// corrida ainda NÃO criada em `dados_corrida`, porque a corrida só nasce de
+// fato depois que o pagamento é aprovado.
 async function criar({ passageiroId, mercadoPagoId, valor, qrCode, qrCodeBase64, dadosCorrida, expiraEm }) {
   const resultado = await consultar(
     `INSERT INTO pagamentos_pix
-       (passageiro_id, mercado_pago_id, valor, qr_code, qr_code_base64, dados_corrida, expira_em)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
+       (passageiro_id, mercado_pago_id, valor, qr_code, qr_code_base64, dados_corrida, expira_em, tipo)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, 'prepago')
      RETURNING *`,
     [passageiroId, mercadoPagoId, valor, qrCode, qrCodeBase64, JSON.stringify(dadosCorrida), expiraEm]
+  );
+  return resultado.rows[0];
+}
+
+// Cria o registro local da cobrança Pix PÓS-corrida — o motorista gerou ao
+// finalizar uma corrida que JÁ EXISTE, então `corrida_id` já vem preenchido
+// desde a criação (diferente do pré-pago, que só vincula depois de aprovado).
+async function criarPosPago({ passageiroId, corridaId, mercadoPagoId, valor, qrCode, qrCodeBase64, expiraEm }) {
+  const resultado = await consultar(
+    `INSERT INTO pagamentos_pix
+       (passageiro_id, mercado_pago_id, valor, qr_code, qr_code_base64, dados_corrida, expira_em, tipo, corrida_id)
+     VALUES ($1, $2, $3, $4, $5, '{}'::jsonb, $6, 'pos_pago', $7)
+     RETURNING *`,
+    [passageiroId, mercadoPagoId, valor, qrCode, qrCodeBase64, expiraEm, corridaId]
   );
   return resultado.rows[0];
 }
@@ -60,6 +77,7 @@ async function vincularCorrida(id, corridaId) {
 module.exports = {
   paraPagamentoPublico,
   criar,
+  criarPosPago,
   buscarPorId,
   buscarPorMercadoPagoId,
   atualizarStatus,

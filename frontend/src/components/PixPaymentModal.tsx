@@ -14,14 +14,26 @@ type Props = {
   gerando: boolean;
   pagamento: PagamentoPix | null;
   onFechar: () => void;
+  // Só usado no fluxo do MOTORISTA (Pix gerado ao finalizar a corrida): dá
+  // pra ele voltar e marcar "não pagou" se o passageiro desistir de pagar,
+  // em vez de ficar preso esperando um QR code que ninguém vai escanear.
+  onNaoPagou?: () => void;
+  marcandoNaoPagou?: boolean;
 };
 
 // Modal de "pagar com Pix" — mostra o QR code (a imagem já vem pronta do
 // Mercado Pago em base64) e o código "copia e cola", e vai atualizando o
 // status sozinho enquanto o app faz o polling em segundo plano (ver
-// HomeScreen). Assim que o pagamento é aprovado, quem fecha o modal e segue
-// o fluxo é a própria tela — aqui só exibe.
-export default function PixPaymentModal({ visible, gerando, pagamento, onFechar }: Props) {
+// HomeScreen/DriverHomeScreen). Assim que o pagamento é aprovado, quem
+// fecha o modal e segue o fluxo é a própria tela — aqui só exibe.
+export default function PixPaymentModal({
+  visible,
+  gerando,
+  pagamento,
+  onFechar,
+  onNaoPagou,
+  marcandoNaoPagou = false,
+}: Props) {
   const [copiado, setCopiado] = React.useState(false);
 
   React.useEffect(() => {
@@ -93,7 +105,19 @@ export default function PixPaymentModal({ visible, gerando, pagamento, onFechar 
           </>
         )}
 
-        <Button label="Cancelar" variant="ghost" onPress={onFechar} />
+        <Button label="Voltar" variant="ghost" onPress={onFechar} disabled={marcandoNaoPagou} />
+
+        {!!onNaoPagou && (
+          <Pressable
+            style={styles.naoPagouBotao}
+            onPress={onNaoPagou}
+            disabled={marcandoNaoPagou || gerando}
+          >
+            <Text style={styles.naoPagouTexto}>
+              {marcandoNaoPagou ? 'Marcando...' : 'Cliente não pagou'}
+            </Text>
+          </Pressable>
+        )}
       </View>
     </Modal>
   );
@@ -198,5 +222,16 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.textSecondary,
     marginLeft: spacing.sm,
+  },
+  naoPagouBotao: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 40,
+    marginTop: spacing.xs,
+  },
+  naoPagouTexto: {
+    ...typography.caption,
+    color: colors.danger,
+    textDecorationLine: 'underline',
   },
 });

@@ -1,6 +1,6 @@
 import { api } from './api';
 import type { TipoVeiculo } from '../utils/precoCorrida';
-import type { Corrida, FormaPagamento, HistoricoCorridaItem, HistoricoCorridaMotoristaItem, MensagemChat, MotoristaInfo, PontoCorrida } from '../types';
+import type { Corrida, FormaPagamento, HistoricoCorridaItem, HistoricoCorridaMotoristaItem, MensagemChat, MotoristaInfo, PagamentoPix, PontoCorrida } from '../types';
 
 type CriarCorridaPayload = {
   origem: PontoCorrida;
@@ -52,8 +52,33 @@ export async function cancelarCorrida(id: string, motivo?: string): Promise<Corr
   return data;
 }
 
+// Mantida por compatibilidade — prefira uma das três funções abaixo, que
+// alimentam o modal "Pix / Dinheiro / Não pagou" mostrado ao motorista na
+// hora de finalizar.
 export async function finalizarCorrida(id: string): Promise<Corrida> {
   const { data } = await api.post<Corrida>(`/rides/${id}/finish`);
+  return data;
+}
+
+// Motorista confirma que recebeu o valor em DINHEIRO — finaliza na hora.
+export async function finalizarComDinheiro(id: string): Promise<Corrida> {
+  const { data } = await api.post<Corrida>(`/rides/${id}/finish/cash`);
+  return data;
+}
+
+// Motorista marca que o passageiro NÃO pagou — finaliza mesmo assim, e o
+// valor vira uma dívida cobrada automaticamente na próxima corrida do
+// passageiro.
+export async function finalizarComoNaoPago(id: string): Promise<Corrida> {
+  const { data } = await api.post<Corrida>(`/rides/${id}/finish/unpaid`);
+  return data;
+}
+
+// Motorista escolhe Pix — gera a cobrança no Mercado Pago (QR code + código
+// "copia e cola") pelo valor da corrida. A corrida só é finalizada de fato
+// depois que o pagamento é confirmado (ver paymentService.consultarPagamentoPix).
+export async function iniciarFinalizacaoPix(id: string): Promise<PagamentoPix> {
+  const { data } = await api.post<PagamentoPix>(`/rides/${id}/finish/pix`);
   return data;
 }
 
