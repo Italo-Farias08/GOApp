@@ -53,6 +53,23 @@ async function atualizar(id, { nome, email, telefone }) {
   return resultado.rows[0];
 }
 
+// Usada quando o usuário ainda não verificou o email e digitou o email errado
+// no cadastro: troca o email e já gera um novo código de verificação pro
+// endereço correto (o antigo código fica inválido).
+async function alterarEmailPendente(id, { email, codigo, expiraEm }) {
+  const resultado = await consultar(
+    `UPDATE usuarios SET
+       email = $2,
+       codigo_verificacao = $3,
+       codigo_verificacao_expira = $4,
+       atualizado_em = NOW()
+     WHERE id = $1
+     RETURNING *`,
+    [id, email, codigo, expiraEm]
+  );
+  return resultado.rows[0];
+}
+
 async function definirCodigoVerificacao(id, { codigo, expiraEm }) {
   const resultado = await consultar(
     `UPDATE usuarios SET
@@ -97,6 +114,7 @@ module.exports = {
   buscarPorId,
   criar,
   atualizar,
+  alterarEmailPendente,
   definirCodigoVerificacao,
   marcarEmailVerificado,
   atualizarStatusMotorista,

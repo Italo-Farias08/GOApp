@@ -1,32 +1,22 @@
 const corridaModelo = require('../modelos/corridaModelo');
 const usuarioModelo = require('../modelos/usuarioModelo');
 const motoristaModelo = require('../modelos/motoristaModelo');
+const corridaServico = require('../servicos/corridaServico');
 const { ErroHttp } = require('../intermediarios/tratadorErros');
 const soquete = require('../tempoReal/servidorSoquete');
 
-const TIPOS_VALIDOS = ['carro', 'moto'];
-
 // POST /rides
+// Criação direta — usada quando a forma de pagamento é "dinheiro" ou "pix"
+// (chave direto com o motorista), onde a corrida pode ser despachada na
+// hora. Pra "pix_prepago" o app usa POST /payments/pix em vez desta rota,
+// já que ali a corrida só é criada depois que o pagamento é aprovado.
 async function criar(req, res, next) {
   try {
-    const { origem, destino, tipoVeiculo, preco, distanciaKm, duracaoMin } = req.body;
+    const { origem, destino, tipoVeiculo, preco, distanciaKm, duracaoMin, formaPagamento } = req.body;
 
-    if (!origem?.latitude || !origem?.longitude || !destino?.latitude || !destino?.longitude) {
-      throw new ErroHttp(400, 'Origem e destino são obrigatórios.');
-    }
-    if (!TIPOS_VALIDOS.includes(tipoVeiculo)) {
-      throw new ErroHttp(400, 'Tipo de veículo inválido.');
-    }
-    if (!preco || !distanciaKm || !duracaoMin) {
-      throw new ErroHttp(400, 'Preço, distância e duração são obrigatórios.');
-    }
+    corridaServico.validarDadosCorrida({ origem, destino, tipoVeiculo, preco, distanciaKm, duracaoMin, formaPagamento });
 
-    const corridaExistente = await corridaModelo.buscarAtivaPorPassageiro(req.usuarioId);
-    if (corridaExistente) {
-      throw new ErroHttp(409, 'Você já tem uma corrida em andamento.');
-    }
-
-    const corrida = await corridaModelo.criar({
+    const corridaPublica = await corridaServico.criarEDespachar({
       passageiroId: req.usuarioId,
       origem,
       destino,
@@ -34,10 +24,8 @@ async function criar(req, res, next) {
       preco,
       distanciaKm,
       duracaoMin,
+      formaPagamento,
     });
-
-    const corridaPublica = corridaModelo.paraCorridaPublica(corrida);
-    soquete.notificarNovaCorrida(corridaPublica, origem);
 
     return res.status(201).json(corridaPublica);
   } catch (erro) {

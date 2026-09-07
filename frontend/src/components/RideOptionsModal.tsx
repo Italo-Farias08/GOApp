@@ -1,6 +1,7 @@
 import React from 'react';
 import { Image, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { colors, radius, spacing, typography } from '../theme/theme';
+import type { FormaPagamento } from '../types';
 import {
   EstimativaCorrida,
   TipoVeiculo,
@@ -9,7 +10,7 @@ import {
   formatarMoeda,
 } from '../utils/precoCorrida';
 import Button from './Button';
-import { CheckIcon } from './icons';
+import { CheckIcon, MoneyIcon, PixIcon, QrCodeIcon } from './icons';
 
 // Imagens dos veículos — troque estes arquivos por fotos reais
 // mantendo o mesmo nome/caminho (frontend/assets/images/carro.png e moto.png).
@@ -22,7 +23,7 @@ type Props = {
   visible: boolean;
   destino?: string;
   estimativas: EstimativaCorrida[];
-  onSelecionar: (tipo: TipoVeiculo) => void;
+  onSelecionar: (tipo: TipoVeiculo, formaPagamento: FormaPagamento) => void;
   onClose: () => void;
 };
 
@@ -30,6 +31,12 @@ const INFO_VEICULO: Record<TipoVeiculo, { label: string; sublabel: string }> = {
   carro: { label: 'Carro', sublabel: 'Mais conforto e espaço' },
   moto: { label: 'Moto', sublabel: 'Mais rápido no trânsito' },
 };
+
+const OPCOES_PAGAMENTO: { forma: FormaPagamento; label: string; Icone: typeof MoneyIcon }[] = [
+  { forma: 'dinheiro', label: 'Dinheiro', Icone: MoneyIcon },
+  { forma: 'pix', label: 'Pix', Icone: PixIcon },
+  { forma: 'pix_prepago', label: 'Pix (QR code)', Icone: QrCodeIcon },
+];
 
 export default function RideOptionsModal({
   visible,
@@ -39,10 +46,14 @@ export default function RideOptionsModal({
   onClose,
 }: Props) {
   const [selecionado, setSelecionado] = React.useState<TipoVeiculo | null>(null);
+  const [formaPagamento, setFormaPagamento] = React.useState<FormaPagamento>('dinheiro');
 
   // Reseta a seleção sempre que o modal é reaberto com novas estimativas.
   React.useEffect(() => {
-    if (visible) setSelecionado(null);
+    if (visible) {
+      setSelecionado(null);
+      setFormaPagamento('dinheiro');
+    }
   }, [visible]);
 
   const distanciaKm = estimativas[0]?.distanciaKm ?? 0;
@@ -111,9 +122,33 @@ export default function RideOptionsModal({
           })}
         </View>
 
+        <Text style={styles.secaoTitulo}>Como você quer pagar?</Text>
+        <View style={styles.pagamentoRow}>
+          {OPCOES_PAGAMENTO.map(({ forma, label, Icone }) => {
+            const ativo = formaPagamento === forma;
+            return (
+              <Pressable
+                key={forma}
+                style={[styles.pagamentoOpcao, ativo && styles.pagamentoOpcaoAtiva]}
+                onPress={() => setFormaPagamento(forma)}
+              >
+                <Icone size={20} color={ativo ? colors.background : colors.text} />
+                <Text style={[styles.pagamentoLabel, ativo && styles.pagamentoLabelAtivo]} numberOfLines={1}>
+                  {label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        {formaPagamento === 'pix_prepago' && (
+          <Text style={styles.pagamentoAviso}>
+            Você paga por QR code agora e a corrida só é enviada pros motoristas depois da confirmação.
+          </Text>
+        )}
+
         <Button
           label={selecionado ? `Confirmar ${INFO_VEICULO[selecionado].label.toLowerCase()}` : 'Selecione uma opção'}
-          onPress={() => selecionado && onSelecionar(selecionado)}
+          onPress={() => selecionado && onSelecionar(selecionado, formaPagamento)}
           disabled={!selecionado}
           style={styles.confirmButton}
         />
@@ -243,5 +278,43 @@ const styles = StyleSheet.create({
   },
   confirmButton: {
     marginBottom: spacing.sm,
+  },
+  secaoTitulo: {
+    ...typography.bodyBold,
+    color: colors.text,
+    marginBottom: spacing.sm,
+  },
+  pagamentoRow: {
+    flexDirection: 'row',
+    marginBottom: spacing.sm,
+  },
+  pagamentoOpcao: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.sm,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    backgroundColor: colors.background,
+    marginRight: spacing.sm,
+  },
+  pagamentoOpcaoAtiva: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primary,
+  },
+  pagamentoLabel: {
+    ...typography.caption,
+    color: colors.text,
+    marginTop: spacing.xs,
+  },
+  pagamentoLabelAtivo: {
+    color: colors.background,
+    fontWeight: '700',
+  },
+  pagamentoAviso: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginBottom: spacing.md,
   },
 });

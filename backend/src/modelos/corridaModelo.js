@@ -25,21 +25,25 @@ function paraCorridaPublica(linha) {
     preco: Number(linha.preco),
     distanciaKm: Number(linha.distancia_km),
     duracaoMin: Number(linha.duracao_min),
+    formaPagamento: linha.forma_pagamento || 'dinheiro',
     status: linha.status,
     criadoEm: linha.criado_em,
     embarqueEm: linha.embarque_em || undefined,
     canceladoPor: linha.cancelado_por || undefined,
     motivoCancelamento: linha.motivo_cancelamento || undefined,
+    // Só vem preenchido quando a linha veio de uma consulta com JOIN em
+    // `usuarios` (ex: buscarProcurandoPorTipo) — sem isso undefined mesmo.
+    passageiroNome: linha.passageiro_nome || undefined,
   };
 }
 
-async function criar({ passageiroId, origem, destino, tipoVeiculo, preco, distanciaKm, duracaoMin }) {
+async function criar({ passageiroId, origem, destino, tipoVeiculo, preco, distanciaKm, duracaoMin, formaPagamento }) {
   const resultado = await consultar(
     `INSERT INTO corridas
        (passageiro_id, origem_latitude, origem_longitude, origem_endereco,
         destino_latitude, destino_longitude, destino_endereco,
-        tipo_veiculo, preco, distancia_km, duracao_min)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        tipo_veiculo, preco, distancia_km, duracao_min, forma_pagamento)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
      RETURNING *`,
     [
       passageiroId,
@@ -53,6 +57,7 @@ async function criar({ passageiroId, origem, destino, tipoVeiculo, preco, distan
       preco,
       distanciaKm,
       duracaoMin,
+      formaPagamento || 'dinheiro',
     ]
   );
   return resultado.rows[0];
@@ -79,9 +84,11 @@ async function buscarAtivaPorPassageiro(passageiroId) {
 // (sem isso, só quem já estava online no instante da criação recebia).
 async function buscarProcurandoPorTipo(tipoVeiculo) {
   const resultado = await consultar(
-    `SELECT * FROM corridas
-     WHERE status = 'procurando' AND tipo_veiculo = $1
-     ORDER BY criado_em ASC`,
+    `SELECT c.*, u.nome AS passageiro_nome
+     FROM corridas c
+     JOIN usuarios u ON u.id = c.passageiro_id
+     WHERE c.status = 'procurando' AND c.tipo_veiculo = $1
+     ORDER BY c.criado_em ASC`,
     [tipoVeiculo]
   );
   return resultado.rows;

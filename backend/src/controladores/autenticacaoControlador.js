@@ -127,6 +127,50 @@ async function reenviarCodigo(req, res, next) {
   }
 }
 
+// POST /auth/change-pending-email
+// Usada na tela de verificação quando o usuário percebe que digitou o email
+// errado no cadastro. Só funciona enquanto a conta ainda não foi verificada.
+async function alterarEmailPendente(req, res, next) {
+  try {
+    const { email, newEmail } = req.body;
+
+    if (!email || !newEmail) {
+      throw new ErroHttp(400, 'Email atual e novo email são obrigatórios.');
+    }
+    if (!REGEX_EMAIL.test(newEmail)) {
+      throw new ErroHttp(400, 'Novo email inválido.');
+    }
+
+    const usuario = await usuarioModelo.buscarPorEmail(email);
+    if (!usuario) {
+      throw new ErroHttp(404, 'Usuário não encontrado.');
+    }
+    if (usuario.email_verificado) {
+      throw new ErroHttp(409, 'Este email já foi verificado. Faça login normalmente.');
+    }
+
+    if (newEmail !== email) {
+      const outroUsuarioComEmail = await usuarioModelo.buscarPorEmail(newEmail);
+      if (outroUsuarioComEmail) {
+        throw new ErroHttp(409, 'Já existe uma conta com esse email.');
+      }
+    }
+
+    const codigo = gerarCodigo();
+    const expiraEm = gerarExpiracao();
+    const usuarioAtualizado = await usuarioModelo.alterarEmailPendente(usuario.id, {
+      email: newEmail,
+      codigo,
+      expiraEm,
+    });
+    await enviarEmailVerificacao({ para: newEmail, nome: usuarioAtualizado.nome, codigo });
+
+    return res.json({ needsVerification: true, email: usuarioAtualizado.email });
+  } catch (erro) {
+    next(erro);
+  }
+}
+
 // POST /auth/login
 async function entrar(req, res, next) {
   try {
@@ -248,6 +292,7 @@ module.exports = {
   registrar,
   verificarEmail,
   reenviarCodigo,
+  alterarEmailPendente,
   entrar,
   entrarComTelefone,
   obterPerfil,

@@ -105,6 +105,11 @@ export type MotoristaInfo = {
 // 'em_andamento' -> motorista confirmou o embarque, indo até o destino final
 export type StatusCorrida = 'procurando' | 'aceita' | 'em_andamento' | 'finalizada' | 'cancelada';
 
+// 'dinheiro'    -> paga em espécie direto com o motorista
+// 'pix'         -> combina o Pix direto com o motorista (chave na hora)
+// 'pix_prepago' -> paga por QR code ANTES da corrida ser despachada
+export type FormaPagamento = 'dinheiro' | 'pix' | 'pix_prepago';
+
 // Quem foi responsável pelo cancelamento — usado pra escolher a mensagem
 // certa na tela (ex: "você cancelou" vs "o motorista cancelou").
 export type CanceladoPor = 'passageiro' | 'motorista' | 'sistema';
@@ -123,6 +128,7 @@ export type Corrida = {
   preco: number;
   distanciaKm: number;
   duracaoMin: number;
+  formaPagamento: FormaPagamento;
   status: StatusCorrida;
   criadoEm: string;
   embarqueEm?: string;
@@ -163,6 +169,22 @@ export type HistoricoCorridaMotoristaItem = {
     nome: string;
     avatarUrl?: string;
   };
+};
+
+// --- Pagamento Pix pré-pago ---
+
+export type StatusPagamentoPix = 'pendente' | 'aprovado' | 'recusado' | 'expirado';
+
+export type PagamentoPix = {
+  id: string;
+  status: StatusPagamentoPix;
+  valor: number;
+  qrCode: string; // código "copia e cola"
+  qrCodeBase64: string; // imagem do QR code (PNG em base64)
+  // Só vem preenchido quando status === 'aprovado' — é a corrida criada
+  // automaticamente assim que o pagamento é confirmado.
+  corridaId?: string;
+  expiraEm: string;
 };
 
 // Tipos de navegação — adicionar novas telas aqui conforme o app crescer

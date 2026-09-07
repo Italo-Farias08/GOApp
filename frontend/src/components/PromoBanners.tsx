@@ -3,15 +3,22 @@ import {
   Dimensions,
   FlatList,
   Image,
+  LayoutAnimation,
   LayoutChangeEvent,
   NativeScrollEvent,
   NativeSyntheticEvent,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
+  UIManager,
   View,
 } from 'react-native';
 import { colors, spacing, typography } from '../theme/theme';
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 export type Banner = {
   id: string;
@@ -61,6 +68,12 @@ export default function PromoBanners({ banners, autoplayMs = 4000, destaque = fa
 
   // Autoplay: avança pro próximo slide sozinho, e volta pro primeiro
   // quando chega no fim.
+  // Anima a troca do "pilulazinha" ativa nos dots (em vez de saltar de
+  // largura instantaneamente) sempre que o slide ativo muda.
+  function animarTrocaDeDot() {
+    LayoutAnimation.configureNext(LayoutAnimation.create(220, 'easeInEaseOut', 'scaleXY'));
+  }
+
   useEffect(() => {
     if (banners.length <= 1) return;
 
@@ -68,6 +81,7 @@ export default function PromoBanners({ banners, autoplayMs = 4000, destaque = fa
       const proximo = (indiceRef.current + 1) % banners.length;
       listRef.current?.scrollToIndex({ index: proximo, animated: true });
       indiceRef.current = proximo;
+      animarTrocaDeDot();
       setIndiceAtivo(proximo);
     }, autoplayMs);
 
@@ -77,6 +91,7 @@ export default function PromoBanners({ banners, autoplayMs = 4000, destaque = fa
   function aoRolarManualmente(evento: NativeSyntheticEvent<NativeScrollEvent>) {
     const indice = Math.round(evento.nativeEvent.contentOffset.x / larguraRef.current);
     indiceRef.current = indice;
+    animarTrocaDeDot();
     setIndiceAtivo(indice);
   }
 
@@ -107,9 +122,10 @@ export default function PromoBanners({ banners, autoplayMs = 4000, destaque = fa
           // é menor, com respiro dos dois lados.
           <View style={{ width: largura, height: alturaCard }}>
             <Pressable
-              style={[
+              style={({ pressed }) => [
                 styles.card,
                 { width: larguraCard, height: alturaCard, marginHorizontal: GAP_CARD },
+                pressed && styles.cardPressionado,
               ]}
               onPress={item.onPress}
               disabled={!item.onPress}
@@ -153,6 +169,10 @@ const styles = StyleSheet.create({
     borderRadius: RAIO_CARD,
     overflow: 'hidden',
     backgroundColor: colors.surface,
+  },
+  cardPressionado: {
+    opacity: 0.88,
+    transform: [{ scale: 0.985 }],
   },
   imagem: {
     width: '100%',

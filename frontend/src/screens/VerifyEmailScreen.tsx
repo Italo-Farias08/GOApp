@@ -24,8 +24,12 @@ const TAMANHO_CODIGO = 6;
 const SEGUNDOS_PARA_REENVIAR = 30;
 
 export default function VerifyEmailScreen({ navigation, route }: Props) {
-  const { email } = route.params;
-  const { verifyEmail, resendCode } = useAuth();
+  const { verifyEmail, resendCode, changePendingEmail } = useAuth();
+
+  // O email pode mudar nesta tela (caso o usuário tenha digitado errado no
+  // cadastro), então mantemos ele em estado local em vez de usar direto o
+  // route.params.
+  const [email, setEmail] = useState(route.params.email);
 
   const [digitos, setDigitos] = useState<string[]>(Array(TAMANHO_CODIGO).fill(''));
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -33,6 +37,10 @@ export default function VerifyEmailScreen({ navigation, route }: Props) {
   const [reenviando, setReenviando] = useState(false);
   const [resendMessage, setResendMessage] = useState<string | null>(null);
   const [cooldown, setCooldown] = useState(0);
+
+  const [editandoEmail, setEditandoEmail] = useState(false);
+  const [novoEmail, setNovoEmail] = useState(route.params.email);
+  const [trocandoEmail, setTrocandoEmail] = useState(false);
 
   const inputsRef = useRef<Array<TextInput | null>>([]);
 
@@ -99,6 +107,34 @@ export default function VerifyEmailScreen({ navigation, route }: Props) {
     }
   }
 
+  async function handleChangeEmail() {
+    const emailLimpo = novoEmail.trim().toLowerCase();
+    setSubmitError(null);
+
+    if (!emailLimpo || !emailLimpo.includes('@')) {
+      setSubmitError('Digite um email válido.');
+      return;
+    }
+    if (emailLimpo === email) {
+      setEditandoEmail(false);
+      return;
+    }
+
+    setTrocandoEmail(true);
+    try {
+      await changePendingEmail(email, emailLimpo);
+      setEmail(emailLimpo);
+      setEditandoEmail(false);
+      setDigitos(Array(TAMANHO_CODIGO).fill(''));
+      setResendMessage('Email atualizado! Mandamos um novo código pra ele.');
+      setCooldown(SEGUNDOS_PARA_REENVIAR);
+    } catch (err: any) {
+      setSubmitError(err?.response?.data?.message ?? err?.message ?? 'Não foi possível trocar o email.');
+    } finally {
+      setTrocandoEmail(false);
+    }
+  }
+
   async function handleResend() {
     if (cooldown > 0) return;
     setResendMessage(null);
@@ -131,10 +167,55 @@ export default function VerifyEmailScreen({ navigation, route }: Props) {
 
             <View style={styles.header}>
               <Text style={styles.title}>Confirme seu email</Text>
-              <Text style={styles.subtitle}>
-                Mandamos um código de 6 dígitos para{'\n'}
-                <Text style={styles.emailHighlight}>{email}</Text>
-              </Text>
+              {editandoEmail ? (
+                <View style={styles.editEmailBox}>
+                  <TextInput
+                    style={styles.editEmailInput}
+                    value={novoEmail}
+                    onChangeText={setNovoEmail}
+                    placeholder="seu@email.com"
+                    placeholderTextColor={colors.textMuted}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    keyboardType="email-address"
+                  />
+                  <View style={styles.editEmailActions}>
+                    <Pressable
+                      onPress={() => {
+                        setEditandoEmail(false);
+                        setNovoEmail(email);
+                        setSubmitError(null);
+                      }}
+                      hitSlop={8}
+                    >
+                      <Text style={styles.editEmailCancel}>Cancelar</Text>
+                    </Pressable>
+                    <Button
+                      label="Salvar"
+                      onPress={handleChangeEmail}
+                      loading={trocandoEmail}
+                      style={styles.editEmailSave}
+                    />
+                  </View>
+                </View>
+              ) : (
+                <>
+                  <Text style={styles.subtitle}>
+                    Mandamos um código de 6 dígitos para{'\n'}
+                    <Text style={styles.emailHighlight}>{email}</Text>
+                  </Text>
+                  <Pressable
+                    onPress={() => {
+                      setEditandoEmail(true);
+                      setSubmitError(null);
+                      setResendMessage(null);
+                    }}
+                    hitSlop={8}
+                  >
+                    <Text style={styles.fixEmailLabel}>Email errado? Corrigir</Text>
+                  </Pressable>
+                </>
+              )}
             </View>
 
             <View style={styles.codeRow}>
@@ -217,6 +298,39 @@ const styles = StyleSheet.create({
   emailHighlight: {
     color: colors.text,
     fontWeight: '700',
+  },
+  fixEmailLabel: {
+    ...typography.bodyBold,
+    color: colors.primary,
+    textAlign: 'center',
+    marginTop: spacing.sm,
+  },
+  editEmailBox: {
+    width: '100%',
+    marginTop: spacing.sm,
+  },
+  editEmailInput: {
+    height: 48,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    color: colors.text,
+    paddingHorizontal: spacing.md,
+    ...typography.body,
+  },
+  editEmailActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: spacing.sm,
+  },
+  editEmailCancel: {
+    ...typography.bodyBold,
+    color: colors.textSecondary,
+  },
+  editEmailSave: {
+    minWidth: 120,
   },
   codeRow: {
     flexDirection: 'row',

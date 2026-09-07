@@ -20,6 +20,7 @@ type AuthContextValue = {
   signUp: (payload: RegisterPayload) => Promise<RegisterResult>;
   verifyEmail: (email: string, code: string) => Promise<void>;
   resendCode: (email: string) => Promise<void>;
+  changePendingEmail: (email: string, newEmail: string) => Promise<RegisterResult>;
   signOut: () => Promise<void>;
   updateAccount: (payload: UpdateAccountPayload) => Promise<void>;
   updateDriverStatus: (status: DriverStatus) => void;
@@ -105,6 +106,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  async function changePendingEmail(email: string, newEmail: string) {
+    setError(null);
+    try {
+      return await authService.changePendingEmail(email, newEmail);
+    } catch (err: any) {
+      setError(err?.response?.data?.message ?? err.message ?? 'Não foi possível trocar o email.');
+      throw err;
+    }
+  }
+
   async function signOut() {
     await authService.logout();
     setUser(null);
@@ -140,6 +151,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         signUp,
         verifyEmail,
         resendCode,
+        changePendingEmail,
         signOut,
         updateAccount,
         updateDriverStatus,

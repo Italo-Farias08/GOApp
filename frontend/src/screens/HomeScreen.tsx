@@ -22,6 +22,7 @@ import Button from '../components/Button';
 import CancelRideModal from '../components/CancelRideModal';
 import ChatModal from '../components/ChatModal';
 import MapPin from '../components/MapPin';
+import PixPaymentModal from '../components/PixPaymentModal';
 import PromoBanners, { Banner } from '../components/PromoBanners';
 import RideOptionsModal from '../components/RideOptionsModal';
 import SettingsModal from '../components/SettingsModal';
@@ -42,10 +43,11 @@ import { useAuth } from '../context/AuthContext';
 import { useCurrentLocation } from '../hooks/useCurrentLocation';
 import { useAddressSearch, EnderecoSugerido } from '../hooks/useAddressSearch';
 import { useRota } from '../hooks/useRota';
+import * as paymentService from '../services/paymentService';
 import * as rideService from '../services/rideService';
 import { conectarSoquete } from '../services/socketService';
 import { colors, radius, spacing, typography } from '../theme/theme';
-import type { Corrida, MensagemChat, MotoristaInfo } from '../types';
+import type { Corrida, FormaPagamento, MensagemChat, MotoristaInfo, PagamentoPix } from '../types';
 import { STADIA_TILE_URL } from '../utils/mapaConfig';
 import {
   EstimativaCorrida,
@@ -137,6 +139,15 @@ export default function HomeScreen() {
   const [estimativas, setEstimativas] = useState<EstimativaCorrida[]>([]);
   const [corridaConfirmada, setCorridaConfirmada] = useState<EstimativaCorrida | null>(null);
   const [inputFocado, setInputFocado] = useState(false);
+  const buscaFocoAnim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(buscaFocoAnim, {
+      toValue: inputFocado ? 1 : 0,
+      duration: 220,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: false, 
+    }).start();
+  }, [inputFocado]);
 
   // --- Corrida real (backend + tempo real) ---
   const [corridaId, setCorridaId] = useState<string | null>(null);
@@ -150,6 +161,23 @@ export default function HomeScreen() {
   const [toastMensagem, setToastMensagem] = useState<string | null>(null);
   const [toastTom, setToastTom] = useState<StatusToastTone>('info');
   const corridaIdRef = useRef<string | null>(null);
+
+  // --- Pix pré-pago: cobrança gerada e sendo aguardada (o app faz polling
+  // de status enquanto o modal com o QR code está aberto) ---
+  const [pixModalVisivel, setPixModalVisivel] = useState(false);
+  const [gerandoPix, setGerandoPix] = useState(false);
+  const [pagamentoPix, setPagamentoPix] = useState<PagamentoPix | null>(null);
+  const pollingPixRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  function pararPollingPix() {
+    if (pollingPixRef.current) {
+      clearInterval(pollingPixRef.current);
+      pollingPixRef.current = null;
+    }
+  }
+
+  // Garante que o polling para se a tela desmontar com o modal ainda aberto.
+  useEffect(() => () => pararPollingPix(), []);
 
   useEffect(() => {
     corridaIdRef.current = corridaId;
@@ -246,17 +274,25 @@ export default function HomeScreen() {
     }
   }, [corridaConfirmada, motoristaAtribuido]);
 
-  // --- Entrada suave da tela (topo, FAB e cartão aparecem com fade+slide
-  // em vez de "estalar" na tela assim que o componente monta). ---
+  // --- Entrada suave da tela (topo, FAB e cartão aparecem em cascata —
+  // topo primeiro, cartão de baixo alguns instantes depois — em vez de
+  // "estalar" tudo ao mesmo tempo assim que o componente monta). ---
   const entradaAnim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.timing(entradaAnim, {
       toValue: 1,
-      duration: 420,
+      duration: 620,
       delay: 80,
+      easing: Easing.out(Easing.cubic),
       useNativeDriver: false, // 'bottom' do FAB não roda no driver nativo
     }).start();
   }, []);
+  // Segunda onda da cascata (FAB de recentralizar + cartão de baixo): só
+  // começa a aparecer depois que o topo já entrou quase todo.
+  const entradaAnimAtrasada = entradaAnim.interpolate({
+    inputRange: [0, 0.45, 1],
+    outputRange: [0, 0, 1],
+  });
 
   // --- Cartão de baixo arrastável (bottom sheet com 2 degraus) ---
   const [alturaRecolhida, setAlturaRecolhida] = useState(SHEET_ALTURA_RECOLHIDA_PADRAO);
@@ -657,10 +693,31 @@ export default function HomeScreen() {
     setOpcoesVisiveis(true);
   }
 
-  async function confirmarVeiculo(tipo: TipoVeiculo) {
+  async function confirmarVeiculo(tipo: TipoVeiculo, formaPagamento: FormaPagamento) {
     const escolhida = estimativas.find((estimativa) => estimativa.tipo === tipo);
     setOpcoesVisiveis(false);
     if (!escolhida || !destinoSelecionado || !coords) return;
+
+    const dadosCorrida = {
+      origem: { latitude: coords.latitude, longitude: coords.longitude },
+      destino: {
+        latitude: destinoSelecionado.latitude,
+        longitude: destinoSelecionado.longitude,
+        endereco: destinoSelecionado.descricao,
+      },
+      tipoVeiculo: tipo,
+      preco: escolhida.preco,
+      distanciaKm: escolhida.distanciaKm,
+      duracaoMin: escolhida.duracaoMin,
+    };
+
+    // Pix pré-pago não cria a corrida direto — primeiro gera o QR code e só
+    // depois que o pagamento é confirmado a corrida nasce de verdade (ver
+    // iniciarPagamentoPix / iniciarPollingPix abaixo).
+    if (formaPagamento === 'pix_prepago') {
+      await iniciarPagamentoPix(escolhida, dadosCorrida);
+      return;
+    }
 
     setCorridaConfirmada(escolhida);
     setMotoristaAtribuido(null);
@@ -668,18 +725,7 @@ export default function HomeScreen() {
     setEmbarcado(false);
 
     try {
-      const corrida = await rideService.criarCorrida({
-        origem: { latitude: coords.latitude, longitude: coords.longitude },
-        destino: {
-          latitude: destinoSelecionado.latitude,
-          longitude: destinoSelecionado.longitude,
-          endereco: destinoSelecionado.descricao,
-        },
-        tipoVeiculo: tipo,
-        preco: escolhida.preco,
-        distanciaKm: escolhida.distanciaKm,
-        duracaoMin: escolhida.duracaoMin,
-      });
+      const corrida = await rideService.criarCorrida({ ...dadosCorrida, formaPagamento });
       setCorridaId(corrida.id);
     } catch (erro) {
       // Antes esse catch resetava a tela em silêncio — dava a impressão de
@@ -693,6 +739,63 @@ export default function HomeScreen() {
         'danger'
       );
     }
+  }
+
+  // Gera a cobrança Pix no Mercado Pago e abre o modal com o QR code. A
+  // corrida (`dadosCorrida`) só é criada de verdade depois que o pagamento
+  // for confirmado — ver iniciarPollingPix.
+  async function iniciarPagamentoPix(
+    escolhida: EstimativaCorrida,
+    dadosCorrida: Omit<Parameters<typeof rideService.criarCorrida>[0], 'formaPagamento'>
+  ) {
+    setPixModalVisivel(true);
+    setGerandoPix(true);
+    setPagamentoPix(null);
+    try {
+      const pagamento = await paymentService.criarPagamentoPix(dadosCorrida);
+      setPagamentoPix(pagamento);
+      iniciarPollingPix(pagamento.id, escolhida);
+    } catch (erro) {
+      setPixModalVisivel(false);
+      avisar(extrairMensagemErro(erro, 'Não foi possível gerar o Pix. Tente novamente.'), 'danger');
+    } finally {
+      setGerandoPix(false);
+    }
+  }
+
+  // Fica perguntando pro backend se o pagamento já foi aprovado — assim que
+  // aprovar, o backend já criou e despachou a corrida sozinho, então só
+  // falta a tela "entrar" nesse estado (igual já acontece pra dinheiro/Pix
+  // direto).
+  function iniciarPollingPix(pagamentoId: string, escolhida: EstimativaCorrida) {
+    pararPollingPix();
+    pollingPixRef.current = setInterval(async () => {
+      try {
+        const atualizado = await paymentService.consultarPagamentoPix(pagamentoId);
+        setPagamentoPix(atualizado);
+
+        if (atualizado.status === 'aprovado' && atualizado.corridaId) {
+          pararPollingPix();
+          setPixModalVisivel(false);
+          setCorridaConfirmada(escolhida);
+          setMotoristaAtribuido(null);
+          setLocalizacaoMotorista(null);
+          setEmbarcado(false);
+          setCorridaId(atualizado.corridaId);
+        } else if (atualizado.status === 'recusado' || atualizado.status === 'expirado') {
+          pararPollingPix();
+        }
+      } catch {
+        // Falha pontual de rede — a próxima tentativa do intervalo já
+        // tenta de novo, não precisa avisar o passageiro por isso.
+      }
+    }, 3000);
+  }
+
+  function fecharPixModal() {
+    pararPollingPix();
+    setPixModalVisivel(false);
+    setPagamentoPix(null);
   }
 
   const destinoPronto = !!destinoSelecionado && !!rota;
@@ -767,6 +870,26 @@ export default function HomeScreen() {
       )}
 
       <Animated.View
+        pointerEvents="none"
+        style={[
+          styles.marcaBadge,
+          {
+            opacity: entradaAnim,
+            transform: [
+              {
+                translateY: entradaAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [-16, 0],
+                }),
+              },
+            ],
+          },
+        ]}
+      >
+        <Image source={require('../../assets/logo-mark.png')} style={styles.marcaImagem} resizeMode="contain" />
+      </Animated.View>
+
+      <Animated.View
         style={[
           styles.topBar,
           {
@@ -809,7 +932,7 @@ export default function HomeScreen() {
           style={[
             styles.fabLocalizacao,
             {
-              opacity: entradaAnim,
+              opacity: entradaAnimAtrasada,
               bottom: Animated.add(
                 Animated.subtract(alturaAnimada, Animated.add(panY, keyboardOffset)),
                 spacing.md
@@ -834,8 +957,18 @@ export default function HomeScreen() {
           styles.bottomSheet,
           {
             height: alturaAnimada,
-            opacity: entradaAnim,
-            transform: [{ translateY: Animated.add(panY, keyboardOffset) }],
+            opacity: entradaAnimAtrasada,
+            transform: [
+              {
+                translateY: Animated.add(
+                  panY,
+                  Animated.add(
+                    keyboardOffset,
+                    entradaAnim.interpolate({ inputRange: [0, 1], outputRange: [18, 0] })
+                  )
+                ),
+              },
+            ],
           },
         ]}
       >
@@ -861,7 +994,25 @@ export default function HomeScreen() {
                   por cima da atual. Só volta a aparecer depois que a corrida
                   atual for cancelada ou finalizada (resetarCorrida). */}
               {!corridaConfirmada && (
-                <View style={[styles.destinationRow, inputFocado && styles.destinationRowFocado]}>
+                <Animated.View
+                  style={[
+                    styles.destinationRow,
+                    {
+                      borderColor: buscaFocoAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [colors.border, colors.primary],
+                      }),
+                      borderWidth: buscaFocoAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [1, 1.5],
+                      }),
+                      shadowOpacity: buscaFocoAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [0, 0.45],
+                      }),
+                    },
+                  ]}
+                >
                   <SearchIcon size={18} color={colors.textMuted} />
                   <TextInput
                     style={styles.destinationInput}
@@ -890,7 +1041,7 @@ export default function HomeScreen() {
                       <CloseIcon size={14} color={colors.textSecondary} />
                     </Pressable>
                   )}
-                </View>
+                </Animated.View>
               )}
             </View>
           </View>
@@ -1137,6 +1288,13 @@ export default function HomeScreen() {
         onClose={() => setOpcoesVisiveis(false)}
       />
 
+      <PixPaymentModal
+        visible={pixModalVisivel}
+        gerando={gerandoPix}
+        pagamento={pagamentoPix}
+        onFechar={fecharPixModal}
+      />
+
       <CancelRideModal
         visible={cancelamentoVisivel}
         titulo="Cancelar essa corrida?"
@@ -1227,6 +1385,24 @@ const styles = StyleSheet.create({
     color: colors.danger,
     marginLeft: spacing.sm,
     flex: 1,
+  },
+  marcaBadge: {
+    position: 'absolute',
+    top: spacing.xxl,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    zIndex: 1,
+  },
+  marcaImagem: {
+    width: 48,
+    height: 48,
+    borderRadius: 9,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 4,
   },
   topBar: {
     position: 'absolute',
@@ -1364,10 +1540,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     paddingHorizontal: spacing.md,
     marginBottom: spacing.md,
-  },
-  destinationRowFocado: {
-    borderColor: colors.primary,
-    borderWidth: 1.5,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 0 },
+    shadowRadius: 10,
   },
   destinationInput: {
     flex: 1,

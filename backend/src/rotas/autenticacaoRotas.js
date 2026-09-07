@@ -8,6 +8,7 @@ const roteador = express.Router();
 roteador.post('/register', autenticacaoControlador.registrar);
 roteador.post('/verify-email', autenticacaoControlador.verificarEmail);
 roteador.post('/resend-code', autenticacaoControlador.reenviarCodigo);
+roteador.post('/change-pending-email', autenticacaoControlador.alterarEmailPendente);
 roteador.post('/login', autenticacaoControlador.entrar);
 roteador.post('/login-phone', autenticacaoControlador.entrarComTelefone);
 

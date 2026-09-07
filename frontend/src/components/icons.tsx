@@ -271,6 +271,72 @@ export function ArrowRightIcon({ size = 20, color = '#0B0B0F', strokeWidth = 2 }
     </Svg>
   );
 }
+// Ícone de dinheiro (cédula com um círculo no meio) — usado na opção de
+// pagamento "Dinheiro".
+export function MoneyIcon({ size = 22, color = '#F5F5F7', strokeWidth = 1.7 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M2.5 6.5A1.5 1.5 0 0 1 4 5H20A1.5 1.5 0 0 1 21.5 6.5V17.5A1.5 1.5 0 0 1 20 19H4A1.5 1.5 0 0 1 2.5 17.5Z"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        strokeLinejoin="round"
+      />
+      <Circle cx="12" cy="12" r="3.2" stroke={color} strokeWidth={strokeWidth} />
+      <Line x1="5.5" y1="9" x2="5.5" y2="9.01" stroke={color} strokeWidth={strokeWidth * 1.6} strokeLinecap="round" />
+      <Line x1="18.5" y1="15" x2="18.5" y2="15.01" stroke={color} strokeWidth={strokeWidth * 1.6} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+// Ícone de Pix (representação própria, geométrica, do símbolo de troca
+// instantânea — dois "cantos" espelhados conectados por linhas, lembrando
+// o conceito de transferência sem reproduzir a marca oficial).
+export function PixIcon({ size = 22, color = '#F5F5F7', strokeWidth = 1.7 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M9.6 4.3 L12 6.7 L14.4 4.3 A2.2 2.2 0 0 1 16 3.6 H16.6 A2.2 2.2 0 0 1 18.2 4.3 L19.7 5.8 A2.2 2.2 0 0 1 20.4 7.4 V8 A2.2 2.2 0 0 1 19.7 9.6 L17.3 12 L19.7 14.4 A2.2 2.2 0 0 1 20.4 16 V16.6 A2.2 2.2 0 0 1 19.7 18.2 L18.2 19.7 A2.2 2.2 0 0 1 16.6 20.4 H16 A2.2 2.2 0 0 1 14.4 19.7 L12 17.3 L9.6 19.7 A2.2 2.2 0 0 1 8 20.4 H7.4 A2.2 2.2 0 0 1 5.8 19.7 L4.3 18.2 A2.2 2.2 0 0 1 3.6 16.6 V16 A2.2 2.2 0 0 1 4.3 14.4 L6.7 12 L4.3 9.6 A2.2 2.2 0 0 1 3.6 8 V7.4 A2.2 2.2 0 0 1 4.3 5.8 L5.8 4.3 A2.2 2.2 0 0 1 7.4 3.6 H8 A2.2 2.2 0 0 1 9.6 4.3 Z"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        strokeLinejoin="round"
+      />
+      <Circle cx="12" cy="12" r="2" fill={color} />
+    </Svg>
+  );
+}
+
+// Ícone de QR code (mini grid) — usado no cabeçalho do modal de Pix pré-pago.
+export function QrCodeIcon({ size = 20, color = '#F5F5F7', strokeWidth = 1.6 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M3.5 3.5H9.5V9.5H3.5Z" stroke={color} strokeWidth={strokeWidth} strokeLinejoin="round" />
+      <Path d="M14.5 3.5H20.5V9.5H14.5Z" stroke={color} strokeWidth={strokeWidth} strokeLinejoin="round" />
+      <Path d="M3.5 14.5H9.5V20.5H3.5Z" stroke={color} strokeWidth={strokeWidth} strokeLinejoin="round" />
+      <Path d="M14.5 14.5H17V17H14.5Z" stroke={color} strokeWidth={strokeWidth} strokeLinejoin="round" />
+      <Path d="M20.5 14.5V17" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" />
+      <Path d="M14.5 20.5H17" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" />
+      <Path d="M20.5 20.5H17.5V17.5" stroke={color} strokeWidth={strokeWidth} strokeLinejoin="round" strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+// Ícone de copiar (dois retângulos sobrepostos) — usado no botão "Copiar
+// código Pix".
+export function CopyIcon({ size = 16, color = '#0B0B0F', strokeWidth = 1.8 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M9 9H19.5A1 1 0 0 1 20.5 10V19.5A1 1 0 0 1 19.5 20.5H10A1 1 0 0 1 9 19.5Z" stroke={color} strokeWidth={strokeWidth} strokeLinejoin="round" />
+      <Path
+        d="M6 15H4.5A1 1 0 0 1 3.5 14V4.5A1 1 0 0 1 4.5 3.5H14A1 1 0 0 1 15 4.5V6"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
 // Ícone de enviar (avião de papel) — usado no botão de enviar mensagem do chat.
 export function SendIcon({ size = 18, color = '#0B0B0F', strokeWidth = 1.8 }: IconProps) {
   return (

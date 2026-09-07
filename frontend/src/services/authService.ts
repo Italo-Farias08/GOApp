@@ -114,6 +114,17 @@ export async function resendCode(email: string): Promise<void> {
   await api.post('/auth/resend-code', { email });
 }
 
+// Usado quando o usuário percebe, ainda na tela de verificação, que digitou o
+// email errado no cadastro. Troca o email da conta (ainda não verificada) e
+// já reenvia o código de 6 dígitos pro endereço correto.
+export async function changePendingEmail(email: string, newEmail: string): Promise<RegisterResult> {
+  if (USE_MOCK) {
+    return mockDelay({ needsVerification: true, email: newEmail }, 400);
+  }
+  const { data } = await api.post<RegisterResult>('/auth/change-pending-email', { email, newEmail });
+  return data;
+}
+
 export async function fetchMe(): Promise<User> {
   if (USE_MOCK) {
     return mockDelay({

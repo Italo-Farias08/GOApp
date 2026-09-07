@@ -1,6 +1,6 @@
 import { api } from './api';
 import type { TipoVeiculo } from '../utils/precoCorrida';
-import type { Corrida, HistoricoCorridaItem, HistoricoCorridaMotoristaItem, MensagemChat, MotoristaInfo, PontoCorrida } from '../types';
+import type { Corrida, FormaPagamento, HistoricoCorridaItem, HistoricoCorridaMotoristaItem, MensagemChat, MotoristaInfo, PontoCorrida } from '../types';
 
 type CriarCorridaPayload = {
   origem: PontoCorrida;
@@ -9,6 +9,10 @@ type CriarCorridaPayload = {
   preco: number;
   distanciaKm: number;
   duracaoMin: number;
+  // 'dinheiro' e 'pix' criam a corrida na hora; 'pix_prepago' não passa por
+  // aqui — usa paymentService.criarPagamentoPix, que só cria a corrida
+  // depois que o pagamento é confirmado.
+  formaPagamento: Exclude<FormaPagamento, 'pix_prepago'>;
 };
 
 export async function criarCorrida(payload: CriarCorridaPayload): Promise<Corrida> {

@@ -19,7 +19,10 @@ import {
   CheckIcon,
   ChevronLeftIcon,
   LocationIcon,
+  MoneyIcon,
   MotoIcon,
+  PixIcon,
+  QrCodeIcon,
 } from '../components/icons';
 import { useAuth } from '../context/AuthContext';
 import { useDriverLocationWatcher } from '../hooks/useDriverLocationWatcher';
@@ -27,9 +30,17 @@ import { useRota } from '../hooks/useRota';
 import * as rideService from '../services/rideService';
 import { conectarSoquete } from '../services/socketService';
 import { colors, radius, spacing, typography } from '../theme/theme';
-import type { Corrida, MensagemChat, RootStackParamList } from '../types';
+import type { Corrida, FormaPagamento, MensagemChat, RootStackParamList } from '../types';
 import { formatarDistancia, formatarDuracao, formatarMoeda } from '../utils/precoCorrida';
 import { STADIA_TILE_URL } from '../utils/mapaConfig';
+
+// Ícone e texto de cada forma de pagamento, pro motorista já saber de cara
+// como vai receber (ou se o Pix já caiu na conta, no caso do pré-pago).
+const INFO_PAGAMENTO: Record<FormaPagamento, { label: string; Icone: typeof MoneyIcon }> = {
+  dinheiro: { label: 'Dinheiro', Icone: MoneyIcon },
+  pix: { label: 'Pix', Icone: PixIcon },
+  pix_prepago: { label: 'Pix já pago', Icone: QrCodeIcon },
+};
 
 // Motivos pré-definidos pro motorista escolher ao cancelar uma corrida já
 // aceita — curtos e específicos o bastante pra dar sinal real do que houve.
@@ -663,7 +674,14 @@ export default function DriverHomeScreen() {
                 <CarIcon size={20} color={colors.primary} />
               )}
             </View>
-            <Text style={styles.novaCorridaTitulo}>Nova corrida</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.novaCorridaTitulo}>Nova corrida</Text>
+              {!!corridaRecebida.passageiroNome && (
+                <Text style={styles.novaCorridaPassageiro} numberOfLines={1}>
+                  {corridaRecebida.passageiroNome}
+                </Text>
+              )}
+            </View>
           </View>
           <View style={styles.novaCorridaLinha}>
             <View style={[styles.pontoRota, styles.pontoOrigem]} />
@@ -682,6 +700,17 @@ export default function DriverHomeScreen() {
             <Text style={styles.novaCorridaDetalhe}>
               {formatarDistancia(corridaRecebida.distanciaKm)} · {formatarDuracao(corridaRecebida.duracaoMin)}
             </Text>
+          </View>
+          <View style={styles.novaCorridaPagamentoRow}>
+            {(() => {
+              const { label, Icone } = INFO_PAGAMENTO[corridaRecebida.formaPagamento];
+              return (
+                <>
+                  <Icone size={14} color={colors.textSecondary} />
+                  <Text style={styles.novaCorridaPagamentoTexto}>{label}</Text>
+                </>
+              );
+            })()}
           </View>
           <View style={styles.novaCorridaBotoes}>
             <Button
@@ -721,13 +750,31 @@ export default function DriverHomeScreen() {
                 <CarIcon size={20} color={colors.primary} />
               )}
             </View>
-            <Text style={styles.novaCorridaTitulo}>A caminho do passageiro</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.novaCorridaTitulo}>A caminho do passageiro</Text>
+              {!!corridaAtiva.passageiroNome && (
+                <Text style={styles.novaCorridaPassageiro} numberOfLines={1}>
+                  {corridaAtiva.passageiroNome}
+                </Text>
+              )}
+            </View>
           </View>
           <View style={styles.novaCorridaLinha}>
             <View style={[styles.pontoRota, styles.pontoOrigem]} />
             <Text style={styles.novaCorridaEndereco} numberOfLines={1}>
               {corridaAtiva.origem.endereco ?? 'Buscar passageiro'}
             </Text>
+          </View>
+          <View style={styles.novaCorridaPagamentoRow}>
+            {(() => {
+              const { label, Icone } = INFO_PAGAMENTO[corridaAtiva.formaPagamento];
+              return (
+                <>
+                  <Icone size={14} color={colors.textSecondary} />
+                  <Text style={styles.novaCorridaPagamentoTexto}>{label}</Text>
+                </>
+              );
+            })()}
           </View>
           {rota && (
             <Text style={styles.painelSubtitulo}>
@@ -784,13 +831,31 @@ export default function DriverHomeScreen() {
                 <CarIcon size={20} color={colors.primary} />
               )}
             </View>
-            <Text style={styles.novaCorridaTitulo}>A caminho do destino</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.novaCorridaTitulo}>A caminho do destino</Text>
+              {!!corridaAtiva.passageiroNome && (
+                <Text style={styles.novaCorridaPassageiro} numberOfLines={1}>
+                  {corridaAtiva.passageiroNome}
+                </Text>
+              )}
+            </View>
           </View>
           <View style={styles.novaCorridaLinha}>
             <View style={[styles.pontoRota, styles.pontoDestino]} />
             <Text style={styles.novaCorridaEndereco} numberOfLines={1}>
               {corridaAtiva.destino.endereco ?? 'Destino final'}
             </Text>
+          </View>
+          <View style={styles.novaCorridaPagamentoRow}>
+            {(() => {
+              const { label, Icone } = INFO_PAGAMENTO[corridaAtiva.formaPagamento];
+              return (
+                <>
+                  <Icone size={14} color={colors.textSecondary} />
+                  <Text style={styles.novaCorridaPagamentoTexto}>{label}</Text>
+                </>
+              );
+            })()}
           </View>
           {rota && (
             <Text style={styles.painelSubtitulo}>
@@ -1071,7 +1136,8 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontWeight: '700',
   },
-  novaCorridaTitulo: { ...typography.h2, color: colors.text, flex: 1 },
+  novaCorridaTitulo: { ...typography.h2, color: colors.text },
+  novaCorridaPassageiro: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
   novaCorridaLinha: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.sm },
   pontoRota: { width: 8, height: 8, borderRadius: 4, marginRight: spacing.sm },
   pontoOrigem: { backgroundColor: colors.primary },
@@ -1082,10 +1148,16 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginTop: spacing.sm,
-    marginBottom: spacing.md,
+    marginBottom: spacing.sm,
   },
   novaCorridaPreco: { ...typography.h2, color: colors.primary },
   novaCorridaDetalhe: { ...typography.caption, color: colors.textSecondary },
+  novaCorridaPagamentoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  novaCorridaPagamentoTexto: { ...typography.caption, color: colors.textSecondary, marginLeft: spacing.xs },
   novaCorridaBotoes: { flexDirection: 'row' },
   novaCorridaBotaoMetade: { flex: 1 },
   novaCorridaBotaoRecusar: { flex: 1, marginRight: spacing.sm },
