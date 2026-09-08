@@ -22,5 +22,4 @@ async function calcularRota(req, res, next) {
     next(erro);
   }
 }
-
 module.exports = { calcularRota };
