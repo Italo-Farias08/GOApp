@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react';
+import { api } from '../services/api';
 
 export type PontoRota = { latitude: number; longitude: number };
 
@@ -8,12 +9,12 @@ export type ResultadoRota = {
   coordenadas: PontoRota[];
 };
 
-const OSRM_URL = 'https://router.project-osrm.org/route/v1/driving';
-
-// Calcula a rota real entre dois pontos usando o OSRM (Open Source Routing Machine)
-// público — mesma filosofia do Nominatim no useAddressSearch: funciona sem precisar
-// de chave de API. Pra produção com volume alto, considerar hospedar uma instância
-// própria do OSRM ou trocar pela Google Directions API.
+// Calcula a rota real entre dois pontos chamando o NOSSO backend (que por sua
+// vez consulta o OSRM). Antes o app chamava o OSRM direto — mas alguns
+// Android têm incompatibilidade de TLS com o servidor público do OSRM
+// (SSLHandshakeException dentro do app, mesmo o domínio funcionando normal
+// no Chrome), então centralizamos essa chamada no backend, igual já é feito
+// com o Google Places em addressService.ts.
 export function useRota() {
   const [rota, setRota] = useState<ResultadoRota | null>(null);
   const [carregando, setCarregando] = useState(false);
@@ -24,33 +25,17 @@ export function useRota() {
     setErro(null);
 
     try {
-      const url =
-        `${OSRM_URL}/${origem.longitude},${origem.latitude};` +
-        `${destino.longitude},${destino.latitude}?overview=full&geometries=geojson`;
+      const { data } = await api.get<ResultadoRota>('/routing/rota', {
+        params: {
+          origemLat: origem.latitude,
+          origemLng: origem.longitude,
+          destinoLat: destino.latitude,
+          destinoLng: destino.longitude,
+        },
+      });
 
-      const resposta = await fetch(url);
-      if (!resposta.ok) {
-        throw new Error(`Falha ao calcular rota (HTTP ${resposta.status})`);
-      }
-
-      const dados = await resposta.json();
-      if (dados.code !== 'Ok' || !dados.routes?.length) {
-        throw new Error(`Rota não encontrada (code: ${dados.code})`);
-      }
-
-      const rotaPrincipal = dados.routes[0];
-      const coordenadas: PontoRota[] = rotaPrincipal.geometry.coordinates.map(
-        ([longitude, latitude]: [number, number]) => ({ latitude, longitude })
-      );
-
-      const resultado: ResultadoRota = {
-        distanciaKm: rotaPrincipal.distance / 1000,
-        duracaoMin: rotaPrincipal.duration / 60,
-        coordenadas,
-      };
-
-      setRota(resultado);
-      return resultado;
+      setRota(data);
+      return data;
     } catch (err: any) {
       console.error('[useRota] falha ao calcular rota:', err?.message ?? err);
       setErro('Não foi possível calcular a rota agora. Tente novamente.');

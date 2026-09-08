@@ -44,6 +44,7 @@ async function criarPagamentoPix({ valor, descricao, emailPagador, referenciaExt
   const dados = await resposta.json();
 
   if (!resposta.ok) {
+    console.error('[mercadoPago] resposta de erro completa:', JSON.stringify(dados));
     const mensagem =
       dados?.message ||
       dados?.cause?.[0]?.description ||
