@@ -11,10 +11,10 @@
 const BASE_URL = 'https://maps.googleapis.com/maps/api/place';
 const GEOCODE_URL = 'https://maps.googleapis.com/maps/api/geocode/json';
 
-// Abaixo desse número de sugestões do Autocomplete, também consulta a
-// Geocoding API — ela puxa de uma base de endereços diferente (mais "crua",
-// vinda de cadastros oficiais) e às vezes acha rua/bairro que o Autocomplete
-// sozinho não encontra.
+// Abaixo desse número de sugestões, também tenta a Geocoding API e/ou uma
+// segunda versão da busca com o número reposicionado (ver
+// gerarVarianteComNumeroNoFinal) — ambas custam uma chamada extra, então só
+// valem a pena quando a busca "normal" veio fraca.
 const MINIMO_SUGESTOES_SEM_FALLBACK = 3;
 
 function obterChave() {
@@ -29,11 +29,25 @@ function obterChave() {
   return chave;
 }
 
-// Sugestões de endereço enquanto o usuário digita (POST /addresses/autocomplete).
-// O `sessionToken` agrupa essa busca com a chamada de `detalhes` que vem
-// depois, pra cobrança sair como UMA sessão (bem mais barato do que cobrar
-// autocomplete + details como chamadas avulsas).
-async function autocomplete({ input, sessionToken, latitude, longitude }) {
+// Gera uma segunda versão da consulta com o número do endereço movido pro
+// FINAL, no formato "nome da rua, número" — é assim que o Google reconhece
+// melhor. Resolve casos tipo "Rua 3 caic" (o Google acha que "Rua 3" é o
+// nome, quando na real é "Rua Caic, nº 3") virando "Rua caic, 3".
+//
+// Só mexe quando o número está no MEIO da frase — se já estiver no fim
+// (ou não tiver número nenhum), não tem o que melhorar, então devolve null.
+function gerarVarianteComNumeroNoFinal(input) {
+  const tokens = input.trim().split(/\s+/);
+  const indiceNumero = tokens.findIndex((t, i) => /^\d+$/.test(t) && i !== tokens.length - 1);
+  if (indiceNumero === -1) return null;
+
+  const numero = tokens[indiceNumero];
+  const resto = tokens.filter((_, i) => i !== indiceNumero);
+  return `${resto.join(' ')}, ${numero}`;
+}
+
+// Roda o Autocomplete "cru" pra uma única string de busca.
+async function autocompleteCru({ input, sessionToken, latitude, longitude }) {
   const params = new URLSearchParams({
     input,
     key: obterChave(),
@@ -56,40 +70,19 @@ async function autocomplete({ input, sessionToken, latitude, longitude }) {
     throw erro;
   }
 
-  const sugestoesAutocomplete = (dados.predictions || []).map((p) => ({
+  console.log(`[busca endereço] autocomplete "${input}" → status=${dados.status}, ${(dados.predictions || []).length} sugestão(ões)`);
+
+  return (dados.predictions || []).map((p) => ({
     id: p.place_id,
     placeId: p.place_id,
     descricao: p.description,
   }));
-
-  console.log(
-    `[busca endereço] autocomplete "${input}" → status=${dados.status}, ${sugestoesAutocomplete.length} sugestão(ões)`
-  );
-
-  if (sugestoesAutocomplete.length >= MINIMO_SUGESTOES_SEM_FALLBACK) {
-    return sugestoesAutocomplete;
-  }
-
-  // Poucas (ou nenhuma) sugestão do Autocomplete — tenta complementar com a
-  // Geocoding API antes de devolver, sem interromper a busca se ela falhar.
-  try {
-    const sugestoesGeocode = await geocodeComoSugestoes({ input, latitude, longitude });
-    const idsJaEncontrados = new Set(sugestoesAutocomplete.map((s) => s.placeId));
-    const complemento = sugestoesGeocode.filter((s) => !idsJaEncontrados.has(s.placeId));
-    console.log(
-      `[busca endereço] geocoding fallback "${input}" → ${sugestoesGeocode.length} resultado(s), ${complemento.length} novo(s)`
-    );
-    return [...sugestoesAutocomplete, ...complemento];
-  } catch (erroFallback) {
-    console.log(`[busca endereço] geocoding fallback "${input}" → falhou: ${erroFallback.message}`);
-    return sugestoesAutocomplete;
-  }
 }
 
 // Usa a Geocoding API (forward geocoding) como fonte alternativa de
 // sugestões — não tem autocomplete "de verdade" (não é feito pra digitação
 // parcial), mas costuma achar endereço específico que o Places Autocomplete
-// não acha, então serve bem como complemento pra quem já digitou bastante.
+// sozinho não acha, então serve bem como complemento.
 async function geocodeComoSugestoes({ input, latitude, longitude }) {
   const params = new URLSearchParams({
     address: input,
@@ -124,6 +117,57 @@ async function geocodeComoSugestoes({ input, latitude, longitude }) {
     placeId: r.place_id,
     descricao: r.formatted_address,
   }));
+}
+
+// Junta uma lista nova de sugestões numa lista já existente, sem duplicar
+// place_id repetido.
+function mesclarSemDuplicar(basePrincipal, novasSugestoes) {
+  const idsJaEncontrados = new Set(basePrincipal.map((s) => s.placeId));
+  const complemento = novasSugestoes.filter((s) => !idsJaEncontrados.has(s.placeId));
+  return [...basePrincipal, ...complemento];
+}
+
+// Sugestões de endereço enquanto o usuário digita (GET /addresses/autocomplete).
+// O `sessionToken` agrupa essa busca com a chamada de `detalhes` que vem
+// depois, pra cobrança sair como UMA sessão (bem mais barato do que cobrar
+// autocomplete + details como chamadas avulsas).
+//
+// Estratégia em camadas, só ativando a camada seguinte se a anterior veio
+// fraca (evita gastar chamada extra à toa quando a busca normal já for boa):
+//   1. Autocomplete com o texto exatamente como o usuário digitou.
+//   2. Se número estiver no meio da frase, tenta de novo com o número
+//      movido pro final (formato que o Google reconhece melhor).
+//   3. Geocoding API como último complemento.
+async function autocomplete({ input, sessionToken, latitude, longitude }) {
+  let sugestoes = await autocompleteCru({ input, sessionToken, latitude, longitude });
+
+  if (sugestoes.length < MINIMO_SUGESTOES_SEM_FALLBACK) {
+    const variante = gerarVarianteComNumeroNoFinal(input);
+    if (variante) {
+      try {
+        const sugestoesVariante = await autocompleteCru({
+          input: variante,
+          sessionToken,
+          latitude,
+          longitude,
+        });
+        sugestoes = mesclarSemDuplicar(sugestoes, sugestoesVariante);
+      } catch (erroVariante) {
+        console.log(`[busca endereço] variante "${variante}" → falhou: ${erroVariante.message}`);
+      }
+    }
+  }
+
+  if (sugestoes.length < MINIMO_SUGESTOES_SEM_FALLBACK) {
+    try {
+      const sugestoesGeocode = await geocodeComoSugestoes({ input, latitude, longitude });
+      sugestoes = mesclarSemDuplicar(sugestoes, sugestoesGeocode);
+    } catch (erroFallback) {
+      console.log(`[busca endereço] geocoding fallback "${input}" → falhou: ${erroFallback.message}`);
+    }
+  }
+
+  return sugestoes;
 }
 
 // Resolve um place_id pra latitude/longitude reais — só é chamado quando o
