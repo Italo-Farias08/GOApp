@@ -62,6 +62,10 @@ async function autocomplete({ input, sessionToken, latitude, longitude }) {
     descricao: p.description,
   }));
 
+  console.log(
+    `[busca endereço] autocomplete "${input}" → status=${dados.status}, ${sugestoesAutocomplete.length} sugestão(ões)`
+  );
+
   if (sugestoesAutocomplete.length >= MINIMO_SUGESTOES_SEM_FALLBACK) {
     return sugestoesAutocomplete;
   }
@@ -72,8 +76,12 @@ async function autocomplete({ input, sessionToken, latitude, longitude }) {
     const sugestoesGeocode = await geocodeComoSugestoes({ input, latitude, longitude });
     const idsJaEncontrados = new Set(sugestoesAutocomplete.map((s) => s.placeId));
     const complemento = sugestoesGeocode.filter((s) => !idsJaEncontrados.has(s.placeId));
+    console.log(
+      `[busca endereço] geocoding fallback "${input}" → ${sugestoesGeocode.length} resultado(s), ${complemento.length} novo(s)`
+    );
     return [...sugestoesAutocomplete, ...complemento];
-  } catch {
+  } catch (erroFallback) {
+    console.log(`[busca endereço] geocoding fallback "${input}" → falhou: ${erroFallback.message}`);
     return sugestoesAutocomplete;
   }
 }
@@ -102,6 +110,8 @@ async function geocodeComoSugestoes({ input, latitude, longitude }) {
 
   const resposta = await fetch(`${GEOCODE_URL}?${params.toString()}`);
   const dados = await resposta.json();
+
+  console.log(`[busca endereço] geocoding cru "${input}" → status=${dados.status}`);
 
   if (dados.status !== 'OK' && dados.status !== 'ZERO_RESULTS') {
     const erro = new Error(dados.error_message || `Falha na geocodificação (${dados.status}).`);
