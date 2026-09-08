@@ -26,6 +26,22 @@ app.use(morgan('dev'));
 app.get('/saude', (req, res) => {
   res.json({ status: 'ok' });
 });
+// TEMPORÁRIO — só pra debugar o erro do Pix. Remove depois.
+app.get('/teste-pix', async (req, res) => {
+  const mercadoPago = require('./utilitarios/mercadoPago');
+  try {
+    const resultado = await mercadoPago.criarPagamentoPix({
+      valor: 10.5,
+      descricao: 'Teste manual Pix',
+      emailPagador: 'teste@teste.com',
+      referenciaExterna: 'teste-manual',
+      idempotencyKey: require('crypto').randomUUID(),
+    });
+    res.json({ ok: true, resultado });
+  } catch (erro) {
+    res.status(500).json({ ok: false, mensagem: erro.message, statusCode: erro.statusCode });
+  }
+});
 
 app.use('/auth', autenticacaoRotas);
 app.use('/driver', motoristaRotas);
