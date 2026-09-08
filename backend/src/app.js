@@ -34,7 +34,7 @@ app.get('/teste-pix', async (req, res) => {
     const resultado = await mercadoPago.criarPagamentoPix({
       valor: 10.5,
       descricao: 'Teste manual Pix',
-      emailPagador: 'teste@teste.com',
+      emailPagador: 'TESTUSER994276180976866424',
       referenciaExterna: 'teste-manual',
       idempotencyKey: require('crypto').randomUUID(),
       cpfPagador: '19119119100',
