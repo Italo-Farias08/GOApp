@@ -41,7 +41,7 @@ import {
 } from '../components/icons';
 import { useAuth } from '../context/AuthContext';
 import { useCurrentLocation } from '../hooks/useCurrentLocation';
-import { useAddressSearch, EnderecoSugerido } from '../hooks/useAddressSearch';
+import { useAddressSearch, EnderecoSugerido, SugestaoEndereco } from '../hooks/useAddressSearch';
 import { useRota } from '../hooks/useRota';
 import * as paymentService from '../services/paymentService';
 import * as rideService from '../services/rideService';
@@ -411,7 +411,7 @@ export default function HomeScreen() {
     };
   }, []);
 
-  const { sugestoes, buscando, erro: erroBusca } = useAddressSearch(
+  const { sugestoes, buscando, resolvendo: resolvendoDestino, erro: erroBusca, resolverDestino } = useAddressSearch(
     destinoSelecionado ? '' : destination,
     coords
   );
@@ -639,11 +639,21 @@ export default function HomeScreen() {
     setAlturaConteudo((atual) => (Math.abs(atual - novaAltura) <= 1 ? atual : novaAltura));
   }
 
-  async function selecionarSugestao(item: EnderecoSugerido) {
+  async function selecionarSugestao(sugestao: SugestaoEndereco) {
+    Keyboard.dismiss();
+
+    // A sugestão que veio do autocomplete ainda não tem coordenadas — só
+    // resolve pra lat/lng (via place_id) agora que o usuário realmente
+    // escolheu essa opção.
+    const item = await resolverDestino(sugestao);
+    if (!item) {
+      avisar('Não foi possível obter esse endereço. Tente de novo.', 'error');
+      return;
+    }
+
     setDestinoSelecionado(item);
     setDestination(item.descricao);
     setCorridaConfirmada(null);
-    Keyboard.dismiss();
 
     mapRef.current?.animateToRegion(
       {
@@ -1243,6 +1253,7 @@ export default function HomeScreen() {
                       pressed && styles.sugestaoItemPressed,
                     ]}
                     onPress={() => selecionarSugestao(item)}
+                    disabled={resolvendoDestino}
                   >
                     <PinIcon size={16} color={colors.textMuted} />
                     <Text style={styles.sugestaoTexto} numberOfLines={2}>
@@ -1395,8 +1406,8 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   marcaImagem: {
-    width: 48,
-    height: 48,
+    width: 58,
+    height:58,
     borderRadius: 9,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },

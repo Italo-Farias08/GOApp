@@ -143,6 +143,7 @@ function NaoEhMotoboyAviso() {
 
 function ResumoMotoboy({ resumo }: { resumo: ResumoMotoboyHoje | null }) {
   const valorFormatado = formatarMoeda(resumo?.valorHoje ?? 0);
+  const saldoAReceber = resumo?.saldoAReceber ?? 0;
 
   return (
     <View style={styles.resumoWrap}>
@@ -165,6 +166,19 @@ function ResumoMotoboy({ resumo }: { resumo: ResumoMotoboyHoje | null }) {
           <Text style={styles.cardLabel}>Lucrado hoje</Text>
         </View>
       </View>
+
+      {saldoAReceber > 0 && (
+        <View style={styles.saldoCard}>
+          <MoneyIcon size={18} color={colors.primary} strokeWidth={1.8} />
+          <View style={styles.saldoTextos}>
+            <Text style={styles.saldoValor}>{formatarMoeda(saldoAReceber)}</Text>
+            <Text style={styles.saldoLabel}>
+              Referente a corridas antigas que não foram pagas na hora — o passageiro quitou
+              numa corrida mais recente e esse valor caiu pra você.
+            </Text>
+          </View>
+        </View>
+      )}
 
       <Text style={styles.rodapeTexto}>
         O resumo considera só as corridas já finalizadas hoje. Puxe a tela pra baixo pra
@@ -213,8 +227,8 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
   logo: {
-    width: 96,
-    height: 96,
+    width: 220,
+    height: 200,
     marginTop: spacing.sm,
     marginBottom: spacing.lg,
   },
@@ -292,6 +306,32 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.textSecondary,
     textAlign: 'center',
+  },
+  saldoCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+    marginTop: spacing.md,
+    width: '100%',
+  },
+  saldoTextos: {
+    flex: 1,
+    marginLeft: spacing.sm,
+  },
+  saldoValor: {
+    ...typography.h2,
+    fontSize: 18,
+    color: colors.primary,
+    marginBottom: spacing.xs,
+  },
+  saldoLabel: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    lineHeight: 16,
   },
   rodapeTexto: {
     ...typography.caption,

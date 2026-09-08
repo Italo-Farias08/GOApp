@@ -12,7 +12,7 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.goapp.mobile",
       "config": {
-        "googleMapsApiKey": "COLOQUE_SUA_CHAVE_AQUI"
+        "googleMapsApiKey": "AIzaSyArGp_GrnP__uNX5RmjGIYFQR1v0ZxaGMY"
       },
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "O #GO usa sua localização pra mostrar onde você está no mapa e encontrar corridas por perto."
@@ -22,7 +22,7 @@
       "package": "com.goapp.mobile",
       "config": {
         "googleMaps": {
-          "apiKey": "COLOQUE_SUA_CHAVE_AQUI"
+          "apiKey": "AIzaSyArGp_GrnP__uNX5RmjGIYFQR1v0ZxaGMY"
         }
       },
       "permissions": [

@@ -91,7 +91,7 @@ export async function updateVehicle(payload: VehicleUpdatePayload): Promise<Driv
 // outro caso cai no catch da tela como "não é motoboy".
 export async function fetchTodaySummary(): Promise<ResumoMotoboyHoje> {
   if (USE_MOCK) {
-    return mockDelay<ResumoMotoboyHoje>({ corridasHoje: 0, valorHoje: 0 });
+    return mockDelay<ResumoMotoboyHoje>({ corridasHoje: 0, valorHoje: 0, saldoAReceber: 0 });
   }
 
   // Formato esperado do backend: GET /driver/today-summary -> ResumoMotoboyHoje

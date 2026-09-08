@@ -309,16 +309,25 @@ async function listarFinalizadasComPassageiroPorMotorista(motoristaId) {
 }
 
 // Resumo do dia do motorista logado: quantas corridas ele já finalizou hoje
-// e quanto ele lucrou nelas (soma do `preco`) — alimenta o "Painel do
-// Motoboy" nas configurações do app. Considera o dia pela data de criação da
-// corrida (não existe coluna de "finalizado_em" na tabela).
+// e quanto ele lucrou nelas — alimenta o "Painel do Motoboy" nas
+// configurações do app. Considera o dia pela data de criação da corrida
+// (não existe coluna de "finalizado_em" separada da criação).
+//
+// IMPORTANTE: soma `preco_original` (a tarifa desta corrida), NÃO `preco`.
+// Quando uma corrida embute dívida de um passageiro (viagem anterior não
+// paga), `preco` = preco_original + dívida antiga — mas essa parte da
+// dívida já é creditada separadamente pro MOTORISTA CREDOR ANTIGO em
+// `usuarios.saldo_a_receber` (ver dividaModelo.quitar). Somar `preco` aqui
+// contaria esse valor DUAS vezes: uma como ganho do motorista atual, outra
+// como saldo a receber do motorista antigo.
 async function resumoHojePorMotorista(motoristaId) {
   const resultado = await consultar(
     `SELECT COUNT(*)::int AS total_corridas,
-            COALESCE(SUM(preco), 0) AS total_valor
+            COALESCE(SUM(preco_original), 0) AS total_valor
      FROM corridas
      WHERE motorista_id = $1
        AND status = 'finalizada'
+       AND status_pagamento = 'pago'
        AND criado_em::date = CURRENT_DATE`,
     [motoristaId]
   );

@@ -86,6 +86,10 @@ export type VehicleUpdatePayload = Partial<DriverApplicationPayload>;
 export type ResumoMotoboyHoje = {
   corridasHoje: number;
   valorHoje: number;
+  // Dinheiro que caiu de dívidas antigas quitadas (passageiro que não pagou
+  // uma corrida dele e depois pagou numa corrida com outro motorista) —
+  // vem separado de `valorHoje` pra não misturar com o ganho do dia.
+  saldoAReceber: number;
 };
 
 // --- Corridas / tempo real ---

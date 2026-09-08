@@ -153,7 +153,11 @@ async function resumoHoje(req, res, next) {
     }
 
     const resumo = await corridaModelo.resumoHojePorMotorista(req.usuarioId);
-    return res.json(resumo);
+    // Dinheiro que caiu pra ele de dívidas antigas quitadas (passageiros que
+    // não pagaram em corridas dele, e depois pagaram numa corrida com outro
+    // motorista) — creditado em dividaModelo.quitar, mostrado aqui separado
+    // do que ele ganhou hoje pra não confundir os dois valores.
+    return res.json({ ...resumo, saldoAReceber: Number(usuario.saldo_a_receber || 0) });
   } catch (erro) {
     next(erro);
   }

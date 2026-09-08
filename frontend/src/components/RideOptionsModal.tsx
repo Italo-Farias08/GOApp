@@ -10,13 +10,21 @@ import {
   formatarMoeda,
 } from '../utils/precoCorrida';
 import Button from './Button';
-import { CheckIcon, MoneyIcon, PixIcon, QrCodeIcon } from './icons';
+import { CheckIcon } from './icons';
 
 // Imagens dos veículos — troque estes arquivos por fotos reais
 // mantendo o mesmo nome/caminho (frontend/assets/images/carro.png e moto.png).
 const IMAGEM_VEICULO: Record<TipoVeiculo, ReturnType<typeof require>> = {
   carro: require('../../assets/images/carro.png'),
   moto: require('../../assets/images/moto.png'),
+};
+
+// Imagens das formas de pagamento — troque estes arquivos por ícones/fotos reais
+// mantendo o mesmo nome/caminho (frontend/assets/images/pagamentos/*.png).
+const IMAGEM_PAGAMENTO: Record<FormaPagamento, ReturnType<typeof require>> = {
+  dinheiro: require('../../assets/images/pagamentos/dinheiro.png'),
+  pix: require('../../assets/images/pagamentos/pix.png'),
+  pix_prepago: require('../../assets/images/pagamentos/pix_qr.png'),
 };
 
 type Props = {
@@ -32,10 +40,10 @@ const INFO_VEICULO: Record<TipoVeiculo, { label: string; sublabel: string }> = {
   moto: { label: 'Moto', sublabel: 'Mais rápido no trânsito' },
 };
 
-const OPCOES_PAGAMENTO: { forma: FormaPagamento; label: string; Icone: typeof MoneyIcon }[] = [
-  { forma: 'dinheiro', label: 'Dinheiro', Icone: MoneyIcon },
-  { forma: 'pix', label: 'Pix', Icone: PixIcon },
-  { forma: 'pix_prepago', label: 'Pix (QR code)', Icone: QrCodeIcon },
+const OPCOES_PAGAMENTO: { forma: FormaPagamento; label: string }[] = [
+  { forma: 'dinheiro', label: 'Dinheiro' },
+  { forma: 'pix', label: 'Pix' },
+  { forma: 'pix_prepago', label: 'Pix pré pago' },
 ];
 
 export default function RideOptionsModal({
@@ -124,7 +132,7 @@ export default function RideOptionsModal({
 
         <Text style={styles.secaoTitulo}>Como você quer pagar?</Text>
         <View style={styles.pagamentoRow}>
-          {OPCOES_PAGAMENTO.map(({ forma, label, Icone }) => {
+          {OPCOES_PAGAMENTO.map(({ forma, label }) => {
             const ativo = formaPagamento === forma;
             return (
               <Pressable
@@ -132,7 +140,12 @@ export default function RideOptionsModal({
                 style={[styles.pagamentoOpcao, ativo && styles.pagamentoOpcaoAtiva]}
                 onPress={() => setFormaPagamento(forma)}
               >
-                <Icone size={20} color={ativo ? colors.background : colors.text} />
+                <Image
+                  source={IMAGEM_PAGAMENTO[forma]}
+                  style={styles.pagamentoImagem}
+                  resizeMode="contain"
+                  fadeDuration={0}
+                />
                 <Text style={[styles.pagamentoLabel, ativo && styles.pagamentoLabelAtivo]} numberOfLines={1}>
                   {label}
                 </Text>
@@ -142,7 +155,7 @@ export default function RideOptionsModal({
         </View>
         {formaPagamento === 'pix_prepago' && (
           <Text style={styles.pagamentoAviso}>
-            Você paga por QR code agora e a corrida só é enviada pros motoristas depois da confirmação.
+            Pagamento antes de iniciar a corrida.
           </Text>
         )}
 
@@ -292,7 +305,7 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: spacing.sm,
+    paddingVertical: spacing.md,
     borderWidth: 1.5,
     borderColor: colors.border,
     borderRadius: radius.md,
@@ -302,6 +315,10 @@ const styles = StyleSheet.create({
   pagamentoOpcaoAtiva: {
     borderColor: colors.primary,
     backgroundColor: colors.primary,
+  },
+  pagamentoImagem: {
+    width: 44,
+    height: 44,
   },
   pagamentoLabel: {
     ...typography.caption,

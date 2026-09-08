@@ -1,27 +1,37 @@
 import { useEffect, useRef, useState } from 'react';
+import * as addressService from '../services/addressService';
+import type { EnderecoResolvido, SugestaoEndereco } from '../services/addressService';
 
-export type EnderecoSugerido = {
-  id: string;
-  descricao: string;
-  latitude: number;
-  longitude: number;
-};
+export type { SugestaoEndereco, EnderecoResolvido };
 
-const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
+// Mantido com esse nome por compatibilidade com quem já importava daqui
+// (ex: HomeScreen.tsx) — é o endereço já RESOLVIDO, com coordenadas.
+export type EnderecoSugerido = EnderecoResolvido;
 
-// Busca endereços reais via OpenStreetMap Nominatim (sem precisar de chave de API).
-// Para produção com volume alto, revisar a política de uso do Nominatim
-// (https://operations.osmfoundation.org/policies/nominatim/) e considerar
-// trocar pelo Google Places Autocomplete quando tiver uma googleMapsApiKey real.
+// Gera um token de sessão simples (não precisa ser criptograficamente
+// seguro, só único o bastante pra agrupar autocomplete + details no Google
+// como UMA sessão pra fins de cobrança).
+function gerarSessionToken(): string {
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+// Busca endereços via Google Places (Autocomplete), passando pelo NOSSO
+// backend — a chave da Google fica só lá, nunca no app. Foi trocado do
+// Nominatim (OpenStreetMap) pro Google porque o Nominatim não encontrava
+// ruas e lugares mais específicos.
 export function useAddressSearch(
   termo: string,
   coordsUsuario?: { latitude: number; longitude: number } | null
 ) {
-  const [sugestoes, setSugestoes] = useState<EnderecoSugerido[]>([]);
+  const [sugestoes, setSugestoes] = useState<SugestaoEndereco[]>([]);
   const [buscando, setBuscando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  const [resolvendo, setResolvendo] = useState(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const controllerRef = useRef<AbortController | null>(null);
+
+  // Um token novo por "sessão de busca": nasce quando o campo fica vazio e
+  // se mantém até o usuário escolher uma sugestão (ou limpar tudo de novo).
+  const sessionTokenRef = useRef<string>(gerarSessionToken());
 
   useEffect(() => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
@@ -31,65 +41,27 @@ export function useAddressSearch(
       setSugestoes([]);
       setBuscando(false);
       setErro(null);
+      if (termoLimpo.length === 0) {
+        // Campo zerado = fim (ou início) de uma sessão de busca.
+        sessionTokenRef.current = gerarSessionToken();
+      }
       return;
     }
 
     timeoutRef.current = setTimeout(async () => {
-      controllerRef.current?.abort();
-      const controller = new AbortController();
-      controllerRef.current = controller;
-
       setBuscando(true);
       setErro(null);
 
       try {
-        const params = new URLSearchParams({
-          q: termoLimpo,
-          format: 'json',
-          addressdetails: '0',
-          limit: '5',
-        });
-
-        // Prioriza resultados perto de onde o usuário está agora, se souber.
-        if (coordsUsuario) {
-          const delta = 0.5; // ~50km de raio de prioridade
-          params.set(
-            'viewbox',
-            [
-              coordsUsuario.longitude - delta,
-              coordsUsuario.latitude + delta,
-              coordsUsuario.longitude + delta,
-              coordsUsuario.latitude - delta,
-            ].join(',')
-          );
-          params.set('bounded', '0');
-        }
-
-        const resposta = await fetch(`${NOMINATIM_URL}?${params.toString()}`, {
-          signal: controller.signal,
-          headers: {
-            // Nominatim exige um User-Agent identificável pra uso não-comercial.
-            'User-Agent': 'GOApp/1.0 (contato@seudominio.com)',
-          },
-        });
-
-        if (!resposta.ok) throw new Error('Falha na busca');
-
-        const dados = await resposta.json();
-
-        setSugestoes(
-          dados.map((item: any) => ({
-            id: String(item.place_id),
-            descricao: item.display_name,
-            latitude: parseFloat(item.lat),
-            longitude: parseFloat(item.lon),
-          }))
+        const resultado = await addressService.buscarSugestoes(
+          termoLimpo,
+          sessionTokenRef.current,
+          coordsUsuario
         );
-      } catch (err: any) {
-        if (err.name !== 'AbortError') {
-          setErro('Não foi possível buscar endereços agora.');
-          setSugestoes([]);
-        }
+        setSugestoes(resultado);
+      } catch (err) {
+        setErro('Não foi possível buscar endereços agora.');
+        setSugestoes([]);
       } finally {
         setBuscando(false);
       }
@@ -100,5 +72,24 @@ export function useAddressSearch(
     };
   }, [termo, coordsUsuario]);
 
-  return { sugestoes, buscando, erro };
+  // Chamado só quando o usuário TOCA numa sugestão — resolve o place_id pra
+  // latitude/longitude reais e encerra a sessão de busca atual.
+  async function resolverDestino(sugestao: SugestaoEndereco): Promise<EnderecoResolvido | null> {
+    setResolvendo(true);
+    try {
+      const resolvido = await addressService.resolverEndereco(
+        sugestao.placeId,
+        sessionTokenRef.current
+      );
+      return resolvido;
+    } catch {
+      setErro('Não foi possível obter esse endereço.');
+      return null;
+    } finally {
+      setResolvendo(false);
+      sessionTokenRef.current = gerarSessionToken();
+    }
+  }
+
+  return { sugestoes, buscando, erro, resolvendo, resolverDestino };
 }
