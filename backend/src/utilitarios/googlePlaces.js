@@ -9,6 +9,13 @@
 // https://developers.google.com/maps/documentation/places/web-service/details
 
 const BASE_URL = 'https://maps.googleapis.com/maps/api/place';
+const GEOCODE_URL = 'https://maps.googleapis.com/maps/api/geocode/json';
+
+// Abaixo desse número de sugestões do Autocomplete, também consulta a
+// Geocoding API — ela puxa de uma base de endereços diferente (mais "crua",
+// vinda de cadastros oficiais) e às vezes acha rua/bairro que o Autocomplete
+// sozinho não encontra.
+const MINIMO_SUGESTOES_SEM_FALLBACK = 3;
 
 function obterChave() {
   const chave = process.env.GOOGLE_PLACES_API_KEY;
@@ -49,10 +56,63 @@ async function autocomplete({ input, sessionToken, latitude, longitude }) {
     throw erro;
   }
 
-  return (dados.predictions || []).map((p) => ({
+  const sugestoesAutocomplete = (dados.predictions || []).map((p) => ({
     id: p.place_id,
     placeId: p.place_id,
     descricao: p.description,
+  }));
+
+  if (sugestoesAutocomplete.length >= MINIMO_SUGESTOES_SEM_FALLBACK) {
+    return sugestoesAutocomplete;
+  }
+
+  // Poucas (ou nenhuma) sugestão do Autocomplete — tenta complementar com a
+  // Geocoding API antes de devolver, sem interromper a busca se ela falhar.
+  try {
+    const sugestoesGeocode = await geocodeComoSugestoes({ input, latitude, longitude });
+    const idsJaEncontrados = new Set(sugestoesAutocomplete.map((s) => s.placeId));
+    const complemento = sugestoesGeocode.filter((s) => !idsJaEncontrados.has(s.placeId));
+    return [...sugestoesAutocomplete, ...complemento];
+  } catch {
+    return sugestoesAutocomplete;
+  }
+}
+
+// Usa a Geocoding API (forward geocoding) como fonte alternativa de
+// sugestões — não tem autocomplete "de verdade" (não é feito pra digitação
+// parcial), mas costuma achar endereço específico que o Places Autocomplete
+// não acha, então serve bem como complemento pra quem já digitou bastante.
+async function geocodeComoSugestoes({ input, latitude, longitude }) {
+  const params = new URLSearchParams({
+    address: input,
+    key: obterChave(),
+    language: 'pt-BR',
+    region: 'br',
+  });
+
+  if (latitude != null && longitude != null) {
+    // "bounds" só influencia a ordenação (não restringe de verdade),
+    // igual o location+radius do Autocomplete.
+    const delta = 0.5; // ~50km
+    params.set(
+      'bounds',
+      `${latitude - delta},${longitude - delta}|${latitude + delta},${longitude + delta}`
+    );
+  }
+
+  const resposta = await fetch(`${GEOCODE_URL}?${params.toString()}`);
+  const dados = await resposta.json();
+
+  if (dados.status !== 'OK' && dados.status !== 'ZERO_RESULTS') {
+    const erro = new Error(dados.error_message || `Falha na geocodificação (${dados.status}).`);
+    erro.statusCode = 502;
+    throw erro;
+  }
+
+  return (dados.results || []).map((r) => ({
+    id: r.place_id,
+    placeId: r.place_id,
+    descricao: r.formatted_address,
   }));
 }
 

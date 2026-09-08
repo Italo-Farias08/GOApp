@@ -1,0 +1,41 @@
+
+const googleMapsApiKey = process.env.GOOGLE_MAPS_API_KEY ?? '';
+
+export default {
+  expo: {
+    name: '#GO',
+    slug: 'go-app',
+    version: '1.0.0',
+    orientation: 'portrait',
+    userInterfaceStyle: 'dark',
+    splash: {
+      backgroundColor: '#0B0B0F',
+    },
+    ios: {
+      supportsTablet: false,
+      bundleIdentifier: 'com.goapp.mobile',
+      config: {
+        googleMapsApiKey,
+      },
+      infoPlist: {
+        NSLocationWhenInUseUsageDescription:
+          'O #GO usa sua localização pra mostrar onde você está no mapa e encontrar corridas por perto.',
+      },
+    },
+    android: {
+      package: 'com.goapp.mobile',
+      config: {
+        googleMaps: {
+          apiKey: googleMapsApiKey,
+        },
+      },
+      permissions: ['ACCESS_FINE_LOCATION', 'ACCESS_COARSE_LOCATION'],
+    },
+    plugins: ['expo-secure-store', 'expo-status-bar'],
+    extra: {
+      eas: {
+        projectId: '72d0ff1f-2015-46ae-91b3-5c06624f49f2',
+      },
+    },
+  },
+};
