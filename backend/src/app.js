@@ -7,6 +7,7 @@ const motoristaRotas = require('./rotas/motoristaRotas');
 const corridaRotas = require('./rotas/corridaRotas');
 const pagamentoRotas = require('./rotas/pagamentoRotas');
 const enderecoRotas = require('./rotas/enderecoRotas');
+const rotaRotas = require('./rotas/rotaRotas');
 const { tratadorErros } = require('./intermediarios/tratadorErros');
 
 const app = express();
@@ -31,6 +32,7 @@ app.use('/driver', motoristaRotas);
 app.use('/rides', corridaRotas);
 app.use('/payments', pagamentoRotas);
 app.use('/addresses', enderecoRotas);
+app.use('/routing', rotaRotas);
 
 // Rota não encontrada
 app.use((req, res) => {

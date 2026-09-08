@@ -29,11 +29,13 @@ export function useRota() {
         `${destino.longitude},${destino.latitude}?overview=full&geometries=geojson`;
 
       const resposta = await fetch(url);
-      if (!resposta.ok) throw new Error('Falha ao calcular rota');
+      if (!resposta.ok) {
+        throw new Error(`Falha ao calcular rota (HTTP ${resposta.status})`);
+      }
 
       const dados = await resposta.json();
       if (dados.code !== 'Ok' || !dados.routes?.length) {
-        throw new Error('Rota não encontrada');
+        throw new Error(`Rota não encontrada (code: ${dados.code})`);
       }
 
       const rotaPrincipal = dados.routes[0];
@@ -50,6 +52,7 @@ export function useRota() {
       setRota(resultado);
       return resultado;
     } catch (err: any) {
+      console.error('[useRota] falha ao calcular rota:', err?.message ?? err);
       setErro('Não foi possível calcular a rota agora. Tente novamente.');
       setRota(null);
       return null;
