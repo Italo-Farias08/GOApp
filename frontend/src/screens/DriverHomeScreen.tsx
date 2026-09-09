@@ -650,7 +650,12 @@ export default function DriverHomeScreen() {
         <UrlTile urlTemplate={STADIA_TILE_URL} maximumZ={20} flipY={false} />
 
         {coords && (
-          <Marker coordinate={coords} anchor={{ x: 0.5, y: 0.5 }} title="Você">
+          <Marker
+            coordinate={coords}
+            anchor={{ x: 0.5, y: 0.5 }}
+            title="Você"
+            tracksViewChanges={false}
+          >
             <View style={styles.marcadorMotorista}>
               <CarIcon size={16} color={colors.background} />
             </View>
@@ -663,6 +668,7 @@ export default function DriverHomeScreen() {
               coordinate={alvoAtual}
               anchor={{ x: 0.5, y: 0.85 }}
               title={embarcado ? 'Destino' : 'Passageiro'}
+              tracksViewChanges={false}
             >
               <MapPin variant="destino" />
             </Marker>

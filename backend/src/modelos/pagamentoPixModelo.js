@@ -20,13 +20,18 @@ function paraPagamentoPublico(linha) {
 // Cria o registro local da cobrança Pix PRÉ-paga — guarda os dados da
 // corrida ainda NÃO criada em `dados_corrida`, porque a corrida só nasce de
 // fato depois que o pagamento é aprovado.
-async function criar({ passageiroId, mercadoPagoId, valor, qrCode, qrCodeBase64, dadosCorrida, expiraEm }) {
+//
+// Nota: a coluna no banco ainda se chama `mercado_pago_id` (era o nome
+// original, de quando só existia o Mercado Pago) mas agora guarda o ID do
+// pagamento no Asaas — renomear a coluna precisaria de uma migração no
+// banco, então só deixamos o nome mais genérico aqui no código.
+async function criar({ passageiroId, idPagamentoPsp, valor, qrCode, qrCodeBase64, dadosCorrida, expiraEm }) {
   const resultado = await consultar(
     `INSERT INTO pagamentos_pix
        (passageiro_id, mercado_pago_id, valor, qr_code, qr_code_base64, dados_corrida, expira_em, tipo)
      VALUES ($1, $2, $3, $4, $5, $6, $7, 'prepago')
      RETURNING *`,
-    [passageiroId, mercadoPagoId, valor, qrCode, qrCodeBase64, JSON.stringify(dadosCorrida), expiraEm]
+    [passageiroId, idPagamentoPsp, valor, qrCode, qrCodeBase64, JSON.stringify(dadosCorrida), expiraEm]
   );
   return resultado.rows[0];
 }
@@ -34,13 +39,13 @@ async function criar({ passageiroId, mercadoPagoId, valor, qrCode, qrCodeBase64,
 // Cria o registro local da cobrança Pix PÓS-corrida — o motorista gerou ao
 // finalizar uma corrida que JÁ EXISTE, então `corrida_id` já vem preenchido
 // desde a criação (diferente do pré-pago, que só vincula depois de aprovado).
-async function criarPosPago({ passageiroId, corridaId, mercadoPagoId, valor, qrCode, qrCodeBase64, expiraEm }) {
+async function criarPosPago({ passageiroId, corridaId, idPagamentoPsp, valor, qrCode, qrCodeBase64, expiraEm }) {
   const resultado = await consultar(
     `INSERT INTO pagamentos_pix
        (passageiro_id, mercado_pago_id, valor, qr_code, qr_code_base64, dados_corrida, expira_em, tipo, corrida_id)
      VALUES ($1, $2, $3, $4, $5, '{}'::jsonb, $6, 'pos_pago', $7)
      RETURNING *`,
-    [passageiroId, mercadoPagoId, valor, qrCode, qrCodeBase64, expiraEm, corridaId]
+    [passageiroId, idPagamentoPsp, valor, qrCode, qrCodeBase64, expiraEm, corridaId]
   );
   return resultado.rows[0];
 }
@@ -50,8 +55,8 @@ async function buscarPorId(id) {
   return resultado.rows[0] || null;
 }
 
-async function buscarPorMercadoPagoId(mercadoPagoId) {
-  const resultado = await consultar('SELECT * FROM pagamentos_pix WHERE mercado_pago_id = $1', [mercadoPagoId]);
+async function buscarPorIdPagamentoPsp(idPagamentoPsp) {
+  const resultado = await consultar('SELECT * FROM pagamentos_pix WHERE mercado_pago_id = $1', [idPagamentoPsp]);
   return resultado.rows[0] || null;
 }
 
@@ -79,7 +84,7 @@ module.exports = {
   criar,
   criarPosPago,
   buscarPorId,
-  buscarPorMercadoPagoId,
+  buscarPorIdPagamentoPsp,
   atualizarStatus,
   vincularCorrida,
 };

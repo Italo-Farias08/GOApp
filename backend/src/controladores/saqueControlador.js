@@ -62,15 +62,12 @@ async function sacar(req, res, next) {
     }
 
     const idempotencyKey = crypto.randomUUID();
-    const ehTeste = String(process.env.MERCADO_PAGO_ACCESS_TOKEN || '').startsWith('TEST-');
 
     const resultado = await moneyOut.transferirPix({
       valor: saldoAnterior,
       chavePixTipo: usuario.chave_pix_tipo,
       chavePixValor: usuario.chave_pix,
-      cpfTitular: usuario.cpf,
       idempotencyKey,
-      ehTeste,
     });
 
     return res.json({ ok: true, valorTransferido: saldoAnterior, resultado });

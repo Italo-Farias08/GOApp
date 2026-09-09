@@ -3,21 +3,27 @@ const corridaModelo = require('../modelos/corridaModelo');
 const usuarioModelo = require('../modelos/usuarioModelo');
 const pagamentoPixModelo = require('../modelos/pagamentoPixModelo');
 const corridaServico = require('../servicos/corridaServico');
-const mercadoPago = require('../utilitarios/mercadoPago');
+const asaas = require('../utilitarios/asaas');
 const { ErroHttp } = require('../intermediarios/tratadorErros');
 const soquete = require('../tempoReal/servidorSoquete');
 
 // Quanto tempo o QR code fica válido antes do app desistir de esperar.
 const MINUTOS_EXPIRACAO_PIX = 15;
 
-function traduzirStatusMercadoPago(statusMp) {
-  if (statusMp === 'approved') return 'aprovado';
-  if (['rejected', 'cancelled'].includes(statusMp)) return 'recusado';
+// Status do Asaas que contam como "pagamento aprovado" — Pix costuma
+// chegar como RECEIVED (dinheiro já caiu na conta); CONFIRMED é o
+// equivalente pra outros meios, mas deixamos aqui também por segurança.
+const STATUS_ASAAS_APROVADO = ['RECEIVED', 'CONFIRMED', 'RECEIVED_IN_CASH'];
+const STATUS_ASAAS_RECUSADO = ['REFUNDED', 'REFUND_REQUESTED', 'CHARGEBACK_REQUESTED', 'DELETED'];
+
+function traduzirStatusAsaas(statusAsaas) {
+  if (STATUS_ASAAS_APROVADO.includes(statusAsaas)) return 'aprovado';
+  if (STATUS_ASAAS_RECUSADO.includes(statusAsaas)) return 'recusado';
   return 'pendente';
 }
 
 // Nem todo usuário tem email cadastrado (quem entrou com telefone, por
-// exemplo), mas o Mercado Pago exige um payer.email pra gerar o Pix — então
+// exemplo), mas o Asaas exige um email pra criar o cliente/cobrança — então
 // sintetiza um email válido a partir do ID quando faltar, sem bloquear o
 // pagamento por causa disso.
 function obterEmailPagador(usuario) {
@@ -42,27 +48,27 @@ async function criarPix(req, res, next) {
     const passageiro = await usuarioModelo.buscarPorId(req.usuarioId);
     if (!passageiro) throw new ErroHttp(404, 'Usuário não encontrado.');
 
-    const pagamentoMp = await mercadoPago.criarPagamentoPix({
+    const pagamentoAsaas = await asaas.criarPagamentoPix({
       valor: preco,
       descricao: `Corrida #GO (${tipoVeiculo})`,
+      nomePagador: passageiro.nome,
       emailPagador: obterEmailPagador(passageiro),
+      cpfPagador: passageiro.cpf,
       referenciaExterna: req.usuarioId,
-      idempotencyKey: crypto.randomUUID(),
     });
 
-    const dadosPix = pagamentoMp.point_of_interaction?.transaction_data;
-    if (!dadosPix?.qr_code) {
-      throw new ErroHttp(502, 'O Mercado Pago não retornou o QR code do Pix.');
+    if (!pagamentoAsaas.qrCode) {
+      throw new ErroHttp(502, 'O Asaas não retornou o QR code do Pix.');
     }
 
     const expiraEm = new Date(Date.now() + MINUTOS_EXPIRACAO_PIX * 60 * 1000);
 
     const pagamento = await pagamentoPixModelo.criar({
       passageiroId: req.usuarioId,
-      mercadoPagoId: String(pagamentoMp.id),
+      idPagamentoPsp: String(pagamentoAsaas.id),
       valor: preco,
-      qrCode: dadosPix.qr_code,
-      qrCodeBase64: dadosPix.qr_code_base64,
+      qrCode: pagamentoAsaas.qrCode,
+      qrCodeBase64: pagamentoAsaas.qrCodeBase64,
       dadosCorrida: {
         origem,
         destino,
@@ -164,8 +170,8 @@ async function status(req, res, next) {
       if (new Date(pagamento.expira_em) < new Date()) {
         pagamento = await pagamentoPixModelo.atualizarStatus(pagamento.id, 'expirado');
       } else {
-        const pagamentoMp = await mercadoPago.consultarPagamento(pagamento.mercado_pago_id);
-        const statusTraduzido = traduzirStatusMercadoPago(pagamentoMp.status);
+        const pagamentoAsaas = await asaas.consultarPagamento(pagamento.mercado_pago_id);
+        const statusTraduzido = traduzirStatusAsaas(pagamentoAsaas.status);
         if (statusTraduzido !== 'pendente') {
           pagamento = await pagamentoPixModelo.atualizarStatus(pagamento.id, statusTraduzido);
         }
@@ -184,20 +190,43 @@ async function status(req, res, next) {
 
 // POST /payments/webhook
 //
-// Notificação assíncrona do Mercado Pago, avisando que o status de um
-// pagamento mudou — chega mais rápido que o próximo polling do app. Sempre
-// responde 200 (mesmo se der erro internamente), porque o Mercado Pago
-// reenvia a notificação sem parar enquanto não receber 200.
+// Notificação assíncrona do Asaas, avisando que o status de uma cobrança
+// mudou — chega mais rápido que o próximo polling do app. Sempre responde
+// 200 (mesmo se der erro internamente), porque o Asaas reenvia a
+// notificação sem parar enquanto não receber 200 — e se falhar 15 vezes
+// seguidas, ele para de tentar de vez.
+//
+// Formato do corpo que o Asaas manda:
+// { "event": "PAYMENT_RECEIVED", "payment": { "id": "pay_...", ... } }
+const EVENTOS_RELEVANTES = [
+  'PAYMENT_RECEIVED',
+  'PAYMENT_CONFIRMED',
+  'PAYMENT_OVERDUE',
+  'PAYMENT_DELETED',
+  'PAYMENT_REFUNDED',
+];
+
 async function webhook(req, res) {
   try {
-    const tipo = req.body?.type || req.query.type;
-    const mercadoPagoId = req.body?.data?.id || req.query['data.id'];
+    // Se você configurou um token de autenticação no painel do Asaas
+    // (Integrações > Webhooks), toda notificação real vem com ele nesse
+    // header — confere antes de confiar em qualquer coisa do corpo.
+    const tokenEsperado = process.env.ASAAS_WEBHOOK_TOKEN;
+    if (tokenEsperado && req.headers['asaas-access-token'] !== tokenEsperado) {
+      console.warn('[webhook asaas] token inválido ou ausente — ignorando notificação.');
+      return res.sendStatus(200);
+    }
 
-    if (tipo === 'payment' && mercadoPagoId) {
-      const pagamentoLocal = await pagamentoPixModelo.buscarPorMercadoPagoId(String(mercadoPagoId));
+    const evento = req.body?.event;
+    const idPagamentoAsaas = req.body?.payment?.id;
+
+    if (EVENTOS_RELEVANTES.includes(evento) && idPagamentoAsaas) {
+      const pagamentoLocal = await pagamentoPixModelo.buscarPorIdPagamentoPsp(String(idPagamentoAsaas));
       if (pagamentoLocal && pagamentoLocal.status === 'pendente') {
-        const pagamentoMp = await mercadoPago.consultarPagamento(mercadoPagoId);
-        const statusTraduzido = traduzirStatusMercadoPago(pagamentoMp.status);
+        // Nunca confia só no que o webhook diz — consulta de novo na API
+        // do Asaas pra confirmar o status real antes de dar como aprovado.
+        const pagamentoAsaas = await asaas.consultarPagamento(idPagamentoAsaas);
+        const statusTraduzido = traduzirStatusAsaas(pagamentoAsaas.status);
         if (statusTraduzido !== 'pendente') {
           const atualizado = await pagamentoPixModelo.atualizarStatus(pagamentoLocal.id, statusTraduzido);
           if (atualizado.tipo === 'pos_pago') {
@@ -209,7 +238,7 @@ async function webhook(req, res) {
       }
     }
   } catch (erro) {
-    console.error('[webhook mercado pago] falha ao processar notificação:', erro);
+    console.error('[webhook asaas] falha ao processar notificação:', erro);
   }
 
   res.sendStatus(200);

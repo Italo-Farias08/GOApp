@@ -1,11 +1,10 @@
-const crypto = require('crypto');
 const corridaModelo = require('../modelos/corridaModelo');
 const usuarioModelo = require('../modelos/usuarioModelo');
 const motoristaModelo = require('../modelos/motoristaModelo');
 const dividaModelo = require('../modelos/dividaModelo');
 const pagamentoPixModelo = require('../modelos/pagamentoPixModelo');
 const corridaServico = require('../servicos/corridaServico');
-const mercadoPago = require('../utilitarios/mercadoPago');
+const asaas = require('../utilitarios/asaas');
 const { ErroHttp } = require('../intermediarios/tratadorErros');
 const soquete = require('../tempoReal/servidorSoquete');
 
@@ -479,9 +478,9 @@ async function finalizarComoNaoPago(req, res, next) {
   }
 }
 
-// Nem todo usuário tem email cadastrado — o Mercado Pago exige um
-// payer.email pra gerar o Pix, então sintetiza um a partir do ID quando
-// faltar (mesma lógica do pagamentoControlador, pro Pix pré-pago).
+// Nem todo usuário tem email cadastrado — o Asaas exige um email pra
+// gerar o Pix, então sintetiza um a partir do ID quando faltar (mesma
+// lógica do pagamentoControlador, pro Pix pré-pago).
 function obterEmailPagador(usuario) {
   return usuario.email || `${usuario.id}@passageiro.goapp.com`;
 }
@@ -489,9 +488,9 @@ function obterEmailPagador(usuario) {
 // POST /rides/:id/finish/pix
 //
 // Motorista escolhe "Pix" no modal de finalização — gera a cobrança no
-// Mercado Pago pelo valor da corrida (já incluindo dívida antiga, se
-// houver) e devolve o QR code + código "copia e cola" pro passageiro pagar
-// ali na hora. A corrida SÓ é finalizada de fato depois que o pagamento é
+// Asaas pelo valor da corrida (já incluindo dívida antiga, se houver) e
+// devolve o QR code + código "copia e cola" pro passageiro pagar ali na
+// hora. A corrida SÓ é finalizada de fato depois que o pagamento é
 // confirmado — ver pagamentoControlador.status, que agora também cobre esse
 // caso (Pix do tipo 'pos_pago').
 async function iniciarFinalizacaoPix(req, res, next) {
@@ -501,17 +500,17 @@ async function iniciarFinalizacaoPix(req, res, next) {
     const passageiro = await usuarioModelo.buscarPorId(corrida.passageiro_id);
     if (!passageiro) throw new ErroHttp(404, 'Passageiro não encontrado.');
 
-    const pagamentoMp = await mercadoPago.criarPagamentoPix({
+    const pagamentoAsaas = await asaas.criarPagamentoPix({
       valor: corrida.preco,
       descricao: `Corrida #GO (${corrida.tipo_veiculo})`,
+      nomePagador: passageiro.nome,
       emailPagador: obterEmailPagador(passageiro),
+      cpfPagador: passageiro.cpf,
       referenciaExterna: corrida.id,
-      idempotencyKey: crypto.randomUUID(),
     });
 
-    const dadosPix = pagamentoMp.point_of_interaction?.transaction_data;
-    if (!dadosPix?.qr_code) {
-      throw new ErroHttp(502, 'O Mercado Pago não retornou o QR code do Pix.');
+    if (!pagamentoAsaas.qrCode) {
+      throw new ErroHttp(502, 'O Asaas não retornou o QR code do Pix.');
     }
 
     const expiraEm = new Date(Date.now() + MINUTOS_EXPIRACAO_PIX_FINALIZACAO * 60 * 1000);
@@ -519,10 +518,10 @@ async function iniciarFinalizacaoPix(req, res, next) {
     const pagamento = await pagamentoPixModelo.criarPosPago({
       passageiroId: corrida.passageiro_id,
       corridaId: corrida.id,
-      mercadoPagoId: String(pagamentoMp.id),
+      idPagamentoPsp: String(pagamentoAsaas.id),
       valor: corrida.preco,
-      qrCode: dadosPix.qr_code,
-      qrCodeBase64: dadosPix.qr_code_base64,
+      qrCode: pagamentoAsaas.qrCode,
+      qrCodeBase64: pagamentoAsaas.qrCodeBase64,
       expiraEm,
     });
 

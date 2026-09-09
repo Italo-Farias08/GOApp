@@ -1,4 +1,3 @@
-
 export type TipoVeiculo = 'carro' | 'moto';
 
 type Tarifa = {
@@ -10,7 +9,7 @@ type Tarifa = {
 
 const TARIFAS: Record<TipoVeiculo, Tarifa> = {
   carro: { bandeirada: 2.5, porKm: 1.9, porMinuto: 0.1, minimo: 7.10 },
-  moto: { bandeirada: 2, porKm: 1.2, porMinuto: 0.05, minimo: 4.30 },
+  moto: { bandeirada: 2, porKm: 1.2, porMinuto: 0.08, minimo: 4.30 },
 };
 
 type FaixaHorario = {
@@ -45,6 +44,10 @@ export type EstimativaCorrida = {
   duracaoMin: number;
   multiplicadorHorario: number;
   labelHorario: string | null;
+  // Preenchido só depois que o backend confirma a corrida — quanto desse
+  // preço é dívida de uma corrida anterior não paga, somada por cima da
+  // tarifa normal. Ausente/0 = preço normal, sem dívida embutida.
+  dividaAplicada?: number;
 };
 
 export function calcularPreco(

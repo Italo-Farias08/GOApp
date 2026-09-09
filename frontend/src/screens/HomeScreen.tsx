@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
@@ -153,6 +153,25 @@ export default function HomeScreen() {
   const [corridaId, setCorridaId] = useState<string | null>(null);
   const [motoristaAtribuido, setMotoristaAtribuido] = useState<MotoristaInfo | null>(null);
   const [localizacaoMotorista, setLocalizacaoMotorista] = useState<{ latitude: number; longitude: number } | null>(null);
+  // --- Marcador do motorista "em movimento" no mapa ---
+  // Referência ao Marker do motorista — usada pra deslizar ele suavemente
+  // de um ponto ao outro (animateMarkerToCoordinate) em vez de simplesmente
+  // trocar a coordenada e o marcador "pular" de posição a cada atualização
+  // do socket.
+  const marcadorMotoristaRef = useRef<React.ElementRef<typeof Marker>>(null);
+  // Coordenada usada na prop `coordinate` do Marker — fica FIXA na primeira
+  // posição recebida. As atualizações seguintes só mexem no marcador via
+  // ref (imperativamente), nunca trocando essa prop — se ela mudasse a
+  // cada atualização, o React reaplicaria a posição de forma seca (sem
+  // animação), atropelando o deslize suave.
+  const [coordenadaInicialMotorista, setCoordenadaInicialMotorista] = useState<{
+    latitude: number;
+    longitude: number;
+  } | null>(null);
+  const posicaoAnteriorMotoristaRef = useRef<{ latitude: number; longitude: number } | null>(null);
+  // Ângulo (graus, 0 = norte) pra onde a imagem do veículo deve apontar —
+  // calculado a partir do deslocamento real entre duas posições.
+  const [rumoMotorista, setRumoMotorista] = useState(0);
   // true depois que o motorista confirma que pegou o passageiro — troca o
   // texto/estado da tela de "a caminho" pra "indo ao destino".
   const [embarcado, setEmbarcado] = useState(false);
@@ -593,6 +612,9 @@ export default function HomeScreen() {
     setCorridaConfirmada(null);
     setMotoristaAtribuido(null);
     setLocalizacaoMotorista(null);
+    setCoordenadaInicialMotorista(null);
+    posicaoAnteriorMotoristaRef.current = null;
+    setRumoMotorista(0);
     setEmbarcado(false);
     limparRota();
     setDestinoSelecionado(null);
@@ -602,8 +624,50 @@ export default function HomeScreen() {
     setMensagensNaoLidas(0);
   }
 
-  // Regra: só faz sentido oferecer "cancelar" enquanto existe uma corrida
-  // em aberto (procurando ou já aceita) — depois disso o botão nem aparece.
+  // Ângulo (0-360°, 0 = norte) do ponto A até o ponto B — usado pra virar a
+  // imagem do carro/moto na direção real do deslocamento no mapa.
+  function calcularRumo(
+    origem: { latitude: number; longitude: number },
+    destino: { latitude: number; longitude: number }
+  ): number {
+    const lat1 = (origem.latitude * Math.PI) / 180;
+    const lat2 = (destino.latitude * Math.PI) / 180;
+    const deltaLon = ((destino.longitude - origem.longitude) * Math.PI) / 180;
+    const y = Math.sin(deltaLon) * Math.cos(lat2);
+    const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(deltaLon);
+    const rumoGraus = (Math.atan2(y, x) * 180) / Math.PI;
+    return (rumoGraus + 360) % 360;
+  }
+
+  // Toda vez que chega uma localização nova do motorista: na primeira vez
+  // só define a posição inicial do marcador; das próximas em diante, gira a
+  // imagem na direção do movimento e desliza o marcador suavemente até o
+  // novo ponto (em vez de reposicionar seco).
+  useEffect(() => {
+    if (!localizacaoMotorista) return;
+
+    if (!coordenadaInicialMotorista) {
+      setCoordenadaInicialMotorista(localizacaoMotorista);
+      posicaoAnteriorMotoristaRef.current = localizacaoMotorista;
+      return;
+    }
+
+    const anterior = posicaoAnteriorMotoristaRef.current;
+    if (anterior) {
+      // Só recalcula o rumo se o motorista realmente andou uma distância
+      // mínima — em pé parado, pequenas variações de GPS fariam a imagem
+      // "tremer" girando pra qualquer lado à toa.
+      const andouODeSuficiente =
+        Math.abs(anterior.latitude - localizacaoMotorista.latitude) > 0.00003 ||
+        Math.abs(anterior.longitude - localizacaoMotorista.longitude) > 0.00003;
+      if (andouODeSuficiente) {
+        setRumoMotorista(calcularRumo(anterior, localizacaoMotorista));
+      }
+    }
+    posicaoAnteriorMotoristaRef.current = localizacaoMotorista;
+    marcadorMotoristaRef.current?.animateMarkerToCoordinate(localizacaoMotorista, 900);
+  }, [localizacaoMotorista]);
+
   function abrirCancelamento() {
     if (!corridaId) return;
     setCancelamentoVisivel(true);
@@ -616,7 +680,7 @@ export default function HomeScreen() {
       await rideService.cancelarCorrida(corridaId, motivo);
       avisar('Corrida cancelada.', 'info');
     } catch {
-      // segue liberando a tela mesmo se a chamada falhar
+      
       avisar('Corrida cancelada.', 'info');
     } finally {
       resetarCorrida();
@@ -625,14 +689,21 @@ export default function HomeScreen() {
     }
   }
 
-  const region = coords
-    ? {
-        latitude: coords.latitude,
-        longitude: coords.longitude,
-        latitudeDelta: 0.01,
-        longitudeDelta: 0.01,
-      }
-    : FALLBACK_REGION;
+  const region = useMemo(
+    () =>
+      coords
+        ? {
+            latitude: coords.latitude,
+            longitude: coords.longitude,
+            latitudeDelta: 0.01,
+            longitudeDelta: 0.01,
+          }
+        : FALLBACK_REGION,
+    // Só recalcula quando a localização realmente muda — não a cada
+    // renderização da tela (digitar no campo de busca, toast aparecendo,
+    // mensagem de chat chegando etc. não devem mexer no mapa).
+    [coords?.latitude, coords?.longitude]
+  );
 
   function medirConteudo(evento: LayoutChangeEvent) {
     const novaAltura = evento.nativeEvent.layout.height;
@@ -647,7 +718,7 @@ export default function HomeScreen() {
     // escolheu essa opção.
     const item = await resolverDestino(sugestao);
     if (!item) {
-      avisar('Não foi possível obter esse endereço. Tente de novo.', 'error');
+      avisar('Não foi possível obter esse endereço. Tente de novo.' );
       return;
     }
 
@@ -737,6 +808,24 @@ export default function HomeScreen() {
     try {
       const corrida = await rideService.criarCorrida({ ...dadosCorrida, formaPagamento });
       setCorridaId(corrida.id);
+      // IMPORTANTE: o preço que volta aqui é o preço REAL da corrida — se o
+      // passageiro tinha dívida pendente de uma corrida anterior não paga,
+      // o backend já somou ela aqui (ver corridaServico.criarEDespachar no
+      // back-end). Antes esse retorno era ignorado (só se usava `corrida.id`),
+      // então a tela continuava mostrando a estimativa original, sem dívida
+      // — o passageiro via um valor, o motorista via outro (maior), sem
+      // nenhum aviso do porquê.
+      setCorridaConfirmada({
+        ...escolhida,
+        preco: corrida.preco,
+        dividaAplicada: corrida.dividaAplicada,
+      });
+      if (corrida.dividaAplicada > 0) {
+        avisar(
+          `Esse valor inclui ${formatarMoeda(corrida.dividaAplicada)} de uma corrida anterior não paga.`,
+          'warning'
+        );
+      }
     } catch (erro) {
       // Antes esse catch resetava a tela em silêncio — dava a impressão de
       // que a corrida tinha sido "cancelada sozinha" quase na hora, quando
@@ -787,11 +876,33 @@ export default function HomeScreen() {
         if (atualizado.status === 'aprovado' && atualizado.corridaId) {
           pararPollingPix();
           setPixModalVisivel(false);
-          setCorridaConfirmada(escolhida);
           setMotoristaAtribuido(null);
           setLocalizacaoMotorista(null);
           setEmbarcado(false);
           setCorridaId(atualizado.corridaId);
+
+          // Igual ao fluxo de dinheiro/Pix direto: busca a corrida de
+          // verdade pra pegar o preço REAL (com dívida pendente somada, se
+          // houver) em vez de ficar preso na estimativa calculada antes do
+          // pagamento. Se essa busca falhar por algum motivo, ainda assim
+          // mostra a estimativa — melhor um valor levemente desatualizado
+          // do que a tela travada sem nada.
+          try {
+            const corrida = await rideService.buscarCorrida(atualizado.corridaId);
+            setCorridaConfirmada({
+              ...escolhida,
+              preco: corrida.preco,
+              dividaAplicada: corrida.dividaAplicada,
+            });
+            if (corrida.dividaAplicada > 0) {
+              avisar(
+                `Esse valor inclui ${formatarMoeda(corrida.dividaAplicada)} de uma corrida anterior não paga.`,
+                'warning'
+              );
+            }
+          } catch {
+            setCorridaConfirmada(escolhida);
+          }
         } else if (atualizado.status === 'recusado' || atualizado.status === 'expirado') {
           pararPollingPix();
         }
@@ -823,7 +934,12 @@ export default function HomeScreen() {
         <UrlTile urlTemplate={STADIA_TILE_URL} maximumZ={20} flipY={false} />
 
         {coords && (
-          <Marker coordinate={coords} anchor={{ x: 0.5, y: 0.5 }} title="Você está aqui">
+          <Marker
+            coordinate={coords}
+            anchor={{ x: 0.5, y: 0.5 }}
+            title="Você está aqui"
+            tracksViewChanges={false}
+          >
             <MapPin variant="origem" />
           </Marker>
         )}
@@ -833,6 +949,7 @@ export default function HomeScreen() {
             anchor={{ x: 0.5, y: 0.85 }}
             title="Destino"
             description={destinoSelecionado.descricao}
+            tracksViewChanges={false}
           >
             <MapPin variant="destino" />
           </Marker>
@@ -844,15 +961,22 @@ export default function HomeScreen() {
             strokeWidth={4}
           />
         )}
-        {localizacaoMotorista && (
-          <Marker coordinate={localizacaoMotorista} anchor={{ x: 0.5, y: 0.5 }} title="Motorista a caminho">
-            <View style={styles.marcadorMotorista}>
-              {corridaConfirmada?.tipo === 'moto' ? (
-                <MotoIcon size={16} color={colors.background} />
-              ) : (
-                <CarIcon size={16} color={colors.background} />
-              )}
-            </View>
+        {localizacaoMotorista && coordenadaInicialMotorista && (
+          <Marker
+            ref={marcadorMotoristaRef}
+            coordinate={coordenadaInicialMotorista}
+            anchor={{ x: 0.5, y: 0.5 }}
+            title="Motorista a caminho"
+            tracksViewChanges={false}
+            flat
+            rotation={rumoMotorista}
+          >
+            <Image
+              source={IMAGEM_VEICULO[corridaConfirmada?.tipo ?? 'carro']}
+              style={styles.veiculoMarcadorImagem}
+              resizeMode="contain"
+              fadeDuration={0}
+            />
           </Marker>
         )}
       </MapView>
@@ -1129,6 +1253,11 @@ export default function HomeScreen() {
                     {' · '}
                     {formatarMoeda(corridaConfirmada.preco)}
                   </Text>
+                  {!!corridaConfirmada.dividaAplicada && corridaConfirmada.dividaAplicada > 0 && (
+                    <Text style={styles.dividaAvisoTexto}>
+                      Inclui {formatarMoeda(corridaConfirmada.dividaAplicada)} de uma corrida anterior não paga
+                    </Text>
+                  )}
                   <View style={styles.procurandoRow}>
                     <ActivityIndicator size="small" color={colors.primary} />
                     <Text style={styles.confirmacaoSubtexto}>
@@ -1627,6 +1756,15 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginLeft: spacing.xs,
   },
+  // Aviso de que o preço mostrado inclui dívida de uma corrida anterior não
+  // paga — usa a cor de "warning" (não "danger") porque não é bem um erro,
+  // é só uma informação que o passageiro precisa ter pra não estranhar o
+  // valor mais alto.
+  dividaAvisoTexto: {
+    ...typography.caption,
+    color: colors.warning,
+    marginTop: 2,
+  },
   cancelarBuscaBotao: {
     padding: spacing.xs,
     marginLeft: spacing.sm,
@@ -1764,15 +1902,14 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.background,
   },
-  marcadorMotorista: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: colors.background,
+  // Imagem do veículo (carro.png/moto.png) usada no marcador do motorista
+  // em movimento no mapa — mesmo arquivo de imagem usado no card de "Sua
+  // corrida" e na tela de escolha de veículo, só que menor. Sem fundo/borda
+  // (diferente do antigo círculo colorido) pra parecer o carro de verdade
+  // andando sobre o mapa, não um ícone genérico.
+  veiculoMarcadorImagem: {
+    width: 38,
+    height: 38,
   },
   sugestoesLista: {
     marginBottom: spacing.md,
