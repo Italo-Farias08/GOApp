@@ -338,6 +338,22 @@ export function CopyIcon({ size = 16, color = '#0B0B0F', strokeWidth = 1.8 }: Ic
 }
 
 // Ícone de enviar (avião de papel) — usado no botão de enviar mensagem do chat.
+// Ícone de lápis (editar) — usado no card de chave Pix cadastrada.
+export function EditIcon({ size = 16, color = '#9A9AA5', strokeWidth = 1.8 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M4 20L4.6 16.6L15.5 5.7C16.1 5.1 17 5.1 17.6 5.7L18.3 6.4C18.9 7 18.9 7.9 18.3 8.5L7.4 19.4L4 20Z"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Path d="M13.8 7.4L16.6 10.2" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
 export function SendIcon({ size = 18, color = '#0B0B0F', strokeWidth = 1.8 }: IconProps) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">

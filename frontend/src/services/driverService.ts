@@ -96,6 +96,9 @@ export async function fetchTodaySummary(): Promise<ResumoMotoboyHoje> {
       valorHoje: 0,
       saldoAReceber: 0,
       chavePixCadastrada: false,
+      chavePix: null,
+      chavePixTipo: null,
+      cpf: null,
     });
   }
 

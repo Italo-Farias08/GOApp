@@ -13,7 +13,15 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { AlertIcon, ChevronLeftIcon, HistoryIcon, MoneyIcon, MotoIcon } from '../components/icons';
+import {
+  AlertIcon,
+  ChevronLeftIcon,
+  EditIcon,
+  HistoryIcon,
+  MoneyIcon,
+  MotoIcon,
+  PixIcon,
+} from '../components/icons';
 import { useAuth } from '../context/AuthContext';
 import * as driverService from '../services/driverService';
 import type { ChavePixTipo } from '../services/driverService';
@@ -159,6 +167,12 @@ function ResumoMotoboy({
   const [modalAberto, setModalAberto] = useState(false);
   const [sacando, setSacando] = useState(false);
 
+  const valoresChaveAtual = {
+    chavePix: resumo?.chavePix ?? null,
+    chavePixTipo: resumo?.chavePixTipo ?? null,
+    cpf: resumo?.cpf ?? null,
+  };
+
   async function handleReceber() {
     if (!chavePixCadastrada) {
       setModalAberto(true);
@@ -202,6 +216,13 @@ function ResumoMotoboy({
         </View>
       </View>
 
+      <ChavePixCard
+        cadastrada={chavePixCadastrada}
+        tipo={resumo?.chavePixTipo ?? null}
+        valor={resumo?.chavePix ?? null}
+        onEditar={() => setModalAberto(true)}
+      />
+
       {saldoAReceber > 0 && (
         <View style={styles.saldoCard}>
           <View style={styles.saldoTopoLinha}>
@@ -237,12 +258,73 @@ function ResumoMotoboy({
 
       <ModalChavePix
         visivel={modalAberto}
+        valoresIniciais={valoresChaveAtual}
         onFechar={() => setModalAberto(false)}
         onSalvo={() => {
           setModalAberto(false);
           onAtualizar();
         }}
       />
+    </View>
+  );
+}
+
+const ROTULO_TIPO: Record<string, string> = {
+  CPF: 'CPF',
+  EMAIL: 'E-mail',
+  PHONE: 'Telefone',
+  CNPJ: 'CNPJ',
+  PIX_CODE: 'Chave aleatória',
+};
+
+// Card fixo mostrando a chave Pix cadastrada (ou o convite pra cadastrar),
+// com botão de editar sempre visível — assim o motorista consegue corrigir
+// uma chave digitada errada sem precisar cair no fluxo de saque primeiro.
+function ChavePixCard({
+  cadastrada,
+  tipo,
+  valor,
+  onEditar,
+}: {
+  cadastrada: boolean;
+  tipo: ChavePixTipo | null;
+  valor: string | null;
+  onEditar: () => void;
+}) {
+  return (
+    <View style={styles.pixCard}>
+      <View style={styles.pixCardTopo}>
+        <View style={styles.pixCardIconeWrap}>
+          <PixIcon size={18} color={colors.primary} strokeWidth={1.8} />
+        </View>
+        <Text style={styles.pixCardTitulo}>Chave Pix</Text>
+        <Pressable
+          style={styles.pixEditarBotao}
+          onPress={onEditar}
+          hitSlop={8}
+          accessibilityLabel={cadastrada ? 'Editar chave Pix' : 'Cadastrar chave Pix'}
+        >
+          <EditIcon size={14} color={colors.primary} strokeWidth={1.9} />
+          <Text style={styles.pixEditarBotaoTexto}>{cadastrada ? 'Editar' : 'Cadastrar'}</Text>
+        </Pressable>
+      </View>
+
+      {cadastrada && valor ? (
+        <View style={styles.pixValorLinha}>
+          {tipo && (
+            <View style={styles.pixTipoChip}>
+              <Text style={styles.pixTipoChipTexto}>{ROTULO_TIPO[tipo] ?? tipo}</Text>
+            </View>
+          )}
+          <Text style={styles.pixValorTexto} numberOfLines={1} ellipsizeMode="middle">
+            {valor}
+          </Text>
+        </View>
+      ) : (
+        <Text style={styles.pixVazioTexto}>
+          Nenhuma chave cadastrada ainda. É pra onde seus saques vão cair.
+        </Text>
+      )}
     </View>
   );
 }
@@ -259,15 +341,35 @@ function ModalChavePix({
   visivel,
   onFechar,
   onSalvo,
+  valoresIniciais,
 }: {
   visivel: boolean;
   onFechar: () => void;
   onSalvo: () => void;
+  valoresIniciais?: {
+    chavePix: string | null;
+    chavePixTipo: ChavePixTipo | null;
+    cpf: string | null;
+  };
 }) {
-  const [tipo, setTipo] = useState<ChavePixTipo>('CPF');
-  const [chave, setChave] = useState('');
-  const [cpf, setCpf] = useState('');
+  const jaTinhaChave = Boolean(valoresIniciais?.chavePix);
+
+  const [tipo, setTipo] = useState<ChavePixTipo>(valoresIniciais?.chavePixTipo ?? 'CPF');
+  const [chave, setChave] = useState(valoresIniciais?.chavePix ?? '');
+  const [cpf, setCpf] = useState(valoresIniciais?.cpf ?? '');
   const [salvando, setSalvando] = useState(false);
+
+  // Toda vez que o modal abre, repopula com o que está cadastrado agora —
+  // sem isso, editar duas vezes seguidas mostraria dados de uma edição
+  // anterior em vez do que está salvo de fato.
+  useEffect(() => {
+    if (visivel) {
+      setTipo(valoresIniciais?.chavePixTipo ?? 'CPF');
+      setChave(valoresIniciais?.chavePix ?? '');
+      setCpf(valoresIniciais?.cpf ?? '');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visivel]);
 
   async function handleSalvar() {
     if (!chave.trim() || !cpf.trim()) {
@@ -290,9 +392,13 @@ function ModalChavePix({
     <Modal visible={visivel} animationType="slide" transparent onRequestClose={onFechar}>
       <View style={styles.modalFundo}>
         <View style={styles.modalConteudo}>
-          <Text style={styles.modalTitulo}>Cadastrar chave Pix</Text>
+          <Text style={styles.modalTitulo}>
+            {jaTinhaChave ? 'Editar chave Pix' : 'Cadastrar chave Pix'}
+          </Text>
           <Text style={styles.modalSubtitulo}>
-            É pra onde seus saques vão cair. Só precisa fazer isso uma vez.
+            {jaTinhaChave
+              ? 'Corrige aqui se algum dado foi digitado errado. É pra onde seus saques caem.'
+              : 'É pra onde seus saques vão cair. Só precisa fazer isso uma vez.'}
           </Text>
 
           <View style={styles.tiposLinha}>
@@ -473,6 +579,79 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.textSecondary,
     textAlign: 'center',
+  },
+  pixCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+    marginTop: spacing.md,
+    width: '100%',
+  },
+  pixCardTopo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  pixCardIconeWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: radius.md,
+    backgroundColor: colors.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.xs,
+  },
+  pixCardTitulo: {
+    ...typography.bodyBold,
+    color: colors.text,
+    flex: 1,
+  },
+  pixEditarBotao: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 6,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radius.md,
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  pixEditarBotaoTexto: {
+    ...typography.caption,
+    color: colors.primary,
+    fontWeight: '600',
+  },
+  pixValorLinha: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: spacing.sm,
+    gap: spacing.xs,
+  },
+  pixTipoChip: {
+    paddingVertical: 3,
+    paddingHorizontal: spacing.xs,
+    borderRadius: radius.sm,
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  pixTipoChipTexto: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    fontSize: 11,
+  },
+  pixValorTexto: {
+    ...typography.body,
+    color: colors.text,
+    flexShrink: 1,
+  },
+  pixVazioTexto: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginTop: spacing.sm,
+    lineHeight: 16,
   },
   saldoCard: {
     backgroundColor: colors.surface,

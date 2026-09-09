@@ -1,9 +1,6 @@
-// Integração com o Money Out do Mercado Pago — manda dinheiro DA conta da
-// plataforma PRA uma chave Pix de terceiro (o motorista). É um produto
-// diferente do Checkout API que já usamos pra receber Pix dos passageiros.
-//
-// Documentação usada como referência:
-// https://www.mercadopago.com.br/developers/en/docs/payouts/integration-configuration/money-transfers
+
+
+const crypto = require('crypto');
 
 const BASE_URL = 'https://api.mercadopago.com';
 
@@ -15,12 +12,23 @@ function obterAccessToken() {
   return token;
 }
 
-// Transfere `valor` da conta da plataforma pra chave Pix informada.
-//
-// IMPORTANTE: em produção, o Mercado Pago exige o header X-signature (corpo
-// assinado com chave pública/privada do integrador) — ver seção "Segurança"
-// da documentação de Payouts. Enquanto isso não estiver configurado, essa
-// chamada só funciona em ambiente de TESTE (X-test-token: true).
+function assinarCorpo(corpoString) {
+  const chavePrivadaPem = process.env.MERCADO_PAGO_SIGNATURE_PRIVATE_KEY;
+  if (!chavePrivadaPem) {
+    throw new Error(
+      'MERCADO_PAGO_SIGNATURE_PRIVATE_KEY não configurada. Necessária pra assinar transferências em produção (ver documentação de Payouts do Mercado Pago).'
+    );
+  }
+
+  const pem = chavePrivadaPem.includes('\\n')
+    ? chavePrivadaPem.replace(/\\n/g, '\n')
+    : chavePrivadaPem;
+
+  const chavePrivada = crypto.createPrivateKey(pem)
+  const assinatura = crypto.sign(null, Buffer.from(corpoString), chavePrivada);
+  return assinatura.toString('base64');
+}
+
 async function transferirPix({
   valor,
   chavePixTipo,
@@ -48,21 +56,27 @@ async function transferirPix({
     },
   };
 
+  const corpoString = JSON.stringify(corpo);
+
   const cabecalhos = {
     'Content-Type': 'application/json',
     Authorization: `Bearer ${obterAccessToken()}`,
     'X-Idempotency-Key': idempotencyKey,
-    'X-enforce-signature': 'false',
   };
 
   if (ehTeste) {
     cabecalhos['X-test-token'] = 'true';
+    cabecalhos['X-enforce-signature'] = 'false';
+  } else {
+
+    cabecalhos['X-enforce-signature'] = 'true';
+    cabecalhos['X-signature'] = assinarCorpo(corpoString);
   }
 
   const resposta = await fetch(`${BASE_URL}/v1/transaction-intents/process`, {
     method: 'POST',
     headers: cabecalhos,
-    body: JSON.stringify(corpo),
+    body: corpoString,
   });
 
   const dados = await resposta.json();

@@ -161,6 +161,11 @@ async function resumoHoje(req, res, next) {
       ...resumo,
       saldoAReceber: Number(usuario.saldo_a_receber || 0),
       chavePixCadastrada: Boolean(usuario.chave_pix && usuario.chave_pix_tipo && usuario.cpf),
+      // Mandados pra tela poder mostrar/editar a chave já cadastrada, sem
+      // precisar o motorista digitar tudo de novo do zero.
+      chavePix: usuario.chave_pix || null,
+      chavePixTipo: usuario.chave_pix_tipo || null,
+      cpf: usuario.cpf || null,
     });
   } catch (erro) {
     next(erro);
