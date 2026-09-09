@@ -2,6 +2,7 @@ const express = require('express');
 const motoristaControlador = require('../controladores/motoristaControlador');
 const autenticacaoIntermediario = require('../intermediarios/autenticacaoIntermediario');
 const adminIntermediario = require('../intermediarios/adminIntermediario');
+const { limitadorAdmin } = require('../intermediarios/limitadorTaxa');
 
 const roteador = express.Router();
 
@@ -13,7 +14,7 @@ roteador.get('/today-summary', autenticacaoIntermediario, motoristaControlador.r
 
 // Rotas administrativas — aprovar/reprovar cadastro de motorista.
 // Sem painel de admin ainda: chame com o header x-admin-secret.
-roteador.get('/pending', adminIntermediario, motoristaControlador.listarPendentes);
-roteador.post('/:usuarioId/approve', adminIntermediario, motoristaControlador.aprovar);
+roteador.get('/pending', limitadorAdmin, adminIntermediario, motoristaControlador.listarPendentes);
+roteador.post('/:usuarioId/approve', limitadorAdmin, adminIntermediario, motoristaControlador.aprovar);
 
 module.exports = roteador;

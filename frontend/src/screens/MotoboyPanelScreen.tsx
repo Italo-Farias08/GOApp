@@ -4,7 +4,9 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -359,16 +361,13 @@ function ModalChavePix({
   const [cpf, setCpf] = useState(valoresIniciais?.cpf ?? '');
   const [salvando, setSalvando] = useState(false);
 
-  // Toda vez que o modal abre, repopula com o que está cadastrado agora —
-  // sem isso, editar duas vezes seguidas mostraria dados de uma edição
-  // anterior em vez do que está salvo de fato.
   useEffect(() => {
     if (visivel) {
       setTipo(valoresIniciais?.chavePixTipo ?? 'CPF');
       setChave(valoresIniciais?.chavePix ?? '');
       setCpf(valoresIniciais?.cpf ?? '');
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    
   }, [visivel]);
 
   async function handleSalvar() {
@@ -390,7 +389,10 @@ function ModalChavePix({
 
   return (
     <Modal visible={visivel} animationType="slide" transparent onRequestClose={onFechar}>
-      <View style={styles.modalFundo}>
+      <KeyboardAvoidingView
+        style={styles.modalFundo}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
         <View style={styles.modalConteudo}>
           <Text style={styles.modalTitulo}>
             {jaTinhaChave ? 'Editar chave Pix' : 'Cadastrar chave Pix'}
@@ -456,7 +458,7 @@ function ModalChavePix({
             </Pressable>
           </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

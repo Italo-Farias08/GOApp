@@ -10,6 +10,7 @@ const enderecoRotas = require('./rotas/enderecoRotas');
 const rotaRotas = require('./rotas/rotaRotas');
 const saqueRotas = require('./rotas/saqueRotas');
 const { tratadorErros } = require('./intermediarios/tratadorErros');
+const { limitadorGeral } = require('./intermediarios/limitadorTaxa');
 
 const app = express();
 
@@ -22,6 +23,9 @@ app.use(cors({
 }));
 app.use(express.json());
 app.use(morgan('dev'));
+// Rate limit geral em tudo — cada rota sensível (login, código de
+// verificação, admin) ainda tem o próprio limite mais apertado por cima.
+app.use(limitadorGeral);
 
 // Rota simples pra checar se o servidor está no ar
 app.get('/saude', (req, res) => {
