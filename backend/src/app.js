@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
 const morgan = require('morgan');
 
 const autenticacaoRotas = require('./rotas/autenticacaoRotas');
@@ -18,6 +19,17 @@ const origensPermitidas = (process.env.ORIGENS_PERMITIDAS || '*')
   .split(',')
   .map((origem) => origem.trim());
 
+// Em produção, deixar CORS aberto (*) pra qualquer site chamar sua API é um
+// risco real — qualquer página poderia bater nas suas rotas usando o token
+// de quem estiver logado. Isso só é aceitável em desenvolvimento.
+if (origensPermitidas.includes('*') && process.env.NODE_ENV === 'production') {
+  console.warn(
+    '[AVISO] ORIGENS_PERMITIDAS não configurado em produção — CORS está aberto pra ' +
+    'qualquer origem. Configure essa variável no Railway com o domínio real do app.'
+  );
+}
+
+app.use(helmet());
 app.use(cors({
   origin: origensPermitidas.includes('*') ? '*' : origensPermitidas,
 }));
