@@ -8,6 +8,7 @@ const corridaRotas = require('./rotas/corridaRotas');
 const pagamentoRotas = require('./rotas/pagamentoRotas');
 const enderecoRotas = require('./rotas/enderecoRotas');
 const rotaRotas = require('./rotas/rotaRotas');
+const saqueRotas = require('./rotas/saqueRotas');
 const { tratadorErros } = require('./intermediarios/tratadorErros');
 
 const app = express();
@@ -27,29 +28,13 @@ app.get('/saude', (req, res) => {
   res.json({ status: 'ok' });
 });
 
-app.get('/teste-pix', async (req, res) => {
-  const mercadoPago = require('./utilitarios/mercadoPago');
-  try {
-    const resultado = await mercadoPago.criarPagamentoPix({
-      valor: 10.5,
-      descricao: 'Teste manual Pix',
-      emailPagador: 'italo.farias1wi@gmail.com',
-      referenciaExterna: 'teste-manual',
-      idempotencyKey: require('crypto').randomUUID(),
-      cpfPagador: '16831274471',
-    });
-    res.json({ ok: true, resultado });
-  } catch (erro) {
-    res.status(500).json({ ok: false, mensagem: erro.message, statusCode: erro.statusCode });
-  }
-});
-
 app.use('/auth', autenticacaoRotas);
 app.use('/driver', motoristaRotas);
 app.use('/rides', corridaRotas);
 app.use('/payments', pagamentoRotas);
 app.use('/addresses', enderecoRotas);
 app.use('/routing', rotaRotas);
+app.use('/payouts', saqueRotas);
 
 // Rota não encontrada
 app.use((req, res) => {

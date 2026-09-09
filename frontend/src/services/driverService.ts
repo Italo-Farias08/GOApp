@@ -91,10 +91,32 @@ export async function updateVehicle(payload: VehicleUpdatePayload): Promise<Driv
 // outro caso cai no catch da tela como "não é motoboy".
 export async function fetchTodaySummary(): Promise<ResumoMotoboyHoje> {
   if (USE_MOCK) {
-    return mockDelay<ResumoMotoboyHoje>({ corridasHoje: 0, valorHoje: 0, saldoAReceber: 0 });
+    return mockDelay<ResumoMotoboyHoje>({
+      corridasHoje: 0,
+      valorHoje: 0,
+      saldoAReceber: 0,
+      chavePixCadastrada: false,
+    });
   }
 
   // Formato esperado do backend: GET /driver/today-summary -> ResumoMotoboyHoje
   const { data } = await api.get<ResumoMotoboyHoje>('/driver/today-summary');
+  return data;
+}
+
+export type ChavePixTipo = 'EMAIL' | 'PHONE' | 'CPF' | 'CNPJ' | 'PIX_CODE';
+
+// Cadastra/atualiza a chave Pix do motorista, pra onde os saques vão.
+export async function updatePixKey(payload: {
+  chavePix: string;
+  chavePixTipo: ChavePixTipo;
+  cpf: string;
+}): Promise<void> {
+  await api.put('/payouts/chave-pix', payload);
+}
+
+// Transfere o saldo_a_receber do motorista pra chave Pix já cadastrada.
+export async function withdrawBalance(): Promise<{ ok: boolean; valorTransferido: number }> {
+  const { data } = await api.post<{ ok: boolean; valorTransferido: number }>('/payouts/sacar');
   return data;
 }

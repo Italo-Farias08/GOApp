@@ -157,7 +157,11 @@ async function resumoHoje(req, res, next) {
     // não pagaram em corridas dele, e depois pagaram numa corrida com outro
     // motorista) — creditado em dividaModelo.quitar, mostrado aqui separado
     // do que ele ganhou hoje pra não confundir os dois valores.
-    return res.json({ ...resumo, saldoAReceber: Number(usuario.saldo_a_receber || 0) });
+    return res.json({
+      ...resumo,
+      saldoAReceber: Number(usuario.saldo_a_receber || 0),
+      chavePixCadastrada: Boolean(usuario.chave_pix && usuario.chave_pix_tipo && usuario.cpf),
+    });
   } catch (erro) {
     next(erro);
   }

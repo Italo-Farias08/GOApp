@@ -2,17 +2,21 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Image,
+  Modal,
   Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { AlertIcon, ChevronLeftIcon, HistoryIcon, MoneyIcon, MotoIcon } from '../components/icons';
 import { useAuth } from '../context/AuthContext';
 import * as driverService from '../services/driverService';
+import type { ChavePixTipo } from '../services/driverService';
 import { colors, radius, spacing, typography } from '../theme/theme';
 import type { ResumoMotoboyHoje, RootStackParamList } from '../types';
 
@@ -106,7 +110,7 @@ export default function MotoboyPanelScreen({ navigation }: Props) {
             </Pressable>
           </View>
         ) : (
-          <ResumoMotoboy resumo={resumo} />
+          <ResumoMotoboy resumo={resumo} onAtualizar={() => carregarResumo(false)} />
         )}
       </ScrollView>
     </View>
@@ -141,9 +145,40 @@ function NaoEhMotoboyAviso() {
   );
 }
 
-function ResumoMotoboy({ resumo }: { resumo: ResumoMotoboyHoje | null }) {
+function ResumoMotoboy({
+  resumo,
+  onAtualizar,
+}: {
+  resumo: ResumoMotoboyHoje | null;
+  onAtualizar: () => void;
+}) {
   const valorFormatado = formatarMoeda(resumo?.valorHoje ?? 0);
   const saldoAReceber = resumo?.saldoAReceber ?? 0;
+  const chavePixCadastrada = resumo?.chavePixCadastrada ?? false;
+
+  const [modalAberto, setModalAberto] = useState(false);
+  const [sacando, setSacando] = useState(false);
+
+  async function handleReceber() {
+    if (!chavePixCadastrada) {
+      setModalAberto(true);
+      return;
+    }
+
+    setSacando(true);
+    try {
+      const resultado = await driverService.withdrawBalance();
+      Alert.alert(
+        'Pix enviado!',
+        `${formatarMoeda(resultado.valorTransferido)} foram transferidos pra sua chave Pix.`
+      );
+      onAtualizar();
+    } catch (err: any) {
+      Alert.alert('Não deu pra sacar', err?.response?.data?.message ?? err?.message ?? 'Tenta de novo em instantes.');
+    } finally {
+      setSacando(false);
+    }
+  }
 
   return (
     <View style={styles.resumoWrap}>
@@ -169,14 +204,29 @@ function ResumoMotoboy({ resumo }: { resumo: ResumoMotoboyHoje | null }) {
 
       {saldoAReceber > 0 && (
         <View style={styles.saldoCard}>
-          <MoneyIcon size={18} color={colors.primary} strokeWidth={1.8} />
-          <View style={styles.saldoTextos}>
-            <Text style={styles.saldoValor}>{formatarMoeda(saldoAReceber)}</Text>
-            <Text style={styles.saldoLabel}>
-              Referente a corridas antigas que não foram pagas na hora — o passageiro quitou
-              numa corrida mais recente e esse valor caiu pra você.
-            </Text>
+          <View style={styles.saldoTopoLinha}>
+            <MoneyIcon size={18} color={colors.primary} strokeWidth={1.8} />
+            <View style={styles.saldoTextos}>
+              <Text style={styles.saldoValor}>{formatarMoeda(saldoAReceber)}</Text>
+              <Text style={styles.saldoLabel}>
+                Referente a corridas antigas que não foram pagas na hora — o passageiro quitou
+                numa corrida mais recente e esse valor caiu pra você.
+              </Text>
+            </View>
           </View>
+          <Pressable
+            style={[styles.receberBotao, sacando && styles.receberBotaoDesabilitado]}
+            onPress={handleReceber}
+            disabled={sacando}
+          >
+            {sacando ? (
+              <ActivityIndicator color={colors.background} size="small" />
+            ) : (
+              <Text style={styles.receberBotaoTexto}>
+                {chavePixCadastrada ? 'Receber agora' : 'Cadastrar chave Pix'}
+              </Text>
+            )}
+          </Pressable>
         </View>
       )}
 
@@ -184,7 +234,124 @@ function ResumoMotoboy({ resumo }: { resumo: ResumoMotoboyHoje | null }) {
         O resumo considera só as corridas já finalizadas hoje. Puxe a tela pra baixo pra
         atualizar.
       </Text>
+
+      <ModalChavePix
+        visivel={modalAberto}
+        onFechar={() => setModalAberto(false)}
+        onSalvo={() => {
+          setModalAberto(false);
+          onAtualizar();
+        }}
+      />
     </View>
+  );
+}
+
+const TIPOS_CHAVE: { valor: ChavePixTipo; rotulo: string }[] = [
+  { valor: 'CPF', rotulo: 'CPF' },
+  { valor: 'EMAIL', rotulo: 'E-mail' },
+  { valor: 'PHONE', rotulo: 'Telefone' },
+  { valor: 'CNPJ', rotulo: 'CNPJ' },
+  { valor: 'PIX_CODE', rotulo: 'Chave aleatória' },
+];
+
+function ModalChavePix({
+  visivel,
+  onFechar,
+  onSalvo,
+}: {
+  visivel: boolean;
+  onFechar: () => void;
+  onSalvo: () => void;
+}) {
+  const [tipo, setTipo] = useState<ChavePixTipo>('CPF');
+  const [chave, setChave] = useState('');
+  const [cpf, setCpf] = useState('');
+  const [salvando, setSalvando] = useState(false);
+
+  async function handleSalvar() {
+    if (!chave.trim() || !cpf.trim()) {
+      Alert.alert('Faltou algo', 'Preenche a chave Pix e o CPF do titular da conta.');
+      return;
+    }
+
+    setSalvando(true);
+    try {
+      await driverService.updatePixKey({ chavePix: chave.trim(), chavePixTipo: tipo, cpf: cpf.trim() });
+      onSalvo();
+    } catch (err: any) {
+      Alert.alert('Não deu pra salvar', err?.response?.data?.message ?? err?.message ?? 'Tenta de novo.');
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  return (
+    <Modal visible={visivel} animationType="slide" transparent onRequestClose={onFechar}>
+      <View style={styles.modalFundo}>
+        <View style={styles.modalConteudo}>
+          <Text style={styles.modalTitulo}>Cadastrar chave Pix</Text>
+          <Text style={styles.modalSubtitulo}>
+            É pra onde seus saques vão cair. Só precisa fazer isso uma vez.
+          </Text>
+
+          <View style={styles.tiposLinha}>
+            {TIPOS_CHAVE.map((item) => (
+              <Pressable
+                key={item.valor}
+                style={[styles.tipoChip, tipo === item.valor && styles.tipoChipSelecionado]}
+                onPress={() => setTipo(item.valor)}
+              >
+                <Text
+                  style={[
+                    styles.tipoChipTexto,
+                    tipo === item.valor && styles.tipoChipTextoSelecionado,
+                  ]}
+                >
+                  {item.rotulo}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+
+          <TextInput
+            style={styles.modalInput}
+            placeholder="Sua chave Pix"
+            placeholderTextColor={colors.textSecondary}
+            value={chave}
+            onChangeText={setChave}
+            autoCapitalize="none"
+          />
+
+          <TextInput
+            style={styles.modalInput}
+            placeholder="CPF do titular (só números)"
+            placeholderTextColor={colors.textSecondary}
+            value={cpf}
+            onChangeText={setCpf}
+            keyboardType="number-pad"
+            maxLength={11}
+          />
+
+          <View style={styles.modalBotoesLinha}>
+            <Pressable style={styles.modalBotaoSecundario} onPress={onFechar} disabled={salvando}>
+              <Text style={styles.modalBotaoSecundarioTexto}>Cancelar</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.modalBotaoPrimario, salvando && styles.receberBotaoDesabilitado]}
+              onPress={handleSalvar}
+              disabled={salvando}
+            >
+              {salvando ? (
+                <ActivityIndicator color={colors.background} size="small" />
+              ) : (
+                <Text style={styles.modalBotaoPrimarioTexto}>Salvar</Text>
+              )}
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -308,8 +475,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   saldoCard: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
     borderWidth: 1,
@@ -317,6 +482,114 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     marginTop: spacing.md,
     width: '100%',
+  },
+  saldoTopoLinha: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  receberBotao: {
+    marginTop: spacing.md,
+    backgroundColor: colors.primary,
+    borderRadius: radius.md,
+    paddingVertical: spacing.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  receberBotaoDesabilitado: {
+    opacity: 0.6,
+  },
+  receberBotaoTexto: {
+    ...typography.body,
+    color: colors.background,
+    fontWeight: '600',
+  },
+  modalFundo: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalConteudo: {
+    backgroundColor: colors.background,
+    borderTopLeftRadius: radius.lg,
+    borderTopRightRadius: radius.lg,
+    padding: spacing.lg,
+  },
+  modalTitulo: {
+    ...typography.h2,
+    fontSize: 18,
+    color: colors.text,
+  },
+  modalSubtitulo: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginTop: spacing.xs,
+    marginBottom: spacing.md,
+  },
+  tiposLinha: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+    marginBottom: spacing.md,
+  },
+  tipoChip: {
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  tipoChipSelecionado: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  tipoChipTexto: {
+    ...typography.caption,
+    color: colors.text,
+  },
+  tipoChipTextoSelecionado: {
+    color: colors.background,
+    fontWeight: '600',
+  },
+  modalInput: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    marginBottom: spacing.sm,
+    color: colors.text,
+    ...typography.body,
+  },
+  modalBotoesLinha: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  modalBotaoSecundario: {
+    flex: 1,
+    paddingVertical: spacing.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  modalBotaoSecundarioTexto: {
+    ...typography.body,
+    color: colors.text,
+  },
+  modalBotaoPrimario: {
+    flex: 1,
+    paddingVertical: spacing.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.md,
+    backgroundColor: colors.primary,
+  },
+  modalBotaoPrimarioTexto: {
+    ...typography.body,
+    color: colors.background,
+    fontWeight: '600',
   },
   saldoTextos: {
     flex: 1,

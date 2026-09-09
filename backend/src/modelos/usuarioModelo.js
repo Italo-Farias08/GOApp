@@ -107,6 +107,50 @@ async function atualizarStatusMotorista(id, status) {
   return resultado.rows[0];
 }
 
+async function atualizarChavePix(id, { chavePix, chavePixTipo, cpf }) {
+  const resultado = await consultar(
+    `UPDATE usuarios SET
+       chave_pix = $2,
+       chave_pix_tipo = $3,
+       cpf = $4,
+       atualizado_em = NOW()
+     WHERE id = $1
+     RETURNING *`,
+    [id, chavePix, chavePixTipo, cpf]
+  );
+  return resultado.rows[0];
+}
+
+// Zera o saldo_a_receber do usuário de forma atômica e devolve o valor que
+// havia ANTES de zerar. Usa isso pra evitar que dois cliques no botão
+// "Receber" disparem duas transferências: o segundo clique sempre vê o
+// saldo já em 0 e nem chega a chamar o Mercado Pago.
+async function zerarSaldoAReceber(id) {
+  const resultado = await consultar(
+    `WITH antes AS (
+       SELECT saldo_a_receber FROM usuarios WHERE id = $1 FOR UPDATE
+     )
+     UPDATE usuarios SET saldo_a_receber = 0, atualizado_em = NOW()
+     FROM antes
+     WHERE usuarios.id = $1
+     RETURNING antes.saldo_a_receber AS saldo_anterior`,
+    [id]
+  );
+  return resultado.rows[0];
+}
+
+// Se a transferência falhar DEPOIS de já termos zerado o saldo, devolve o
+// valor pro usuário (não pode simplesmente sumir com o dinheiro dele).
+async function devolverSaldoAReceber(id, valor) {
+  const resultado = await consultar(
+    `UPDATE usuarios SET saldo_a_receber = saldo_a_receber + $2, atualizado_em = NOW()
+     WHERE id = $1
+     RETURNING *`,
+    [id, valor]
+  );
+  return resultado.rows[0];
+}
+
 module.exports = {
   paraUsuarioPublico,
   buscarPorEmail,
@@ -118,4 +162,7 @@ module.exports = {
   definirCodigoVerificacao,
   marcarEmailVerificado,
   atualizarStatusMotorista,
+  atualizarChavePix,
+  zerarSaldoAReceber,
+  devolverSaldoAReceber,
 };
