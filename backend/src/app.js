@@ -27,17 +27,16 @@ app.get('/saude', (req, res) => {
   res.json({ status: 'ok' });
 });
 
-// TEMPORÁRIO — só pra debugar o erro do Pix. Remove depois.
 app.get('/teste-pix', async (req, res) => {
   const mercadoPago = require('./utilitarios/mercadoPago');
   try {
     const resultado = await mercadoPago.criarPagamentoPix({
       valor: 10.5,
       descricao: 'Teste manual Pix',
-      emailPagador: 'testuser994276180976866424@testuser.com',
+      emailPagador: 'italo.farias1wi@gmail.com',
       referenciaExterna: 'teste-manual',
       idempotencyKey: require('crypto').randomUUID(),
-      cpfPagador: '19119119100',
+      cpfPagador: '16831274471',
     });
     res.json({ ok: true, resultado });
   } catch (erro) {
