@@ -11,9 +11,9 @@ const FORMAS_PAGAMENTO_VALIDAS = ['dinheiro', 'pix', 'pix_prepago'];
 // direta (POST /rides, pra dinheiro/Pix na mão) quanto na criação da
 // cobrança Pix pré-pago (POST /payments/pix), já que os dois recebem
 // basicamente o mesmo payload.
-// O Asaas não aceita cobrança Pix abaixo desse valor — sem essa checagem
-// aqui, a corrida nasceria normal e só ia quebrar (com erro feio do Asaas)
-// na hora de gerar o QR code pra pagar ou pra finalizar.
+// O Mercado Pago não aceita cobrança Pix abaixo desse valor — sem essa
+// checagem aqui, a corrida nasceria normal e só ia quebrar (com erro feio
+// do Mercado Pago) na hora de gerar o QR code pra pagar ou pra finalizar.
 const VALOR_MINIMO_CORRIDA = 5;
 
 function validarDadosCorrida({ origem, destino, tipoVeiculo, preco, distanciaKm, duracaoMin, formaPagamento }) {

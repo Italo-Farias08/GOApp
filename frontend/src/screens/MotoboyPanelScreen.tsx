@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   Image,
   KeyboardAvoidingView,
   Modal,
@@ -17,16 +18,14 @@ import {
 } from 'react-native';
 import {
   AlertIcon,
+  CheckIcon,
   ChevronLeftIcon,
-  EditIcon,
   HistoryIcon,
   MoneyIcon,
   MotoIcon,
-  PixIcon,
 } from '../components/icons';
 import { useAuth } from '../context/AuthContext';
 import * as driverService from '../services/driverService';
-import type { ChavePixTipo } from '../services/driverService';
 import { colors, radius, spacing, typography } from '../theme/theme';
 import type { ResumoMotoboyHoje, RootStackParamList } from '../types';
 
@@ -165,36 +164,20 @@ function ResumoMotoboy({
   const saldoAReceber = resumo?.saldoAReceber ?? 0;
   const saldoFormatado = formatarMoeda(saldoAReceber);
   const comissaoFormatada = formatarMoeda(resumo?.comissaoHoje ?? 0);
-  const chavePixCadastrada = resumo?.chavePixCadastrada ?? false;
 
-  const [modalAberto, setModalAberto] = useState(false);
-  const [sacando, setSacando] = useState(false);
+  const [modalSaqueAberto, setModalSaqueAberto] = useState(false);
+  const [modalSucessoAberto, setModalSucessoAberto] = useState(false);
+  const [valorSacado, setValorSacado] = useState(0);
 
-  const valoresChaveAtual = {
-    chavePix: resumo?.chavePix ?? null,
-    chavePixTipo: resumo?.chavePixTipo ?? null,
-    cpf: resumo?.cpf ?? null,
-  };
+  function handleAbrirSaque() {
+    setModalSaqueAberto(true);
+  }
 
-  async function handleReceber() {
-    if (!chavePixCadastrada) {
-      setModalAberto(true);
-      return;
-    }
-
-    setSacando(true);
-    try {
-      const resultado = await driverService.withdrawBalance();
-      Alert.alert(
-        'Pix enviado!',
-        `${formatarMoeda(resultado.valorTransferido)} foram transferidos pra sua chave Pix.`
-      );
-      onAtualizar();
-    } catch (err: any) {
-      Alert.alert('Não deu pra sacar', err?.response?.data?.message ?? err?.message ?? 'Tenta de novo em instantes.');
-    } finally {
-      setSacando(false);
-    }
+  function handleSaqueSolicitado(valor: number) {
+    setModalSaqueAberto(false);
+    setValorSacado(valor);
+    setModalSucessoAberto(true);
+    onAtualizar();
   }
 
   return (
@@ -222,13 +205,6 @@ function ResumoMotoboy({
         </View>
       </View>
 
-      <ChavePixCard
-        cadastrada={chavePixCadastrada}
-        tipo={resumo?.chavePixTipo ?? null}
-        valor={resumo?.chavePix ?? null}
-        onEditar={() => setModalAberto(true)}
-      />
-
       {saldoAReceber > 0 && (
         <View style={styles.saldoCard}>
           <View style={styles.saldoTopoLinha}>
@@ -242,18 +218,8 @@ function ResumoMotoboy({
               </Text>
             </View>
           </View>
-          <Pressable
-            style={[styles.receberBotao, sacando && styles.receberBotaoDesabilitado]}
-            onPress={handleReceber}
-            disabled={sacando}
-          >
-            {sacando ? (
-              <ActivityIndicator color={colors.background} size="small" />
-            ) : (
-              <Text style={styles.receberBotaoTexto}>
-                {chavePixCadastrada ? 'Receber agora' : 'Cadastrar chave Pix'}
-              </Text>
-            )}
+          <Pressable style={styles.receberBotao} onPress={handleAbrirSaque}>
+            <Text style={styles.receberBotaoTexto}>Solicitar Saque</Text>
           </Pressable>
         </View>
       )}
@@ -263,135 +229,79 @@ function ResumoMotoboy({
         atualizar.
       </Text>
 
-      <ModalChavePix
-        visivel={modalAberto}
-        valoresIniciais={valoresChaveAtual}
-        onFechar={() => setModalAberto(false)}
-        onSalvo={() => {
-          setModalAberto(false);
-          onAtualizar();
-        }}
+      <ModalSolicitarSaque
+        visivel={modalSaqueAberto}
+        saldoDisponivel={saldoAReceber}
+        onFechar={() => setModalSaqueAberto(false)}
+        onSolicitado={handleSaqueSolicitado}
+      />
+
+      <ModalSucessoSaque
+        visivel={modalSucessoAberto}
+        valor={valorSacado}
+        onFechar={() => setModalSucessoAberto(false)}
       />
     </View>
   );
 }
 
-const ROTULO_TIPO: Record<string, string> = {
-  CPF: 'CPF',
-  EMAIL: 'E-mail',
-  PHONE: 'Telefone',
-  CNPJ: 'CNPJ',
-  PIX_CODE: 'Chave aleatória',
-};
-
-// Card fixo mostrando a chave Pix cadastrada (ou o convite pra cadastrar),
-// com botão de editar sempre visível — assim o motorista consegue corrigir
-// uma chave digitada errada sem precisar cair no fluxo de saque primeiro.
-function ChavePixCard({
-  cadastrada,
-  tipo,
-  valor,
-  onEditar,
-}: {
-  cadastrada: boolean;
-  tipo: ChavePixTipo | null;
-  valor: string | null;
-  onEditar: () => void;
-}) {
-  return (
-    <View style={styles.pixCard}>
-      <View style={styles.pixCardTopo}>
-        <View style={styles.pixCardIconeWrap}>
-          <PixIcon size={18} color={colors.primary} strokeWidth={1.8} />
-        </View>
-        <Text style={styles.pixCardTitulo}>Chave Pix</Text>
-        <Pressable
-          style={styles.pixEditarBotao}
-          onPress={onEditar}
-          hitSlop={8}
-          accessibilityLabel={cadastrada ? 'Editar chave Pix' : 'Cadastrar chave Pix'}
-        >
-          <EditIcon size={14} color={colors.primary} strokeWidth={1.9} />
-          <Text style={styles.pixEditarBotaoTexto}>{cadastrada ? 'Editar' : 'Cadastrar'}</Text>
-        </Pressable>
-      </View>
-
-      {cadastrada && valor ? (
-        <View style={styles.pixValorLinha}>
-          {tipo && (
-            <View style={styles.pixTipoChip}>
-              <Text style={styles.pixTipoChipTexto}>{ROTULO_TIPO[tipo] ?? tipo}</Text>
-            </View>
-          )}
-          <Text style={styles.pixValorTexto} numberOfLines={1} ellipsizeMode="middle">
-            {valor}
-          </Text>
-        </View>
-      ) : (
-        <Text style={styles.pixVazioTexto}>
-          Nenhuma chave cadastrada ainda. É pra onde seus saques vão cair.
-        </Text>
-      )}
-    </View>
-  );
-}
-
-const TIPOS_CHAVE: { valor: ChavePixTipo; rotulo: string }[] = [
-  { valor: 'CPF', rotulo: 'CPF' },
-  { valor: 'EMAIL', rotulo: 'E-mail' },
-  { valor: 'PHONE', rotulo: 'Telefone' },
-  { valor: 'CNPJ', rotulo: 'CNPJ' },
-  { valor: 'PIX_CODE', rotulo: 'Chave aleatória' },
-];
-
-function ModalChavePix({
+// Modal onde o motorista digita quanto quer sacar e o CPF de quem vai
+// receber. Ao confirmar, só registra o PEDIDO (não transfere nada na
+// hora) — por isso não pede chave Pix nenhuma aqui, só o CPF.
+function ModalSolicitarSaque({
   visivel,
+  saldoDisponivel,
   onFechar,
-  onSalvo,
-  valoresIniciais,
+  onSolicitado,
 }: {
   visivel: boolean;
+  saldoDisponivel: number;
   onFechar: () => void;
-  onSalvo: () => void;
-  valoresIniciais?: {
-    chavePix: string | null;
-    chavePixTipo: ChavePixTipo | null;
-    cpf: string | null;
-  };
+  onSolicitado: (valor: number) => void;
 }) {
-  const jaTinhaChave = Boolean(valoresIniciais?.chavePix);
+  const [valor, setValor] = useState('');
+  const [cpf, setCpf] = useState('');
+  const [enviando, setEnviando] = useState(false);
 
-  const [tipo, setTipo] = useState<ChavePixTipo>(valoresIniciais?.chavePixTipo ?? 'CPF');
-  const [chave, setChave] = useState(valoresIniciais?.chavePix ?? '');
-  const [cpf, setCpf] = useState(valoresIniciais?.cpf ?? '');
-  const [salvando, setSalvando] = useState(false);
-
-  // Toda vez que o modal abre, repopula com o que está cadastrado agora —
-  // sem isso, editar duas vezes seguidas mostraria dados de uma edição
-  // anterior em vez do que está salvo de fato.
+  // Toda vez que o modal abre, começa limpo — evita mostrar um valor/CPF
+  // de um pedido anterior já enviado.
   useEffect(() => {
     if (visivel) {
-      setTipo(valoresIniciais?.chavePixTipo ?? 'CPF');
-      setChave(valoresIniciais?.chavePix ?? '');
-      setCpf(valoresIniciais?.cpf ?? '');
+      setValor('');
+      setCpf('');
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visivel]);
 
-  async function handleSalvar() {
-    if (!chave.trim() || !cpf.trim()) {
-      Alert.alert('Faltou algo', 'Preenche a chave Pix e o CPF do titular da conta.');
+  async function handleConfirmar() {
+    const valorNumero = Number(valor.replace(',', '.'));
+
+    if (!valorNumero || valorNumero <= 0) {
+      Alert.alert('Faltou algo', 'Digite o valor que você quer sacar.');
+      return;
+    }
+    if (valorNumero > saldoDisponivel) {
+      Alert.alert('Valor muito alto', 'Esse valor é maior que o seu saldo disponível.');
+      return;
+    }
+    if (cpf.trim().length !== 11) {
+      Alert.alert('Faltou algo', 'Digite o CPF (só números) de quem vai receber o saque.');
       return;
     }
 
-    setSalvando(true);
+    setEnviando(true);
     try {
-      await driverService.updatePixKey({ chavePix: chave.trim(), chavePixTipo: tipo, cpf: cpf.trim() });
-      onSalvo();
+      const solicitacao = await driverService.requestWithdraw({
+        valor: valorNumero,
+        cpf: cpf.trim(),
+      });
+      onSolicitado(solicitacao.valor);
     } catch (err: any) {
-      Alert.alert('Não deu pra salvar', err?.response?.data?.message ?? err?.message ?? 'Tenta de novo.');
+      Alert.alert(
+        'Não deu pra solicitar',
+        err?.response?.data?.message ?? err?.message ?? 'Tenta de novo em instantes.'
+      );
     } finally {
-      setSalvando(false);
+      setEnviando(false);
     }
   }
 
@@ -402,46 +312,24 @@ function ModalChavePix({
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         <View style={styles.modalConteudo}>
-          <Text style={styles.modalTitulo}>
-            {jaTinhaChave ? 'Editar chave Pix' : 'Cadastrar chave Pix'}
-          </Text>
+          <Text style={styles.modalTitulo}>Solicitar saque</Text>
           <Text style={styles.modalSubtitulo}>
-            {jaTinhaChave
-              ? 'Corrige aqui se algum dado foi digitado errado. É pra onde seus saques caem.'
-              : 'É pra onde seus saques vão cair. Só precisa fazer isso uma vez.'}
+            Saldo disponível: {formatarMoeda(saldoDisponivel)}. Seu pedido é enviado pra gente
+            processar o pagamento.
           </Text>
-
-          <View style={styles.tiposLinha}>
-            {TIPOS_CHAVE.map((item) => (
-              <Pressable
-                key={item.valor}
-                style={[styles.tipoChip, tipo === item.valor && styles.tipoChipSelecionado]}
-                onPress={() => setTipo(item.valor)}
-              >
-                <Text
-                  style={[
-                    styles.tipoChipTexto,
-                    tipo === item.valor && styles.tipoChipTextoSelecionado,
-                  ]}
-                >
-                  {item.rotulo}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
 
           <TextInput
             style={styles.modalInput}
-            placeholder="Sua chave Pix"
+            placeholder="Valor do saque (ex: 50,00)"
             placeholderTextColor={colors.textSecondary}
-            value={chave}
-            onChangeText={setChave}
-            autoCapitalize="none"
+            value={valor}
+            onChangeText={setValor}
+            keyboardType="decimal-pad"
           />
 
           <TextInput
             style={styles.modalInput}
-            placeholder="CPF do titular (só números)"
+            placeholder="CPF de quem vai receber (só números)"
             placeholderTextColor={colors.textSecondary}
             value={cpf}
             onChangeText={setCpf}
@@ -450,23 +338,68 @@ function ModalChavePix({
           />
 
           <View style={styles.modalBotoesLinha}>
-            <Pressable style={styles.modalBotaoSecundario} onPress={onFechar} disabled={salvando}>
+            <Pressable style={styles.modalBotaoSecundario} onPress={onFechar} disabled={enviando}>
               <Text style={styles.modalBotaoSecundarioTexto}>Cancelar</Text>
             </Pressable>
             <Pressable
-              style={[styles.modalBotaoPrimario, salvando && styles.receberBotaoDesabilitado]}
-              onPress={handleSalvar}
-              disabled={salvando}
+              style={[styles.modalBotaoPrimario, enviando && styles.receberBotaoDesabilitado]}
+              onPress={handleConfirmar}
+              disabled={enviando}
             >
-              {salvando ? (
+              {enviando ? (
                 <ActivityIndicator color={colors.background} size="small" />
               ) : (
-                <Text style={styles.modalBotaoPrimarioTexto}>Salvar</Text>
+                <Text style={styles.modalBotaoPrimarioTexto}>Confirmar</Text>
               )}
             </Pressable>
           </View>
         </View>
       </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+// Modal animado de confirmação — aparece depois que o pedido de saque foi
+// enviado, avisando que o valor cai em até 3 horas úteis.
+function ModalSucessoSaque({
+  visivel,
+  valor,
+  onFechar,
+}: {
+  visivel: boolean;
+  valor: number;
+  onFechar: () => void;
+}) {
+  const escala = useState(() => new Animated.Value(0))[0];
+
+  useEffect(() => {
+    if (visivel) {
+      escala.setValue(0);
+      Animated.spring(escala, {
+        toValue: 1,
+        friction: 5,
+        tension: 60,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [visivel, escala]);
+
+  return (
+    <Modal visible={visivel} animationType="fade" transparent onRequestClose={onFechar}>
+      <View style={styles.sucessoFundo}>
+        <View style={styles.sucessoConteudo}>
+          <Animated.View style={[styles.sucessoIconeWrap, { transform: [{ scale: escala }] }]}>
+            <CheckIcon size={36} color={colors.background} strokeWidth={2.4} />
+          </Animated.View>
+          <Text style={styles.sucessoTitulo}>Pedido enviado!</Text>
+          <Text style={styles.sucessoTexto}>
+            {formatarMoeda(valor)} serão depositados pra você em até 3 horas úteis.
+          </Text>
+          <Pressable style={styles.modalBotaoPrimario} onPress={onFechar}>
+            <Text style={styles.modalBotaoPrimarioTexto}>Entendi</Text>
+          </Pressable>
+        </View>
+      </View>
     </Modal>
   );
 }
@@ -597,79 +530,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 2,
   },
-  pixCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.md,
-    marginTop: spacing.md,
-    width: '100%',
-  },
-  pixCardTopo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  pixCardIconeWrap: {
-    width: 28,
-    height: 28,
-    borderRadius: radius.md,
-    backgroundColor: colors.background,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: spacing.xs,
-  },
-  pixCardTitulo: {
-    ...typography.bodyBold,
-    color: colors.text,
-    flex: 1,
-  },
-  pixEditarBotao: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingVertical: 6,
-    paddingHorizontal: spacing.sm,
-    borderRadius: radius.md,
-    backgroundColor: colors.background,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  pixEditarBotaoTexto: {
-    ...typography.caption,
-    color: colors.primary,
-    fontWeight: '600',
-  },
-  pixValorLinha: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: spacing.sm,
-    gap: spacing.xs,
-  },
-  pixTipoChip: {
-    paddingVertical: 3,
-    paddingHorizontal: spacing.xs,
-    borderRadius: radius.sm,
-    backgroundColor: colors.background,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  pixTipoChipTexto: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    fontSize: 11,
-  },
-  pixValorTexto: {
-    ...typography.body,
-    color: colors.text,
-    flexShrink: 1,
-  },
-  pixVazioTexto: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    marginTop: spacing.sm,
-    lineHeight: 16,
-  },
   saldoCard: {
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
@@ -720,31 +580,6 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: spacing.xs,
     marginBottom: spacing.md,
-  },
-  tiposLinha: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.xs,
-    marginBottom: spacing.md,
-  },
-  tipoChip: {
-    paddingVertical: spacing.xs,
-    paddingHorizontal: spacing.sm,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  tipoChipSelecionado: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  tipoChipTexto: {
-    ...typography.caption,
-    color: colors.text,
-  },
-  tipoChipTextoSelecionado: {
-    color: colors.background,
-    fontWeight: '600',
   },
   modalInput: {
     borderWidth: 1,
@@ -808,5 +643,43 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: spacing.lg,
     lineHeight: 18,
+  },
+  sucessoFundo: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.lg,
+  },
+  sucessoConteudo: {
+    backgroundColor: colors.background,
+    borderRadius: radius.lg,
+    paddingVertical: spacing.xl,
+    paddingHorizontal: spacing.lg,
+    alignItems: 'center',
+    width: '100%',
+  },
+  sucessoIconeWrap: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.md,
+  },
+  sucessoTitulo: {
+    ...typography.h2,
+    fontSize: 20,
+    color: colors.text,
+    marginBottom: spacing.xs,
+    textAlign: 'center',
+  },
+  sucessoTexto: {
+    ...typography.body,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: spacing.lg,
   },
 });

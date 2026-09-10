@@ -97,10 +97,6 @@ export async function fetchTodaySummary(): Promise<ResumoMotoboyHoje> {
       comissaoHoje: 0,
       lucroHoje: 0,
       saldoAReceber: 0,
-      chavePixCadastrada: false,
-      chavePix: null,
-      chavePixTipo: null,
-      cpf: null,
     });
   }
 
@@ -109,19 +105,16 @@ export async function fetchTodaySummary(): Promise<ResumoMotoboyHoje> {
   return data;
 }
 
-export type ChavePixTipo = 'EMAIL' | 'PHONE' | 'CPF' | 'CNPJ' | 'PIX_CODE';
-
-// Cadastra/atualiza a chave Pix do motorista, pra onde os saques vão.
-export async function updatePixKey(payload: {
-  chavePix: string;
-  chavePixTipo: ChavePixTipo;
+// Pedido de saque: o motorista escolhe quanto quer sacar e informa o CPF de
+// quem vai receber. Isso NÃO transfere o dinheiro na hora — só registra o
+// pedido (o valor pedido em até 3 horas úteis).
+export async function requestWithdraw(payload: {
+  valor: number;
   cpf: string;
-}): Promise<void> {
-  await api.put('/payouts/chave-pix', payload);
-}
-
-// Transfere o saldo_a_receber do motorista pra chave Pix já cadastrada.
-export async function withdrawBalance(): Promise<{ ok: boolean; valorTransferido: number }> {
-  const { data } = await api.post<{ ok: boolean; valorTransferido: number }>('/payouts/sacar');
+}): Promise<{ id: string; valor: number; status: string }> {
+  const { data } = await api.post<{ id: string; valor: number; status: string }>(
+    '/payouts/sacar',
+    payload
+  );
   return data;
 }

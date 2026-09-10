@@ -95,13 +95,6 @@ export type ResumoMotoboyHoje = {
   // uma corrida dele e depois pagou numa corrida com outro motorista) —
   // vem separado de `valorHoje` pra não misturar com o ganho do dia.
   saldoAReceber: number;
-  // Se false, a tela precisa pedir a chave Pix antes de deixar sacar.
-  chavePixCadastrada: boolean;
-  // Dados da chave já cadastrada, pra tela mostrar e permitir editar sem o
-  // motorista ter que redigitar tudo. Vêm null quando ainda não cadastrou.
-  chavePix: string | null;
-  chavePixTipo: 'EMAIL' | 'PHONE' | 'CPF' | 'CNPJ' | 'PIX_CODE' | null;
-  cpf: string | null;
 };
 
 // --- Corridas / tempo real ---
