@@ -151,6 +151,22 @@ async function devolverSaldoAReceber(id, valor) {
   return resultado.rows[0];
 }
 
+// Ajusta o saldo_a_receber por um valor qualquer (positivo ou negativo) —
+// usado pela comissão da plataforma: soma o líquido de corridas pagas por
+// Pix (a plataforma já está com o dinheiro), ou subtrai só a comissão de
+// corridas pagas em dinheiro (o motorista já embolsou o valor cheio na
+// hora, então só a taxa da plataforma vira "dívida" dele — automaticamente
+// abatida do próximo crédito de Pix que ele receber).
+async function ajustarSaldoAReceber(id, delta) {
+  const resultado = await consultar(
+    `UPDATE usuarios SET saldo_a_receber = saldo_a_receber + $2, atualizado_em = NOW()
+     WHERE id = $1
+     RETURNING *`,
+    [id, delta]
+  );
+  return resultado.rows[0];
+}
+
 module.exports = {
   paraUsuarioPublico,
   buscarPorEmail,
@@ -165,4 +181,5 @@ module.exports = {
   atualizarChavePix,
   zerarSaldoAReceber,
   devolverSaldoAReceber,
+  ajustarSaldoAReceber,
 };

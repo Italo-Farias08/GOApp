@@ -4,6 +4,7 @@ const usuarioModelo = require('../modelos/usuarioModelo');
 const pagamentoPixModelo = require('../modelos/pagamentoPixModelo');
 const corridaServico = require('../servicos/corridaServico');
 const asaas = require('../utilitarios/asaas');
+const comissaoServico = require('../servicos/comissaoServico');
 const { ErroHttp } = require('../intermediarios/tratadorErros');
 const soquete = require('../tempoReal/servidorSoquete');
 
@@ -141,6 +142,15 @@ async function confirmarFinalizacaoSePago(pagamento) {
   const corridaFinalizada = await corridaModelo.finalizarComPixAprovado(pagamento.corrida_id);
   if (corridaFinalizada) {
     await corridaServico.quitarDividasDaCorrida(corridaFinalizada);
+
+    // Dinheiro caiu na conta da plataforma (foi Pix) — credita o motorista
+    // com o valor já líquido de comissão.
+    await comissaoServico.aplicarComissao({
+      motoristaId: corridaFinalizada.motorista_id,
+      valorCorrida: corridaFinalizada.preco,
+      foiPagoEmDinheiro: false,
+    });
+
     soquete.notificarCorridaFinalizada({
       corridaId: corridaFinalizada.id,
       passageiroId: corridaFinalizada.passageiro_id,

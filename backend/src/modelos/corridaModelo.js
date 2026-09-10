@@ -254,17 +254,39 @@ async function finalizarComPixAprovado(id) {
   return resultado.rows[0] || null;
 }
 
-// Mantida por compatibilidade — finaliza sem mexer no status de pagamento
-// (não é mais chamada pelo fluxo normal, que agora sempre passa por uma das
-// três funções acima, mas fica disponível caso algo externo dependa dela).
+// Mantida por compatibilidade — usada hoje pelo fluxo "pix_prepago" (o
+// passageiro já pagou ANTES da corrida nascer, então ao finalizar só
+// precisa fechar o ciclo, sem passar pelo modal de forma de pagamento).
+// Por isso TAMBÉM marca como paga — sem isso, essa corrida nunca contava
+// no resumo do motorista nem gerava comissão pra plataforma.
 async function finalizar(id) {
   const resultado = await consultar(
-    `UPDATE corridas SET status = 'finalizada', finalizada_em = NOW()
+    `UPDATE corridas SET
+       status = 'finalizada',
+       finalizada_em = NOW(),
+       status_pagamento = 'pago',
+       pago_em = NOW()
      WHERE id = $1 AND status = 'em_andamento'
      RETURNING *`,
     [id]
   );
   return resultado.rows[0] || null;
+}
+
+// Quantas corridas desse motorista já foram finalizadas E pagas HOJE —
+// usado pra calcular a comissão da plataforma (R$1 por corrida, até
+// R$10/dia): a 11ª corrida paga do dia em diante não cobra mais comissão.
+async function contarCorridasPagasHoje(motoristaId) {
+  const resultado = await consultar(
+    `SELECT COUNT(*)::int AS total
+     FROM corridas
+     WHERE motorista_id = $1
+       AND status = 'finalizada'
+       AND status_pagamento = 'pago'
+       AND finalizada_em::date = CURRENT_DATE`,
+    [motoristaId]
+  );
+  return Number(resultado.rows[0].total);
 }
 
 // Corridas já finalizadas (ou canceladas) que tiveram um motorista
@@ -388,6 +410,7 @@ module.exports = {
   listarFinalizadasComMotoristaPorPassageiro,
   listarFinalizadasComPassageiroPorMotorista,
   resumoHojePorMotorista,
+  contarCorridasPagasHoje,
   paraMensagemPublica,
   salvarMensagem,
   listarMensagens,

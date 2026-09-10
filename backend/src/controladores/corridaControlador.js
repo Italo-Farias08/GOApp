@@ -4,6 +4,7 @@ const motoristaModelo = require('../modelos/motoristaModelo');
 const dividaModelo = require('../modelos/dividaModelo');
 const pagamentoPixModelo = require('../modelos/pagamentoPixModelo');
 const corridaServico = require('../servicos/corridaServico');
+const comissaoServico = require('../servicos/comissaoServico');
 const asaas = require('../utilitarios/asaas');
 const { ErroHttp } = require('../intermediarios/tratadorErros');
 const soquete = require('../tempoReal/servidorSoquete');
@@ -405,6 +406,14 @@ async function finalizar(req, res, next) {
       throw new ErroHttp(409, 'Essa corrida não pode ser finalizada agora.');
     }
 
+    // Essa rota hoje só é usada pra corridas pix_prepago — o dinheiro já
+    // está na conta da plataforma desde antes da corrida começar.
+    await comissaoServico.aplicarComissao({
+      motoristaId: corridaFinalizada.motorista_id,
+      valorCorrida: corridaFinalizada.preco,
+      foiPagoEmDinheiro: false,
+    });
+
     soquete.notificarCorridaFinalizada({
       corridaId: corridaFinalizada.id,
       passageiroId: corridaFinalizada.passageiro_id,
@@ -432,6 +441,14 @@ async function finalizarComDinheiro(req, res, next) {
     }
 
     await corridaServico.quitarDividasDaCorrida(corridaFinalizada);
+
+    // Motorista já embolsou o valor cheio em espécie — só descontamos a
+    // comissão da plataforma do saldo dele.
+    await comissaoServico.aplicarComissao({
+      motoristaId: corridaFinalizada.motorista_id,
+      valorCorrida: corridaFinalizada.preco,
+      foiPagoEmDinheiro: true,
+    });
 
     soquete.notificarCorridaFinalizada({
       corridaId: corridaFinalizada.id,

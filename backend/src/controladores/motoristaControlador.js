@@ -1,6 +1,7 @@
 const usuarioModelo = require('../modelos/usuarioModelo');
 const motoristaModelo = require('../modelos/motoristaModelo');
 const corridaModelo = require('../modelos/corridaModelo');
+const comissaoServico = require('../servicos/comissaoServico');
 const { ErroHttp } = require('../intermediarios/tratadorErros');
 const soquete = require('../tempoReal/servidorSoquete');
 
@@ -153,12 +154,23 @@ async function resumoHoje(req, res, next) {
     }
 
     const resumo = await corridaModelo.resumoHojePorMotorista(req.usuarioId);
+    // Comissão da plataforma: R$1 por corrida paga, até R$10/dia — calculada
+    // aqui de forma determinística a partir da contagem de corridas (não
+    // precisa guardar por corrida no banco).
+    const comissaoHoje = Math.min(
+      resumo.corridasHoje * comissaoServico.VALOR_COMISSAO_POR_CORRIDA,
+      comissaoServico.LIMITE_COMISSAO_DIARIA
+    );
+    const lucroHoje = Number((resumo.valorHoje - comissaoHoje).toFixed(2));
+
     // Dinheiro que caiu pra ele de dívidas antigas quitadas (passageiros que
     // não pagaram em corridas dele, e depois pagaram numa corrida com outro
     // motorista) — creditado em dividaModelo.quitar, mostrado aqui separado
     // do que ele ganhou hoje pra não confundir os dois valores.
     return res.json({
       ...resumo,
+      comissaoHoje,
+      lucroHoje,
       saldoAReceber: Number(usuario.saldo_a_receber || 0),
       chavePixCadastrada: Boolean(usuario.chave_pix && usuario.chave_pix_tipo && usuario.cpf),
       // Mandados pra tela poder mostrar/editar a chave já cadastrada, sem

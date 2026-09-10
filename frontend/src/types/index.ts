@@ -86,6 +86,11 @@ export type VehicleUpdatePayload = Partial<DriverApplicationPayload>;
 export type ResumoMotoboyHoje = {
   corridasHoje: number;
   valorHoje: number;
+  // Comissão da plataforma já descontada hoje (R$1 por corrida, até R$10/dia)
+  // e o que sobra líquido pro motorista — é esse segundo valor que deve
+  // aparecer como "seu lucro hoje" na tela, não o valorHoje bruto.
+  comissaoHoje: number;
+  lucroHoje: number;
   // Dinheiro que caiu de dívidas antigas quitadas (passageiro que não pagou
   // uma corrida dele e depois pagou numa corrida com outro motorista) —
   // vem separado de `valorHoje` pra não misturar com o ganho do dia.
@@ -209,18 +214,13 @@ export type PagamentoPix = {
   id: string;
   status: StatusPagamentoPix;
   valor: number;
-  qrCode: string; // código "copia e cola"
-  qrCodeBase64: string; // imagem do QR code (PNG em base64)
-  // 'prepago'  -> gerado ANTES da corrida existir (tela do passageiro);
-  //               corridaId só vem preenchido quando status === 'aprovado'.
-  // 'pos_pago' -> gerado pelo motorista ao FINALIZAR a corrida; corridaId
-  //               já vem preenchido desde a criação.
+  qrCode: string; 
+  qrCodeBase64: string;
   tipo: 'prepago' | 'pos_pago';
   corridaId?: string;
   expiraEm: string;
 };
 
-// Tipos de navegação — adicionar novas telas aqui conforme o app crescer
 export type RootStackParamList = {
   Login: undefined;
   Register: undefined;

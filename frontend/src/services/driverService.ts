@@ -94,6 +94,8 @@ export async function fetchTodaySummary(): Promise<ResumoMotoboyHoje> {
     return mockDelay<ResumoMotoboyHoje>({
       corridasHoje: 0,
       valorHoje: 0,
+      comissaoHoje: 0,
+      lucroHoje: 0,
       saldoAReceber: 0,
       chavePixCadastrada: false,
       chavePix: null,

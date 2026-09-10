@@ -162,7 +162,8 @@ function ResumoMotoboy({
   resumo: ResumoMotoboyHoje | null;
   onAtualizar: () => void;
 }) {
-  const valorFormatado = formatarMoeda(resumo?.valorHoje ?? 0);
+  const lucroFormatado = formatarMoeda(resumo?.lucroHoje ?? 0);
+  const comissaoFormatada = formatarMoeda(resumo?.comissaoHoje ?? 0);
   const saldoAReceber = resumo?.saldoAReceber ?? 0;
   const chavePixCadastrada = resumo?.chavePixCadastrada ?? false;
 
@@ -213,8 +214,11 @@ function ResumoMotoboy({
           <View style={styles.cardIconeWrap}>
             <MoneyIcon size={22} color={colors.primary} strokeWidth={1.8} />
           </View>
-          <Text style={styles.cardValor}>{valorFormatado}</Text>
+          <Text style={styles.cardValor}>{lucroFormatado}</Text>
           <Text style={styles.cardLabel}>Lucrado hoje</Text>
+          {(resumo?.comissaoHoje ?? 0) > 0 && (
+            <Text style={styles.cardSublabel}>já descontada taxa de {comissaoFormatada}</Text>
+          )}
         </View>
       </View>
 
@@ -232,8 +236,8 @@ function ResumoMotoboy({
             <View style={styles.saldoTextos}>
               <Text style={styles.saldoValor}>{formatarMoeda(saldoAReceber)}</Text>
               <Text style={styles.saldoLabel}>
-                Referente a corridas antigas que não foram pagas na hora — o passageiro quitou
-                numa corrida mais recente e esse valor caiu pra você.
+                Saldo disponível pra sacar — corridas pagas por Pix (já com a taxa da
+                plataforma descontada) e valores de corridas antigas que caíram pra você.
               </Text>
             </View>
           </View>
@@ -361,13 +365,16 @@ function ModalChavePix({
   const [cpf, setCpf] = useState(valoresIniciais?.cpf ?? '');
   const [salvando, setSalvando] = useState(false);
 
+  // Toda vez que o modal abre, repopula com o que está cadastrado agora —
+  // sem isso, editar duas vezes seguidas mostraria dados de uma edição
+  // anterior em vez do que está salvo de fato.
   useEffect(() => {
     if (visivel) {
       setTipo(valoresIniciais?.chavePixTipo ?? 'CPF');
       setChave(valoresIniciais?.chavePix ?? '');
       setCpf(valoresIniciais?.cpf ?? '');
     }
-    
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visivel]);
 
   async function handleSalvar() {
@@ -581,6 +588,13 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.textSecondary,
     textAlign: 'center',
+  },
+  cardSublabel: {
+    ...typography.caption,
+    fontSize: 11,
+    color: colors.textMuted,
+    textAlign: 'center',
+    marginTop: 2,
   },
   pixCard: {
     backgroundColor: colors.surface,
