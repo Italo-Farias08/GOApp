@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>#GO — Pedidos de saque</title>
+<style>
+  :root {
+    --bg: #0f1113;
+    --surface: #17191c;
+    --surface-2: #1e2124;
+    --border: #2a2d31;
+    --text: #eef0f2;
+    --text-dim: #9aa0a6;
+    --accent: #ffb020;
+    --accent-dim: #4a3a17;
+    --ok: #4ade80;
+    --ok-dim: #1c3a26;
+    --danger: #f16a6a;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    min-height: 100vh;
+  }
+
+  header {
+    padding: 28px 24px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .marca {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+  }
+
+  .marca .tag {
+    font-size: 13px;
+    letter-spacing: 0.02em;
+    color: var(--accent);
+    background: var(--accent-dim);
+    padding: 3px 9px;
+    border-radius: 999px;
+    font-weight: 600;
+  }
+
+  h1 {
+    font-size: 20px;
+    margin: 0;
+    font-weight: 600;
+  }
+
+  .config {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .config input {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-size: 13px;
+    width: 280px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  .config input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+  button {
+    font-family: inherit;
+    border: none;
+    cursor: pointer;
+  }
+
+  .btn {
+    background: var(--surface-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    padding: 8px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 500;
+  }
+
+  .btn:hover { border-color: var(--accent); }
+
+  main {
+    max-width: 880px;
+    margin: 0 auto;
+    padding: 24px;
+  }
+
+  .barra-status {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+    color: var(--text-dim);
+    font-size: 13px;
+  }
+
+  .barra-status .contagem {
+    color: var(--text);
+    font-weight: 600;
+    font-size: 15px;
+  }
+
+  .lista { display: flex; flex-direction: column; gap: 10px; }
+
+  .pedido {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+
+  .pedido .info { min-width: 0; }
+
+  .pedido .nome {
+    font-weight: 600;
+    font-size: 15px;
+    margin: 0 0 4px;
+  }
+
+  .pedido .detalhes {
+    color: var(--text-dim);
+    font-size: 13px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+  }
+
+  .pedido .detalhes span { white-space: nowrap; }
+
+  .pedido .cpf {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  .pedido .valor-bloco {
+    text-align: right;
+    flex-shrink: 0;
+  }
+
+  .pedido .valor {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .pedido .marcar {
+    margin-top: 8px;
+    background: var(--ok-dim);
+    color: var(--ok);
+    padding: 7px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .pedido .marcar:hover { filter: brightness(1.15); }
+  .pedido .marcar:disabled { opacity: 0.5; cursor: default; }
+
+  .vazio, .erro, .carregando {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--text-dim);
+    font-size: 14px;
+  }
+
+  .erro { color: var(--danger); }
+
+  .toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(12px);
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 10px 18px;
+    border-radius: 10px;
+    font-size: 13px;
+    opacity: 0;
+    transition: opacity 0.2s, transform 0.2s;
+    pointer-events: none;
+  }
+
+  .toast.visivel {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="marca">
+    <span class="tag">#GO</span>
+    <h1>Pedidos de saque</h1>
+  </div>
+  <div class="config">
+    <input id="urlBase" type="text" placeholder="URL do backend, ex: https://seu-app.up.railway.app" />
+    <button class="btn" id="btnSalvarUrl">Salvar</button>
+    <button class="btn" id="btnAtualizar">Atualizar</button>
+  </div>
+</header>
+
+<main>
+  <div class="barra-status">
+    <span id="contagemTexto">—</span>
+    <span id="ultimaAtualizacao"></span>
+  </div>
+  <div class="lista" id="lista">
+    <div class="carregando">Configure a URL do backend acima pra começar.</div>
+  </div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  const CHAVE_URL = 'goapp-production-1057.up.railway.app';
+  const campoUrl = document.getElementById('urlBase');
+  const lista = document.getElementById('lista');
+  const contagemTexto = document.getElementById('contagemTexto');
+  const ultimaAtualizacao = document.getElementById('ultimaAtualizacao');
+  const toast = document.getElementById('toast');
+
+  let atualizando = false;
+
+  // Lembra a URL do backend entre uma abertura e outra do arquivo.
+  campoUrl.value = localStorage.getItem(CHAVE_URL) || '';
+
+  document.getElementById('btnSalvarUrl').addEventListener('click', () => {
+    salvarUrl();
+    carregarPedidos();
+  });
+  document.getElementById('btnAtualizar').addEventListener('click', carregarPedidos);
+
+  campoUrl.addEventListener('keydown', (evento) => {
+    if (evento.key === 'Enter') {
+      salvarUrl();
+      carregarPedidos();
+    }
+  });
+
+  function salvarUrl() {
+    const valor = campoUrl.value.trim().replace(/\/+$/, '');
+    localStorage.setItem(CHAVE_URL, valor);
+    mostrarToast('URL salva.');
+  }
+
+  function obterUrlBase() {
+    return (localStorage.getItem(CHAVE_URL) || campoUrl.value.trim()).replace(/\/+$/, '');
+  }
+
+  function mostrarToast(mensagem) {
+    toast.textContent = mensagem;
+    toast.classList.add('visivel');
+    setTimeout(() => toast.classList.remove('visivel'), 2200);
+  }
+
+  function formatarMoeda(valor) {
+    return Number(valor).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  }
+
+  function formatarQuando(iso) {
+    try {
+      return new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+    } catch {
+      return iso;
+    }
+  }
+
+  async function carregarPedidos() {
+    const base = obterUrlBase();
+    if (!base) {
+      lista.innerHTML = '<div class="carregando">Configure a URL do backend acima pra começar.</div>';
+      contagemTexto.textContent = '—';
+      return;
+    }
+    if (atualizando) return;
+    atualizando = true;
+
+    lista.innerHTML = '<div class="carregando">Carregando pedidos…</div>';
+
+    try {
+      const resposta = await fetch(`${base}/payouts/admin/pendentes`);
+      if (!resposta.ok) throw new Error(`O backend respondeu ${resposta.status}`);
+      const pedidos = await resposta.json();
+      renderizarPedidos(pedidos);
+      ultimaAtualizacao.textContent = `Atualizado às ${new Date().toLocaleTimeString('pt-BR')}`;
+    } catch (erro) {
+      lista.innerHTML = `<div class="erro">Não deu pra carregar: ${erro.message}. Confira a URL e se o backend está no ar.</div>`;
+      contagemTexto.textContent = '—';
+    } finally {
+      atualizando = false;
+    }
+  }
+
+  function renderizarPedidos(pedidos) {
+    if (!pedidos.length) {
+      contagemTexto.innerHTML = '<span class="contagem">Nenhum pedido pendente</span>';
+      lista.innerHTML = '<div class="vazio">Tudo pago — nenhum saque esperando agora.</div>';
+      return;
+    }
+
+    contagemTexto.innerHTML = `<span class="contagem">${pedidos.length}</span> pedido${pedidos.length > 1 ? 's' : ''} pendente${pedidos.length > 1 ? 's' : ''}`;
+
+    lista.innerHTML = '';
+    pedidos.forEach((pedido) => {
+      const item = document.createElement('div');
+      item.className = 'pedido';
+      item.innerHTML = `
+        <div class="info">
+          <p class="nome">${escaparHtml(pedido.motoristaNome || 'Motorista')}</p>
+          <div class="detalhes">
+            <span>${escaparHtml(pedido.motoristaTelefone || 'sem telefone')}</span>
+            <span class="cpf">CPF ${formatarCpf(pedido.cpf)}</span>
+            <span>${formatarQuando(pedido.criadoEm)}</span>
+          </div>
+        </div>
+        <div class="valor-bloco">
+          <div class="valor">${formatarMoeda(pedido.valor)}</div>
+          <button class="marcar" data-id="${pedido.id}">Marcar como pago</button>
+        </div>
+      `;
+      lista.appendChild(item);
+    });
+
+    lista.querySelectorAll('.marcar').forEach((botao) => {
+      botao.addEventListener('click', () => marcarComoPago(botao.dataset.id, botao));
+    });
+  }
+
+  async function marcarComoPago(id, botao) {
+    const base = obterUrlBase();
+    botao.disabled = true;
+    botao.textContent = 'Marcando…';
+    try {
+      const resposta = await fetch(`${base}/payouts/admin/${id}/pago`, { method: 'POST' });
+      if (!resposta.ok) throw new Error(`O backend respondeu ${resposta.status}`);
+      mostrarToast('Pedido marcado como pago.');
+      carregarPedidos();
+    } catch (erro) {
+      mostrarToast(`Não deu: ${erro.message}`);
+      botao.disabled = false;
+      botao.textContent = 'Marcar como pago';
+    }
+  }
+
+  function formatarCpf(cpf) {
+    if (!cpf || cpf.length !== 11) return cpf || '';
+    return cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+  }
+
+  function escaparHtml(texto) {
+    const div = document.createElement('div');
+    div.textContent = texto;
+    return div.innerHTML;
+  }
+
+  // Carrega sozinho ao abrir, se já tiver uma URL salva.
+  if (campoUrl.value) carregarPedidos();
+
+  // Atualiza sozinho a cada 30s, pra não precisar ficar clicando.
+  setInterval(() => { if (obterUrlBase()) carregarPedidos(); }, 30000);
+</script>
+
+</body>
+</html>

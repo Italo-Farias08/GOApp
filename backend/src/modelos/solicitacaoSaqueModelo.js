@@ -24,8 +24,8 @@ async function criar({ motoristaId, valor, cpf }) {
   return resultado.rows[0];
 }
 
-// Lista os pedidos pendentes — útil pra uma futura tela de admin, onde
-// quem administra o #GO vê e marca como pago manualmente.
+// Lista os pedidos pendentes — usado pela página de admin, onde quem
+// administra o #GO vê e marca como pago manualmente.
 async function listarPendentes() {
   const resultado = await consultar(
     `SELECT s.*, u.nome AS motorista_nome, u.telefone AS motorista_telefone
@@ -37,4 +37,31 @@ async function listarPendentes() {
   return resultado.rows;
 }
 
-module.exports = { criar, listarPendentes, paraSolicitacaoPublica };
+// Marca um pedido como pago (ou cancelado) — chamado pela página de admin
+// depois que a transferência de verdade já foi feita na mão.
+async function atualizarStatus(id, status) {
+  const resultado = await consultar(
+    `UPDATE solicitacoes_saque SET status = $2 WHERE id = $1 RETURNING *`,
+    [id, status]
+  );
+  return resultado.rows[0] || null;
+}
+
+// Formato usado na página de admin — inclui nome/telefone do motorista pra
+// quem está processando o saque saber pra quem (e por onde) falar.
+function paraSolicitacaoAdmin(linha) {
+  if (!linha) return null;
+  return {
+    ...paraSolicitacaoPublica(linha),
+    motoristaNome: linha.motorista_nome,
+    motoristaTelefone: linha.motorista_telefone,
+  };
+}
+
+module.exports = {
+  criar,
+  listarPendentes,
+  atualizarStatus,
+  paraSolicitacaoPublica,
+  paraSolicitacaoAdmin,
+};

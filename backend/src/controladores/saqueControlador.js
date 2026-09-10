@@ -48,4 +48,32 @@ async function solicitar(req, res, next) {
   }
 }
 
-module.exports = { solicitar };
+// GET /payouts/admin/pendentes
+//
+// Usado pela página de admin (sem login — ver rotas) pra listar os pedidos
+// de saque que ainda não foram pagos.
+async function listarPendentesAdmin(req, res, next) {
+  try {
+    const pedidos = await solicitacaoSaqueModelo.listarPendentes();
+    return res.json(pedidos.map(solicitacaoSaqueModelo.paraSolicitacaoAdmin));
+  } catch (erro) {
+    next(erro);
+  }
+}
+
+// POST /payouts/admin/:id/pago
+//
+// Chamado pela página de admin depois que a transferência de verdade já
+// foi feita na mão — só marca o pedido como pago, não mexe em saldo (o
+// saldo já tinha sido descontado no momento em que o motorista pediu).
+async function marcarComoPago(req, res, next) {
+  try {
+    const atualizado = await solicitacaoSaqueModelo.atualizarStatus(req.params.id, 'pago');
+    if (!atualizado) throw new ErroHttp(404, 'Pedido de saque não encontrado.');
+    return res.json(solicitacaoSaqueModelo.paraSolicitacaoPublica(atualizado));
+  } catch (erro) {
+    next(erro);
+  }
+}
+
+module.exports = { solicitar, listarPendentesAdmin, marcarComoPago };
