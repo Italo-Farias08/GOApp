@@ -11,6 +11,11 @@ const FORMAS_PAGAMENTO_VALIDAS = ['dinheiro', 'pix', 'pix_prepago'];
 // direta (POST /rides, pra dinheiro/Pix na mão) quanto na criação da
 // cobrança Pix pré-pago (POST /payments/pix), já que os dois recebem
 // basicamente o mesmo payload.
+// O Asaas não aceita cobrança Pix abaixo desse valor — sem essa checagem
+// aqui, a corrida nasceria normal e só ia quebrar (com erro feio do Asaas)
+// na hora de gerar o QR code pra pagar ou pra finalizar.
+const VALOR_MINIMO_CORRIDA = 5;
+
 function validarDadosCorrida({ origem, destino, tipoVeiculo, preco, distanciaKm, duracaoMin, formaPagamento }) {
   if (!origem?.latitude || !origem?.longitude || !destino?.latitude || !destino?.longitude) {
     throw new ErroHttp(400, 'Origem e destino são obrigatórios.');
@@ -20,6 +25,9 @@ function validarDadosCorrida({ origem, destino, tipoVeiculo, preco, distanciaKm,
   }
   if (!preco || !distanciaKm || !duracaoMin) {
     throw new ErroHttp(400, 'Preço, distância e duração são obrigatórios.');
+  }
+  if (preco < VALOR_MINIMO_CORRIDA) {
+    throw new ErroHttp(400, `O valor mínimo de uma corrida é R$${VALOR_MINIMO_CORRIDA.toFixed(2)}.`);
   }
   if (formaPagamento && !FORMAS_PAGAMENTO_VALIDAS.includes(formaPagamento)) {
     throw new ErroHttp(400, 'Forma de pagamento inválida.');
