@@ -162,9 +162,9 @@ function ResumoMotoboy({
   resumo: ResumoMotoboyHoje | null;
   onAtualizar: () => void;
 }) {
-  const lucroFormatado = formatarMoeda(resumo?.lucroHoje ?? 0);
-  const comissaoFormatada = formatarMoeda(resumo?.comissaoHoje ?? 0);
   const saldoAReceber = resumo?.saldoAReceber ?? 0;
+  const saldoFormatado = formatarMoeda(saldoAReceber);
+  const comissaoFormatada = formatarMoeda(resumo?.comissaoHoje ?? 0);
   const chavePixCadastrada = resumo?.chavePixCadastrada ?? false;
 
   const [modalAberto, setModalAberto] = useState(false);
@@ -214,10 +214,10 @@ function ResumoMotoboy({
           <View style={styles.cardIconeWrap}>
             <MoneyIcon size={22} color={colors.primary} strokeWidth={1.8} />
           </View>
-          <Text style={styles.cardValor}>{lucroFormatado}</Text>
-          <Text style={styles.cardLabel}>Lucrado hoje</Text>
+          <Text style={styles.cardValor}>{saldoFormatado}</Text>
+          <Text style={styles.cardLabel}>Saldo pra sacar</Text>
           {(resumo?.comissaoHoje ?? 0) > 0 && (
-            <Text style={styles.cardSublabel}>já descontada taxa de {comissaoFormatada}</Text>
+            <Text style={styles.cardSublabel}>já descontada taxa de {comissaoFormatada} hoje</Text>
           )}
         </View>
       </View>
@@ -234,10 +234,11 @@ function ResumoMotoboy({
           <View style={styles.saldoTopoLinha}>
             <MoneyIcon size={18} color={colors.primary} strokeWidth={1.8} />
             <View style={styles.saldoTextos}>
-              <Text style={styles.saldoValor}>{formatarMoeda(saldoAReceber)}</Text>
               <Text style={styles.saldoLabel}>
-                Saldo disponível pra sacar — corridas pagas por Pix (já com a taxa da
-                plataforma descontada) e valores de corridas antigas que caíram pra você.
+                Esse é o valor real disponível pra você sacar agora — corridas pagas por Pix
+                (já com a taxa da plataforma descontada) e valores de corridas antigas que
+                caíram pra você. Não inclui corridas pagas em dinheiro, já que esse valor já
+                ficou com você na hora.
               </Text>
             </View>
           </View>

@@ -9,6 +9,7 @@ import Button from '../components/Button';
 import CancelRideModal from '../components/CancelRideModal';
 import ChatModal from '../components/ChatModal';
 import DriverMessagesModal from '../components/DriverMessagesModal';
+import ConfirmarPixPrepagoModal from '../components/ConfirmarPixPrepagoModal';
 import FinalizarCorridaModal, { FormaFinalizacao } from '../components/FinalizarCorridaModal';
 import MapPin from '../components/MapPin';
 import PixPaymentModal from '../components/PixPaymentModal';
@@ -129,6 +130,7 @@ export default function DriverHomeScreen() {
   const [finalizando, setFinalizando] = useState(false);
   // --- Finalização com escolha de pagamento (Pix / Dinheiro / Não pagou) ---
   const [metodoPagamentoVisivel, setMetodoPagamentoVisivel] = useState(false);
+  const [confirmarPixPrepagoVisivel, setConfirmarPixPrepagoVisivel] = useState(false);
   const [pixModalVisivel, setPixModalVisivel] = useState(false);
   const [gerandoPix, setGerandoPix] = useState(false);
   const [pagamentoPix, setPagamentoPix] = useState<PagamentoPix | null>(null);
@@ -467,12 +469,38 @@ export default function DriverHomeScreen() {
     }
   }
 
-  // Toca em "Finalizar corrida" -> abre o modal de escolha de pagamento em
-  // vez de encerrar direto. A corrida só é finalizada de fato depois que o
-  // motorista escolhe uma das três opções (ver escolherFormaFinalizacao).
+  // Toca em "Finalizar corrida" -> se o Pix já foi pago antes da corrida
+  // começar (pix_prepago), não tem pagamento pra escolher: só confirma que
+  // a corrida acabou e o valor (já com a taxa descontada) cai no saldo pra
+  // saque. Nos outros casos, abre o modal de escolha de pagamento — a
+  // corrida só é finalizada de fato depois que o motorista escolhe uma das
+  // três opções (ver escolherFormaFinalizacao).
   function abrirFinalizacao() {
     if (!corridaAtiva) return;
+    if (corridaAtiva.formaPagamento === 'pix_prepago') {
+      setConfirmarPixPrepagoVisivel(true);
+      return;
+    }
     setMetodoPagamentoVisivel(true);
+  }
+
+  // Confirma a finalização de uma corrida pix_prepago — o dinheiro já está
+  // na conta da plataforma desde que o passageiro pagou pra pedir a
+  // corrida, então só chama a rota que credita o valor líquido no saldo
+  // disponível pra saque do motorista.
+  async function confirmarFinalizacaoPixPrepago() {
+    if (!corridaAtiva) return;
+    setFinalizando(true);
+    try {
+      await rideService.finalizarCorrida(corridaAtiva.id);
+      avisar('Corrida finalizada — o valor já caiu no seu saldo pra saque!', 'success');
+      setConfirmarPixPrepagoVisivel(false);
+      setCorridaAtiva(null);
+    } catch (err: any) {
+      avisar(err?.response?.data?.message ?? 'Não foi possível finalizar a corrida agora.', 'danger');
+    } finally {
+      setFinalizando(false);
+    }
   }
 
   function pararPollingPix() {
@@ -1032,6 +1060,14 @@ export default function DriverHomeScreen() {
         carregando={finalizando}
         onEscolher={escolherFormaFinalizacao}
         onFechar={() => setMetodoPagamentoVisivel(false)}
+      />
+
+      <ConfirmarPixPrepagoModal
+        visible={confirmarPixPrepagoVisivel}
+        valor={corridaAtiva?.preco ?? 0}
+        carregando={finalizando}
+        onConfirmar={confirmarFinalizacaoPixPrepago}
+        onFechar={() => setConfirmarPixPrepagoVisivel(false)}
       />
 
       <PixPaymentModal
