@@ -21,6 +21,7 @@ import type { Socket } from 'socket.io-client';
 import Button from '../components/Button';
 import CancelRideModal from '../components/CancelRideModal';
 import ChatModal from '../components/ChatModal';
+import CompleteProfileModal from '../components/CompleteProfileModal';
 import MapPin from '../components/MapPin';
 import PixPaymentModal from '../components/PixPaymentModal';
 import PromoBanners, { Banner } from '../components/PromoBanners';
@@ -130,7 +131,9 @@ const MOTIVOS_CANCELAMENTO_PASSAGEIRO = [
 ];
 
 export default function HomeScreen() {
-  const { user } = useAuth();
+  const { user, precisaCompletarCadastro, updateAccount } = useAuth();
+  const [perfilModalVisivel, setPerfilModalVisivel] = useState(false);
+  const [salvandoPerfil, setSalvandoPerfil] = useState(false);
   const { coords, isLoading, errorMessage } = useCurrentLocation();
   const [destination, setDestination] = useState('');
   const [destinoSelecionado, setDestinoSelecionado] = useState<EnderecoSugerido | null>(null);
@@ -770,8 +773,32 @@ export default function HomeScreen() {
 
   function buscarCorrida() {
     if (!rota) return;
+    // Quem entrou com Google chega até aqui sem telefone cadastrado (o
+    // Google nunca pede isso) — sem telefone o motorista não tem como
+    // contatar o passageiro, então a corrida fica bloqueada até completar
+    // o cadastro em vez de deixar abrir as opções de veículo.
+    if (precisaCompletarCadastro) {
+      setPerfilModalVisivel(true);
+      return;
+    }
     setEstimativas(gerarEstimativas(rota.distanciaKm, rota.duracaoMin));
     setOpcoesVisiveis(true);
+  }
+
+  // Salva os dados que faltavam (nome/email/telefone) e, se deu tudo certo,
+  // já segue direto pro fluxo normal de busca de corrida — a pessoa não
+  // precisa apertar "Buscar corrida" de novo.
+  async function salvarPerfilEContinuar(dados: { name: string; email: string; phone: string }) {
+    setSalvandoPerfil(true);
+    try {
+      await updateAccount(dados);
+      setPerfilModalVisivel(false);
+      buscarCorrida();
+    } catch (erro) {
+      avisar(extrairMensagemErro(erro, 'Não foi possível salvar seus dados. Tente novamente.'), 'danger');
+    } finally {
+      setSalvandoPerfil(false);
+    }
   }
 
   async function confirmarVeiculo(tipo: TipoVeiculo, formaPagamento: FormaPagamento) {
@@ -1447,6 +1474,14 @@ export default function HomeScreen() {
         carregando={cancelandoCorrida}
         onConfirmar={confirmarCancelamento}
         onFechar={() => setCancelamentoVisivel(false)}
+      />
+
+      <CompleteProfileModal
+        visible={perfilModalVisivel}
+        user={user}
+        carregando={salvandoPerfil}
+        onSalvar={salvarPerfilEContinuar}
+        onFechar={() => setPerfilModalVisivel(false)}
       />
 
       <ChatModal

@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>#GO — Aprovar motoristas</title>
+<style>
+  :root {
+    --bg: #0B0B0F;
+    --surface: #16161D;
+    --surface-alt: #1F1F29;
+    --border: #2A2A35;
+    --primary: #39FF6A;
+    --text: #F5F5F7;
+    --text-secondary: #9A9AA5;
+    --text-muted: #5C5C66;
+    --danger: #FF4D4D;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    min-height: 100vh;
+  }
+  .container {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 32px 20px 80px;
+  }
+  h1 {
+    font-size: 24px;
+    margin: 0 0 4px;
+  }
+  .subtitulo {
+    color: var(--text-secondary);
+    font-size: 14px;
+    margin: 0 0 28px;
+  }
+  .painel-config {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 20px;
+    margin-bottom: 28px;
+  }
+  label {
+    display: block;
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+  }
+  .linha {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .linha > div {
+    flex: 1;
+  }
+  input {
+    width: 100%;
+    height: 44px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text);
+    padding: 0 12px;
+    font-size: 15px;
+  }
+  input:focus {
+    outline: none;
+    border-color: var(--primary);
+  }
+  .dica-campo {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 6px;
+  }
+  button {
+    height: 44px;
+    padding: 0 20px;
+    border-radius: 10px;
+    border: none;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .botao-primario {
+    background: var(--primary);
+    color: var(--bg);
+  }
+  .botao-primario:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+  .botao-secundario {
+    background: var(--surface-alt);
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+  .botao-recusar {
+    background: transparent;
+    color: var(--danger);
+    border: 1px solid var(--danger);
+  }
+  .botao-aprovar {
+    background: var(--primary);
+    color: var(--bg);
+  }
+  .aviso {
+    border-radius: 10px;
+    padding: 12px 14px;
+    font-size: 14px;
+    margin-bottom: 16px;
+  }
+  .aviso-erro {
+    background: rgba(255, 77, 77, 0.12);
+    border: 1px solid var(--danger);
+    color: var(--danger);
+  }
+  .aviso-sucesso {
+    background: rgba(57, 255, 106, 0.1);
+    border: 1px solid var(--primary);
+    color: var(--primary);
+  }
+  .aviso code {
+    display: block;
+    margin-top: 6px;
+    font-size: 12px;
+    opacity: 0.85;
+    word-break: break-all;
+  }
+  .lista-cabecalho {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 14px;
+  }
+  .lista-cabecalho h2 {
+    font-size: 16px;
+    margin: 0;
+    color: var(--text-secondary);
+    font-weight: 600;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 18px;
+    margin-bottom: 14px;
+  }
+  .card-topo {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 12px;
+  }
+  .card-nome {
+    font-size: 17px;
+    font-weight: 700;
+  }
+  .card-contato {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-top: 2px;
+  }
+  .card-selo {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--bg);
+    background: #FFB020;
+    padding: 4px 8px;
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+  .grade-dados {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px 16px;
+    font-size: 13px;
+    margin-bottom: 16px;
+  }
+  .grade-dados dt {
+    color: var(--text-muted);
+    margin: 0;
+  }
+  .grade-dados dd {
+    color: var(--text);
+    margin: 0 0 8px;
+  }
+  .card-botoes {
+    display: flex;
+    gap: 10px;
+  }
+  .card-botoes button {
+    flex: 1;
+  }
+  .estado-vazio {
+    text-align: center;
+    color: var(--text-muted);
+    padding: 40px 0;
+    font-size: 14px;
+  }
+  .spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(0,0,0,0.3);
+    border-top-color: currentColor;
+    border-radius: 50%;
+    animation: girar 0.7s linear infinite;
+    vertical-align: middle;
+    margin-right: 6px;
+  }
+  @keyframes girar {
+    to { transform: rotate(360deg); }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>#GO — Aprovar motoristas</h1>
+  <p class="subtitulo">Painel simples pra aprovar ou reprovar cadastros de motorista, enquanto o app não tem um admin de verdade.</p>
+
+  <div class="painel-config">
+    <div class="linha">
+      <div>
+        <label for="campo-url">URL do backend</label>
+        <input id="campo-url" type="text" placeholder="https://seu-backend.up.railway.app" />
+        <div class="dica-campo">Só o domínio, sem "/driver" no final. Ex: https://goapp-backend.up.railway.app</div>
+      </div>
+    </div>
+    <div class="linha">
+      <div>
+        <label for="campo-segredo">Segredo admin (SEGREDO_ADMIN)</label>
+        <input id="campo-segredo" type="password" placeholder="o mesmo valor do .env" />
+      </div>
+    </div>
+    <button id="botao-buscar" class="botao-primario">Buscar pendentes</button>
+  </div>
+
+  <div id="area-aviso"></div>
+
+  <div class="lista-cabecalho">
+    <h2 id="titulo-lista">Motoristas pendentes</h2>
+  </div>
+
+  <div id="area-lista">
+    <div class="estado-vazio">Preencha os campos acima e toque em "Buscar pendentes".</div>
+  </div>
+</div>
+
+<script>
+  const campoUrl = document.getElementById('campo-url');
+  const campoSegredo = document.getElementById('campo-segredo');
+  const botaoBuscar = document.getElementById('botao-buscar');
+  const areaAviso = document.getElementById('area-aviso');
+  const areaLista = document.getElementById('area-lista');
+  const tituloLista = document.getElementById('titulo-lista');
+
+  // Lembra a URL e o segredo digitados, pra não ter que redigitar toda hora.
+  campoUrl.value = localStorage.getItem('go_admin_url') || '';
+  campoSegredo.value = localStorage.getItem('go_admin_segredo') || '';
+
+  function mostrarAviso(mensagem, tipo, urlChamada) {
+    const linhaUrl = urlChamada ? `<code>${escaparTexto(urlChamada)}</code>` : '';
+    areaAviso.innerHTML = `<div class="aviso aviso-${tipo}">${mensagem}${linhaUrl}</div>`;
+  }
+
+  function limparAviso() {
+    areaAviso.innerHTML = '';
+  }
+
+  // Normaliza o que a pessoa digitou: adiciona "https://" se faltar o
+  // esquema, remove barras sobrando no final e, se alguém colar a URL já
+  // com "/driver" ou "/driver/pending" no final, tira esse pedaço — assim
+  // a base fica sempre só o domínio do backend.
+  function urlBase() {
+    let valor = campoUrl.value.trim();
+    if (!valor) return '';
+    if (!/^https?:\/\//i.test(valor)) {
+      valor = `https://${valor}`;
+    }
+    valor = valor.replace(/\/+$/, '');
+    valor = valor.replace(/\/driver(\/.*)?$/i, '');
+    return valor;
+  }
+
+  function escaparTexto(valor) {
+    const div = document.createElement('div');
+    div.textContent = valor ?? '';
+    return div.innerHTML;
+  }
+
+  // Interpreta a resposta do fetch, distinguindo os casos mais comuns de
+  // erro pra dar uma mensagem que realmente ajuda a resolver:
+  // - 404 "Rota não encontrada" quase sempre é URL errada ou backend
+  //   publicado numa versão antiga, sem essas rotas de admin.
+  // - 403 é segredo admin errado.
+  // - Falha de rede/CORS normalmente é backend fora do ar ou domínio errado.
+  async function interpretarResposta(resposta, urlChamada) {
+    if (resposta.ok) return resposta.json();
+
+    const dados = await resposta.json().catch(() => ({}));
+    const mensagemServidor = dados.message || '';
+
+    if (resposta.status === 404) {
+      throw new Error(
+        `Erro 404: o backend respondeu "${mensagemServidor || 'rota não encontrada'}". ` +
+        `Confira se a URL do backend está correta (sem "/driver" no final) e se você publicou ` +
+        `a versão mais recente do backend, que já tem as rotas /driver/pending e /driver/:id/approve.`
+      );
+    }
+    if (resposta.status === 403) {
+      throw new Error('Segredo admin incorreto. Confira o valor de SEGREDO_ADMIN no .env do backend.');
+    }
+    if (resposta.status === 500 && mensagemServidor.includes('SEGREDO_ADMIN')) {
+      throw new Error('O backend não tem SEGREDO_ADMIN configurado no .env dele.');
+    }
+    throw new Error(mensagemServidor || `Erro ${resposta.status} ao falar com o backend.`);
+  }
+
+  async function buscarPendentes() {
+    const base = urlBase();
+    const segredo = campoSegredo.value.trim();
+
+    if (!base || !segredo) {
+      mostrarAviso('Preencha a URL do backend e o segredo admin.', 'erro');
+      return;
+    }
+
+    localStorage.setItem('go_admin_url', campoUrl.value.trim());
+    localStorage.setItem('go_admin_segredo', segredo);
+
+    limparAviso();
+    botaoBuscar.disabled = true;
+    botaoBuscar.innerHTML = '<span class="spinner"></span> Buscando...';
+    areaLista.innerHTML = '<div class="estado-vazio">Carregando...</div>';
+
+    const urlPendentes = `${base}/driver/pending`;
+
+    try {
+      const resposta = await fetch(urlPendentes, {
+        headers: { 'x-admin-secret': segredo },
+      });
+      const pendentes = await interpretarResposta(resposta, urlPendentes);
+      renderizarLista(pendentes);
+    } catch (erro) {
+      areaLista.innerHTML = '';
+      const ehErroDeRede = erro instanceof TypeError;
+      const mensagem = ehErroDeRede
+        ? 'Não foi possível conectar ao backend. Confira se a URL está certa, se o servidor está no ar e se o CORS está liberado.'
+        : erro.message;
+      mostrarAviso(mensagem, 'erro', urlPendentes);
+    } finally {
+      botaoBuscar.disabled = false;
+      botaoBuscar.textContent = 'Buscar pendentes';
+    }
+  }
+
+  function renderizarLista(pendentes) {
+    tituloLista.textContent = `Motoristas pendentes (${pendentes.length})`;
+
+    if (pendentes.length === 0) {
+      areaLista.innerHTML = '<div class="estado-vazio">Nenhum cadastro pendente agora.</div>';
+      return;
+    }
+
+    areaLista.innerHTML = pendentes.map((motorista) => `
+      <div class="card" data-usuario-id="${escaparTexto(motorista.usuario_id)}">
+        <div class="card-topo">
+          <div>
+            <div class="card-nome">${escaparTexto(motorista.nome)}</div>
+            <div class="card-contato">${escaparTexto(motorista.email || '')} ${motorista.telefone ? '· ' + escaparTexto(motorista.telefone) : ''}</div>
+          </div>
+          <span class="card-selo">PENDENTE</span>
+        </div>
+        <dl class="grade-dados">
+          <dt>CNH</dt><dd>${escaparTexto(motorista.cnh_numero)} (cat. ${escaparTexto(motorista.cnh_categoria)})</dd>
+          <dt>Placa</dt><dd>${escaparTexto(motorista.veiculo_placa)}</dd>
+          <dt>Veículo</dt><dd>${escaparTexto(motorista.veiculo_modelo)}</dd>
+          <dt>Cor / Ano</dt><dd>${escaparTexto(motorista.veiculo_cor)} · ${escaparTexto(motorista.veiculo_ano)}</dd>
+        </dl>
+        <div class="card-botoes">
+          <button class="botao-recusar" data-usuario-id="${escaparTexto(motorista.usuario_id)}" data-aprovado="false">Reprovar</button>
+          <button class="botao-aprovar" data-usuario-id="${escaparTexto(motorista.usuario_id)}" data-aprovado="true">Aprovar</button>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  // Delegação de evento em vez de onclick inline — evita quebrar o HTML se
+  // algum dado (nome, id) tiver aspas ou caracteres especiais.
+  areaLista.addEventListener('click', (evento) => {
+    const botao = evento.target.closest('button[data-usuario-id]');
+    if (!botao) return;
+    decidir(botao.dataset.usuarioId, botao.dataset.aprovado === 'true', botao);
+  });
+
+  async function decidir(usuarioId, aprovado, botaoClicado) {
+    const base = urlBase();
+    const segredo = campoSegredo.value.trim();
+    const card = botaoClicado.closest('.card');
+    const botoes = card.querySelectorAll('button');
+    botoes.forEach((botao) => (botao.disabled = true));
+    botaoClicado.innerHTML = `<span class="spinner"></span> ${aprovado ? 'Aprovando' : 'Reprovando'}...`;
+
+    const urlAprovar = `${base}/driver/${encodeURIComponent(usuarioId)}/approve`;
+
+    try {
+      const resposta = await fetch(urlAprovar, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-secret': segredo,
+        },
+        body: JSON.stringify({ aprovado }),
+      });
+
+      await interpretarResposta(resposta, urlAprovar);
+
+      mostrarAviso(
+        aprovado ? 'Motorista aprovado com sucesso.' : 'Motorista reprovado.',
+        aprovado ? 'sucesso' : 'erro'
+      );
+      card.remove();
+
+      const restantes = areaLista.querySelectorAll('.card').length;
+      tituloLista.textContent = `Motoristas pendentes (${restantes})`;
+      if (restantes === 0) {
+        areaLista.innerHTML = '<div class="estado-vazio">Nenhum cadastro pendente agora.</div>';
+      }
+    } catch (erro) {
+      const ehErroDeRede = erro instanceof TypeError;
+      const mensagem = ehErroDeRede
+        ? 'Não foi possível conectar ao backend. Confira a URL e se o servidor está no ar.'
+        : erro.message;
+      mostrarAviso(mensagem, 'erro', urlAprovar);
+      botoes.forEach((botao) => (botao.disabled = false));
+      botaoClicado.textContent = aprovado ? 'Aprovar' : 'Reprovar';
+    }
+  }
+
+  botaoBuscar.addEventListener('click', buscarPendentes);
+  campoSegredo.addEventListener('keydown', (evento) => {
+    if (evento.key === 'Enter') buscarPendentes();
+  });
+</script>
+</body>
+</html>

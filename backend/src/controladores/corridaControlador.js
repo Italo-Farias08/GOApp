@@ -7,6 +7,7 @@ const pagamentoPixModelo = require('../modelos/pagamentoPixModelo');
 const corridaServico = require('../servicos/corridaServico');
 const mercadoPago = require('../utilitarios/mercadoPago');
 const { ErroHttp } = require('../intermediarios/tratadorErros');
+const { exigirPerfilCompleto } = require('../utilitarios/perfilUsuario');
 const soquete = require('../tempoReal/servidorSoquete');
 
 // Quanto tempo o QR code do Pix gerado ao FINALIZAR a corrida fica válido.
@@ -22,6 +23,12 @@ const MINUTOS_EXPIRACAO_PIX_FINALIZACAO = 10;
 async function criar(req, res, next) {
   try {
     const { origem, destino, tipoVeiculo, preco, distanciaKm, duracaoMin, formaPagamento } = req.body;
+
+    // Passageiro que entrou com Google e nunca completou o telefone não pode
+    // pedir corrida: o motorista precisa de um jeito de contatá-lo.
+    const passageiro = await usuarioModelo.buscarPorId(req.usuarioId);
+    if (!passageiro) throw new ErroHttp(404, 'Usuário não encontrado.');
+    exigirPerfilCompleto(passageiro);
 
     corridaServico.validarDadosCorrida({ origem, destino, tipoVeiculo, preco, distanciaKm, duracaoMin, formaPagamento });
 

@@ -5,6 +5,7 @@ const pagamentoPixModelo = require('../modelos/pagamentoPixModelo');
 const corridaServico = require('../servicos/corridaServico');
 const mercadoPago = require('../utilitarios/mercadoPago');
 const { ErroHttp } = require('../intermediarios/tratadorErros');
+const { exigirPerfilCompleto } = require('../utilitarios/perfilUsuario');
 const soquete = require('../tempoReal/servidorSoquete');
 
 // Quanto tempo o QR code fica válido antes do app desistir de esperar.
@@ -41,6 +42,7 @@ async function criarPix(req, res, next) {
 
     const passageiro = await usuarioModelo.buscarPorId(req.usuarioId);
     if (!passageiro) throw new ErroHttp(404, 'Usuário não encontrado.');
+    exigirPerfilCompleto(passageiro);
 
     const pagamentoMp = await mercadoPago.criarPagamentoPix({
       valor: preco,

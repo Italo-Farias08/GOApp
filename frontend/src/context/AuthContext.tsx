@@ -15,6 +15,11 @@ type AuthContextValue = {
   user: User | null;
   isLoading: boolean;
   isAuthenticated: boolean;
+  // true quando falta nome, email ou telefone no perfil — acontece sobretudo
+  // com quem entrou pelo Google, que nunca passa pela tela de Cadastro (onde
+  // o telefone é coletado). Enquanto isso for true, o app não deve deixar a
+  // pessoa chamar uma corrida.
+  precisaCompletarCadastro: boolean;
   signIn: (payload: LoginPayload) => Promise<void>;
   signInWithPhone: (payload: PhoneLoginPayload) => Promise<void>;
   signInWithGoogle: (idToken: string) => Promise<void>;
@@ -34,6 +39,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const precisaCompletarCadastro =
+    !!user && (!user.name?.trim() || !user.email?.trim() || !user.phone?.trim());
 
   // Ao abrir o app, verifica se já existe um token salvo (mantém o usuário logado)
   useEffect(() => {
@@ -158,6 +166,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         user,
         isLoading,
         isAuthenticated: !!user,
+        precisaCompletarCadastro,
         signIn,
         signInWithPhone,
         signInWithGoogle,

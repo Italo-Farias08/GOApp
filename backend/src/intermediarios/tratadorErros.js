@@ -13,6 +13,10 @@ function tratadorErros(erro, req, res, next) {
     corpo.needsVerification = true;
     corpo.email = erro.email;
   }
+  if (erro.perfilIncompleto) {
+    corpo.perfilIncompleto = true;
+    corpo.camposFaltando = erro.camposFaltando;
+  }
 
   res.status(statusCode).json(corpo);
 }
