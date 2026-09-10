@@ -15,6 +15,13 @@ const { limitadorGeral } = require('./intermediarios/limitadorTaxa');
 
 const app = express();
 
+// O Railway coloca a aplicação atrás de um proxy reverso, que adiciona o
+// header X-Forwarded-For com o IP real de quem fez a requisição. Sem essa
+// linha, o Express (e por tabela o rate limit) não confia nesse header e
+// não consegue saber o IP de verdade de cada requisição — 1 = confia em 1
+// "salto" de proxy na frente (é o caso do Railway).
+app.set('trust proxy', 1);
+
 const origensPermitidas = (process.env.ORIGENS_PERMITIDAS || '*')
   .split(',')
   .map((origem) => origem.trim());
