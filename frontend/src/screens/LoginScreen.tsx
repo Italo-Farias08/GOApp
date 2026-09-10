@@ -15,18 +15,50 @@ import {
 import Button from '../components/Button';
 import CityBackground from '../components/CityBackground';
 import { useAuth } from '../context/AuthContext';
+import { useGoogleAuth } from '../hooks/useGoogleAuth';
 import { colors, radius, spacing, typography } from '../theme/theme';
 import type { RootStackParamList } from '../types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Login'>;
 
 export default function LoginScreen({ navigation }: Props) {
-  const { signInWithPhone } = useAuth();
+  const { signInWithPhone, signInWithGoogle } = useAuth();
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const deslocamento = useRef(new Animated.Value(0)).current;
+
+  const {
+    disponivel: googleDisponivel,
+    resultado: googleResultado,
+    promptAsync: promptGoogleAsync,
+    resetar: resetarGoogle,
+  } = useGoogleAuth();
+
+  // Reage ao resultado do fluxo do Google (a tela do navegador roda por
+  // fora, então o resultado chega de forma assíncrona aqui, não direto no
+  // clique do botão).
+  useEffect(() => {
+    if (googleResultado.status === 'success') {
+      (async () => {
+        try {
+          await signInWithGoogle(googleResultado.idToken);
+        } catch (err: any) {
+          const dadosErro = err?.response?.data;
+          setErrorMessage(dadosErro?.message ?? err?.message ?? 'Não foi possível entrar com o Google.');
+        } finally {
+          resetarGoogle();
+        }
+      })();
+    } else if (googleResultado.status === 'error') {
+      setErrorMessage(googleResultado.message);
+      resetarGoogle();
+    } else if (googleResultado.status === 'cancelled') {
+      resetarGoogle();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [googleResultado]);
 
   // Sobe o formulário suavemente quando o teclado abre — animação roda na
   // thread nativa (useNativeDriver), sem recalcular layout a cada frame,
@@ -77,8 +109,13 @@ export default function LoginScreen({ navigation }: Props) {
     }
   }
 
-  function handleGoogleLogin() {
-    setErrorMessage('Login com Google ainda não está disponível.');
+  async function handleGoogleLogin() {
+    setErrorMessage(null);
+    if (!googleDisponivel) {
+      setErrorMessage('Login com Google não está disponível nessa versão do app.');
+      return;
+    }
+    await promptGoogleAsync();
   }
 
   return (
@@ -143,9 +180,15 @@ export default function LoginScreen({ navigation }: Props) {
               <View style={styles.orLine} />
             </View>
 
-            <Pressable style={styles.googleButton} onPress={handleGoogleLogin}>
+            <Pressable
+              style={[styles.googleButton, googleResultado.status === 'loading' && styles.googleButtonDisabled]}
+              onPress={handleGoogleLogin}
+              disabled={googleResultado.status === 'loading'}
+            >
               <Text style={styles.googleG}>G</Text>
-              <Text style={styles.googleLabel}>Entrar com Google</Text>
+              <Text style={styles.googleLabel}>
+                {googleResultado.status === 'loading' ? 'Entrando…' : 'Entrar com Google'}
+              </Text>
             </Pressable>
 
             <Text style={styles.terms}>
@@ -282,6 +325,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.primary,
     marginBottom: spacing.lg,
+  },
+  googleButtonDisabled: {
+    opacity: 0.6,
   },
   googleG: {
     fontSize: 18,

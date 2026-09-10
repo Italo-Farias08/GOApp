@@ -6,6 +6,11 @@ export default {
     name: '#GO',
     slug: 'go-app',
     version: '1.0.0',
+    // Usado pelo login com Google (e qualquer outro OAuth) pra saber pra
+    // onde voltar depois que o usuário confirma o login no navegador do
+    // sistema. Precisa bater com o redirect URI configurado no fluxo do
+    // AuthSession — ver src/hooks/useGoogleAuth.ts.
+    scheme: 'goapp',
     orientation: 'portrait',
     userInterfaceStyle: 'dark',
     splash: {

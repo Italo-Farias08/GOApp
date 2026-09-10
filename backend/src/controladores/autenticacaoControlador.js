@@ -4,6 +4,7 @@ const { gerarToken } = require('../utilitarios/token');
 const { normalizarTelefone } = require('../utilitarios/telefone');
 const { gerarCodigo, gerarExpiracao } = require('../utilitarios/codigoVerificacao');
 const { enviarEmailVerificacao } = require('../utilitarios/email');
+const { verificarIdTokenGoogle } = require('../utilitarios/googleAuth');
 const { ErroHttp } = require('../intermediarios/tratadorErros');
 
 const REGEX_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -251,6 +252,52 @@ async function entrarComTelefone(req, res, next) {
   }
 }
 
+// POST /auth/google
+//
+// O front manda o id_token que recebeu do Google depois do usuário fazer
+// login por lá. A gente valida esse token direto com o Google (não confia
+// em nada que vem no corpo além do token em si) e, se for válido, encontra
+// ou cria a conta pelo email — que já vem confirmado pelo próprio Google,
+// então não precisa passar pelo fluxo de código por email.
+async function entrarComGoogle(req, res, next) {
+  try {
+    const { idToken } = req.body;
+    if (!idToken) {
+      throw new ErroHttp(400, 'idToken é obrigatório.');
+    }
+
+    const dadosGoogle = await verificarIdTokenGoogle(idToken);
+
+    let usuario = await usuarioModelo.buscarPorEmail(dadosGoogle.email);
+
+    if (!usuario) {
+      usuario = await usuarioModelo.criar({
+        nome: dadosGoogle.nome,
+        email: dadosGoogle.email,
+        senhaHash: null,
+        telefone: null,
+      });
+    }
+
+    if (!usuario.email_verificado) {
+      usuario = await usuarioModelo.marcarEmailVerificado(usuario.id);
+    }
+
+    const accessToken = gerarToken(usuario.id);
+
+    return res.json({
+      user: usuarioModelo.paraUsuarioPublico(usuario),
+      tokens: { accessToken },
+    });
+  } catch (erro) {
+    if (erro instanceof ErroHttp) return next(erro);
+    // Erros de verificação do token do Google (assinatura inválida, expirado,
+    // audience errada) chegam aqui como erro genérico — tratamos como 401
+    // em vez de deixar virar 500, já que é uma falha de autenticação.
+    next(new ErroHttp(401, erro.message || 'Não foi possível validar o login com Google.'));
+  }
+}
+
 // GET /auth/me
 async function obterPerfil(req, res, next) {
   try {
@@ -295,6 +342,7 @@ module.exports = {
   alterarEmailPendente,
   entrar,
   entrarComTelefone,
+  entrarComGoogle,
   obterPerfil,
   atualizarPerfil,
 };

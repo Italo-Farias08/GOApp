@@ -69,6 +69,30 @@ export async function loginWithPhone(payload: PhoneLoginPayload): Promise<User> 
   return data.user;
 }
 
+// Login com Google: o front já validou o usuário com o próprio Google e só
+// manda o id_token pro backend confirmar (assinatura + audience) e criar ou
+// achar a conta pelo email — que já vem confirmado, sem precisar do fluxo de
+// código por email do cadastro normal.
+export async function loginWithGoogle(idToken: string): Promise<User> {
+  if (USE_MOCK) {
+    const fakeUser: User = {
+      id: 'mock-user-google',
+      name: 'Usuário Google',
+      email: 'usuario@gmail.com',
+      emailVerificado: true,
+    };
+    await saveToken('mock-token-google-123');
+    return mockDelay(fakeUser);
+  }
+
+  // Formato esperado do backend: POST /auth/google -> { user, tokens }
+  const { data } = await api.post<{ user: User; tokens: AuthTokens }>('/auth/google', {
+    idToken,
+  });
+  await saveToken(data.tokens.accessToken);
+  return data.user;
+}
+
 // Cadastro nunca loga direto: o backend manda um código de 6 dígitos por email
 // e só libera o token depois que esse código é confirmado (ver verifyEmail abaixo).
 export async function register(payload: RegisterPayload): Promise<RegisterResult> {

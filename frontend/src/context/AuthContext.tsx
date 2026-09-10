@@ -17,6 +17,7 @@ type AuthContextValue = {
   isAuthenticated: boolean;
   signIn: (payload: LoginPayload) => Promise<void>;
   signInWithPhone: (payload: PhoneLoginPayload) => Promise<void>;
+  signInWithGoogle: (idToken: string) => Promise<void>;
   signUp: (payload: RegisterPayload) => Promise<RegisterResult>;
   verifyEmail: (email: string, code: string) => Promise<void>;
   resendCode: (email: string) => Promise<void>;
@@ -69,6 +70,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(loggedUser);
     } catch (err: any) {
       setError(err?.response?.data?.message ?? err.message ?? 'Erro ao entrar.');
+      throw err;
+    }
+  }
+
+  async function signInWithGoogle(idToken: string) {
+    setError(null);
+    try {
+      const loggedUser = await authService.loginWithGoogle(idToken);
+      setUser(loggedUser);
+    } catch (err: any) {
+      setError(err?.response?.data?.message ?? err.message ?? 'Erro ao entrar com Google.');
       throw err;
     }
   }
@@ -148,6 +160,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isAuthenticated: !!user,
         signIn,
         signInWithPhone,
+        signInWithGoogle,
         signUp,
         verifyEmail,
         resendCode,

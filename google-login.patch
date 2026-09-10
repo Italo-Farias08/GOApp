@@ -1,0 +1,518 @@
+diff --git a/backend/.env.example b/backend/.env.example
+index f5c5093..14dcf84 100644
+--- a/backend/.env.example
++++ b/backend/.env.example
+@@ -17,3 +17,11 @@ ORIGENS_PERMITIDAS=*
+ # Segredo usado nas rotas administrativas simples (aprovar/reprovar motorista).
+ # Mande no header x-admin-secret. Troque por um valor forte antes de publicar.
+ SEGREDO_ADMIN=troque_por_uma_senha_forte
++
++# Client IDs do OAuth do Google (Google Cloud Console > Google Auth Platform > Clientes).
++# Precisa dos 3 — o backend aceita id_token emitido pra qualquer um deles.
++# O Client Secret do tipo "Web" não é usado aqui (só é necessário se algum dia
++# passarmos a trocar authorization code por token direto no servidor).
++GOOGLE_WEB_CLIENT_ID=
++GOOGLE_ANDROID_CLIENT_ID=
++GOOGLE_IOS_CLIENT_ID=
+diff --git a/backend/package.json b/backend/package.json
+index e65226b..e0d3025 100644
+--- a/backend/package.json
++++ b/backend/package.json
+@@ -13,6 +13,7 @@
+     "dotenv": "^16.4.5",
+     "express": "^4.19.2",
+     "express-rate-limit": "^7.4.1",
++    "google-auth-library": "^11.0.2",
+     "helmet": "^7.1.0",
+     "jsonwebtoken": "^9.0.2",
+     "morgan": "^1.10.0",
+diff --git a/backend/src/controladores/autenticacaoControlador.js b/backend/src/controladores/autenticacaoControlador.js
+index b656961..ed89e65 100644
+--- a/backend/src/controladores/autenticacaoControlador.js
++++ b/backend/src/controladores/autenticacaoControlador.js
+@@ -4,6 +4,7 @@ const { gerarToken } = require('../utilitarios/token');
+ const { normalizarTelefone } = require('../utilitarios/telefone');
+ const { gerarCodigo, gerarExpiracao } = require('../utilitarios/codigoVerificacao');
+ const { enviarEmailVerificacao } = require('../utilitarios/email');
++const { verificarIdTokenGoogle } = require('../utilitarios/googleAuth');
+ const { ErroHttp } = require('../intermediarios/tratadorErros');
+ 
+ const REGEX_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+@@ -251,6 +252,52 @@ async function entrarComTelefone(req, res, next) {
+   }
+ }
+ 
++// POST /auth/google
++//
++// O front manda o id_token que recebeu do Google depois do usuário fazer
++// login por lá. A gente valida esse token direto com o Google (não confia
++// em nada que vem no corpo além do token em si) e, se for válido, encontra
++// ou cria a conta pelo email — que já vem confirmado pelo próprio Google,
++// então não precisa passar pelo fluxo de código por email.
++async function entrarComGoogle(req, res, next) {
++  try {
++    const { idToken } = req.body;
++    if (!idToken) {
++      throw new ErroHttp(400, 'idToken é obrigatório.');
++    }
++
++    const dadosGoogle = await verificarIdTokenGoogle(idToken);
++
++    let usuario = await usuarioModelo.buscarPorEmail(dadosGoogle.email);
++
++    if (!usuario) {
++      usuario = await usuarioModelo.criar({
++        nome: dadosGoogle.nome,
++        email: dadosGoogle.email,
++        senhaHash: null,
++        telefone: null,
++      });
++    }
++
++    if (!usuario.email_verificado) {
++      usuario = await usuarioModelo.marcarEmailVerificado(usuario.id);
++    }
++
++    const accessToken = gerarToken(usuario.id);
++
++    return res.json({
++      user: usuarioModelo.paraUsuarioPublico(usuario),
++      tokens: { accessToken },
++    });
++  } catch (erro) {
++    if (erro instanceof ErroHttp) return next(erro);
++    // Erros de verificação do token do Google (assinatura inválida, expirado,
++    // audience errada) chegam aqui como erro genérico — tratamos como 401
++    // em vez de deixar virar 500, já que é uma falha de autenticação.
++    next(new ErroHttp(401, erro.message || 'Não foi possível validar o login com Google.'));
++  }
++}
++
+ // GET /auth/me
+ async function obterPerfil(req, res, next) {
+   try {
+@@ -295,6 +342,7 @@ module.exports = {
+   alterarEmailPendente,
+   entrar,
+   entrarComTelefone,
++  entrarComGoogle,
+   obterPerfil,
+   atualizarPerfil,
+ };
+\ No newline at end of file
+diff --git a/backend/src/rotas/autenticacaoRotas.js b/backend/src/rotas/autenticacaoRotas.js
+index 6815d2b..8fba3ed 100644
+--- a/backend/src/rotas/autenticacaoRotas.js
++++ b/backend/src/rotas/autenticacaoRotas.js
+@@ -12,6 +12,7 @@ roteador.post('/resend-code', limitadorCodigoVerificacao, autenticacaoControlado
+ roteador.post('/change-pending-email', autenticacaoControlador.alterarEmailPendente);
+ roteador.post('/login', limitadorLogin, autenticacaoControlador.entrar);
+ roteador.post('/login-phone', limitadorLogin, autenticacaoControlador.entrarComTelefone);
++roteador.post('/google', limitadorLogin, autenticacaoControlador.entrarComGoogle);
+ 
+ // Rotas protegidas (exigem token)
+ roteador.get('/me', autenticacaoIntermediario, autenticacaoControlador.obterPerfil);
+diff --git a/backend/src/utilitarios/googleAuth.js b/backend/src/utilitarios/googleAuth.js
+new file mode 100644
+index 0000000..1c078d3
+--- /dev/null
++++ b/backend/src/utilitarios/googleAuth.js
+@@ -0,0 +1,51 @@
++// Verifica o id_token que o app manda depois do usuário logar com o Google.
++//
++// O front tem 3 Client IDs (Android, iOS, Web) — todos do mesmo app no
++// Google Cloud — mas o token pode ter sido emitido pra qualquer um deles
++// dependendo da plataforma que o usuário está usando. Por isso o
++// verifyIdToken abaixo aceita todos os 3 como "audience" válida: a lib do
++// Google confere se o token foi assinado pelo Google E se o campo "aud"
++// bate com algum desses IDs (sem isso, qualquer id_token do Google — de
++// qualquer app — passaria na validação).
++const { OAuth2Client } = require('google-auth-library');
++
++const CLIENT_IDS = [
++  process.env.GOOGLE_WEB_CLIENT_ID,
++  process.env.GOOGLE_ANDROID_CLIENT_ID,
++  process.env.GOOGLE_IOS_CLIENT_ID,
++].filter(Boolean);
++
++const client = new OAuth2Client();
++
++// Retorna os dados básicos do usuário (email, nome, foto) já validados,
++// ou lança erro se o token for inválido/expirado/de outro app.
++async function verificarIdTokenGoogle(idToken) {
++  if (!idToken) {
++    throw new Error('idToken não informado.');
++  }
++  if (CLIENT_IDS.length === 0) {
++    throw new Error(
++      'Login com Google não configurado no servidor (faltam as variáveis GOOGLE_WEB_CLIENT_ID / GOOGLE_ANDROID_CLIENT_ID / GOOGLE_IOS_CLIENT_ID).'
++    );
++  }
++
++  const ticket = await client.verifyIdToken({
++    idToken,
++    audience: CLIENT_IDS,
++  });
++
++  const payload = ticket.getPayload();
++  if (!payload || !payload.email) {
++    throw new Error('Não foi possível obter o email da conta Google.');
++  }
++
++  return {
++    email: payload.email,
++    emailVerificado: !!payload.email_verified,
++    nome: payload.name || payload.email.split('@')[0],
++    avatarUrl: payload.picture || null,
++    googleId: payload.sub,
++  };
++}
++
++module.exports = { verificarIdTokenGoogle };
+diff --git a/frontend/app.config.js b/frontend/app.config.js
+index a0f4a12..6ad4bf6 100644
+--- a/frontend/app.config.js
++++ b/frontend/app.config.js
+@@ -6,6 +6,11 @@ export default {
+     name: '#GO',
+     slug: 'go-app',
+     version: '1.0.0',
++    // Usado pelo login com Google (e qualquer outro OAuth) pra saber pra
++    // onde voltar depois que o usuário confirma o login no navegador do
++    // sistema. Precisa bater com o redirect URI configurado no fluxo do
++    // AuthSession — ver src/hooks/useGoogleAuth.ts.
++    scheme: 'goapp',
+     orientation: 'portrait',
+     userInterfaceStyle: 'dark',
+     splash: {
+diff --git a/frontend/package.json b/frontend/package.json
+index e0d38c1..31a4c1f 100644
+--- a/frontend/package.json
++++ b/frontend/package.json
+@@ -14,12 +14,14 @@
+     "@react-navigation/native-stack": "^6.11.0",
+     "axios": "^1.7.7",
+     "expo": "~57.0.20",
++    "expo-auth-session": "~57.0.11",
+     "expo-clipboard": "~57.0.1",
+     "expo-dev-client": "~57.0.18",
+     "expo-linear-gradient": "~57.0.1",
+     "expo-location": "~57.0.16",
+     "expo-secure-store": "~57.0.3",
+     "expo-status-bar": "~57.0.1",
++    "expo-web-browser": "~57.0.2",
+     "react": "19.2.3",
+     "react-native": "0.86.3",
+     "react-native-maps": "1.27.2",
+diff --git a/frontend/src/context/AuthContext.tsx b/frontend/src/context/AuthContext.tsx
+index fa580c0..6974373 100644
+--- a/frontend/src/context/AuthContext.tsx
++++ b/frontend/src/context/AuthContext.tsx
+@@ -17,6 +17,7 @@ type AuthContextValue = {
+   isAuthenticated: boolean;
+   signIn: (payload: LoginPayload) => Promise<void>;
+   signInWithPhone: (payload: PhoneLoginPayload) => Promise<void>;
++  signInWithGoogle: (idToken: string) => Promise<void>;
+   signUp: (payload: RegisterPayload) => Promise<RegisterResult>;
+   verifyEmail: (email: string, code: string) => Promise<void>;
+   resendCode: (email: string) => Promise<void>;
+@@ -73,6 +74,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
+     }
+   }
+ 
++  async function signInWithGoogle(idToken: string) {
++    setError(null);
++    try {
++      const loggedUser = await authService.loginWithGoogle(idToken);
++      setUser(loggedUser);
++    } catch (err: any) {
++      setError(err?.response?.data?.message ?? err.message ?? 'Erro ao entrar com Google.');
++      throw err;
++    }
++  }
++
+   // Não loga o usuário aqui: só dispara o código por email e devolve o email
+   // pra tela de Cadastro navegar pra tela de verificação.
+   async function signUp(payload: RegisterPayload) {
+@@ -148,6 +160,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
+         isAuthenticated: !!user,
+         signIn,
+         signInWithPhone,
++        signInWithGoogle,
+         signUp,
+         verifyEmail,
+         resendCode,
+diff --git a/frontend/src/hooks/useGoogleAuth.ts b/frontend/src/hooks/useGoogleAuth.ts
+new file mode 100644
+index 0000000..a325004
+--- /dev/null
++++ b/frontend/src/hooks/useGoogleAuth.ts
+@@ -0,0 +1,132 @@
++import * as AuthSession from 'expo-auth-session';
++import * as WebBrowser from 'expo-web-browser';
++import { useEffect, useRef, useState } from 'react';
++import { Platform } from 'react-native';
++
++// Fecha o popup/aba do navegador automaticamente quando o Google devolve o
++// controle pro app — sem isso a tela do navegador fica aberta parada.
++WebBrowser.maybeCompleteAuthSession();
++
++// Endpoints fixos do Google — não precisam de "descoberta" automática
++// (autoDiscovery), então evitamos uma requisição extra toda vez que a tela
++// de login abre.
++const DESCOBERTA_GOOGLE = {
++  authorizationEndpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
++  tokenEndpoint: 'https://oauth2.googleapis.com/token',
++  revocationEndpoint: 'https://oauth2.googleapis.com/revoke',
++};
++
++// O Google exige um Client ID diferente por plataforma (Android, iOS, Web) —
++// mesmo sendo tudo o mesmo app do lado do Google Cloud.
++function obterClientId() {
++  if (Platform.OS === 'android') return process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID;
++  if (Platform.OS === 'ios') return process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID;
++  return process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
++}
++
++type ResultadoGoogle =
++  | { status: 'idle' }
++  | { status: 'loading' }
++  | { status: 'success'; idToken: string }
++  | { status: 'error'; message: string }
++  | { status: 'cancelled' };
++
++// Hook reaproveitável: devolve uma função pra abrir a tela de login do
++// Google e o resultado (id_token pronto pra mandar pro backend, ou erro).
++export function useGoogleAuth() {
++  const clientId = obterClientId();
++  const [resultado, setResultado] = useState<ResultadoGoogle>({ status: 'idle' });
++
++  // Guarda a promessa da troca do código pelo token, pra "esperar" ela
++  // terminar dentro de promptAsync (ver mais abaixo).
++  const trocaEmAndamento = useRef<Promise<void> | null>(null);
++
++  const redirectUri = AuthSession.makeRedirectUri({ scheme: 'goapp' });
++
++  const [request, response, promptAsyncOriginal] = AuthSession.useAuthRequest(
++    {
++      clientId: clientId || '',
++      scopes: ['openid', 'profile', 'email'],
++      redirectUri,
++      usePKCE: true,
++    },
++    DESCOBERTA_GOOGLE
++  );
++
++  useEffect(() => {
++    if (!response) return;
++
++    if (response.type === 'cancel' || response.type === 'dismiss') {
++      setResultado({ status: 'cancelled' });
++      return;
++    }
++
++    if (response.type === 'error') {
++      setResultado({
++        status: 'error',
++        message: response.error?.message || 'Não foi possível entrar com o Google.',
++      });
++      return;
++    }
++
++    if (response.type === 'success') {
++      const { code } = response.params;
++      const codeVerifier = request?.codeVerifier;
++
++      trocaEmAndamento.current = (async () => {
++        try {
++          setResultado({ status: 'loading' });
++          // Troca o "code" (que só prova que o usuário confirmou o login)
++          // pelo id_token de verdade — essa etapa não precisa de client
++          // secret porque os clients Android/iOS/Web usados aqui são do
++          // tipo "público" (o Google não emite secret pra eles).
++          const tokenResponse = await AuthSession.exchangeCodeAsync(
++            {
++              clientId: clientId || '',
++              code,
++              redirectUri,
++              extraParams: codeVerifier ? { code_verifier: codeVerifier } : undefined,
++            },
++            DESCOBERTA_GOOGLE
++          );
++
++          const idToken = (tokenResponse as any).idToken;
++          if (!idToken) {
++            throw new Error('O Google não devolveu o id_token esperado.');
++          }
++          setResultado({ status: 'success', idToken });
++        } catch (err: any) {
++          setResultado({
++            status: 'error',
++            message: err?.message || 'Não foi possível concluir o login com o Google.',
++          });
++        }
++      })();
++    }
++    // eslint-disable-next-line react-hooks/exhaustive-deps
++  }, [response]);
++
++  async function promptAsync() {
++    if (!clientId) {
++      setResultado({
++        status: 'error',
++        message: 'Login com Google não configurado (falta o Client ID nessa plataforma).',
++      });
++      return;
++    }
++    setResultado({ status: 'loading' });
++    await promptAsyncOriginal();
++  }
++
++  // Deixa a tela resetar o estado depois de mostrar um erro, por exemplo.
++  function resetar() {
++    setResultado({ status: 'idle' });
++  }
++
++  return {
++    disponivel: !!clientId && !!request,
++    resultado,
++    promptAsync,
++    resetar,
++  };
++}
+diff --git a/frontend/src/screens/LoginScreen.tsx b/frontend/src/screens/LoginScreen.tsx
+index d35db15..18e5026 100644
+--- a/frontend/src/screens/LoginScreen.tsx
++++ b/frontend/src/screens/LoginScreen.tsx
+@@ -15,19 +15,51 @@ import {
+ import Button from '../components/Button';
+ import CityBackground from '../components/CityBackground';
+ import { useAuth } from '../context/AuthContext';
++import { useGoogleAuth } from '../hooks/useGoogleAuth';
+ import { colors, radius, spacing, typography } from '../theme/theme';
+ import type { RootStackParamList } from '../types';
+ 
+ type Props = NativeStackScreenProps<RootStackParamList, 'Login'>;
+ 
+ export default function LoginScreen({ navigation }: Props) {
+-  const { signInWithPhone } = useAuth();
++  const { signInWithPhone, signInWithGoogle } = useAuth();
+   const [phone, setPhone] = useState('');
+   const [password, setPassword] = useState('');
+   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+   const [loading, setLoading] = useState(false);
+   const deslocamento = useRef(new Animated.Value(0)).current;
+ 
++  const {
++    disponivel: googleDisponivel,
++    resultado: googleResultado,
++    promptAsync: promptGoogleAsync,
++    resetar: resetarGoogle,
++  } = useGoogleAuth();
++
++  // Reage ao resultado do fluxo do Google (a tela do navegador roda por
++  // fora, então o resultado chega de forma assíncrona aqui, não direto no
++  // clique do botão).
++  useEffect(() => {
++    if (googleResultado.status === 'success') {
++      (async () => {
++        try {
++          await signInWithGoogle(googleResultado.idToken);
++        } catch (err: any) {
++          const dadosErro = err?.response?.data;
++          setErrorMessage(dadosErro?.message ?? err?.message ?? 'Não foi possível entrar com o Google.');
++        } finally {
++          resetarGoogle();
++        }
++      })();
++    } else if (googleResultado.status === 'error') {
++      setErrorMessage(googleResultado.message);
++      resetarGoogle();
++    } else if (googleResultado.status === 'cancelled') {
++      resetarGoogle();
++    }
++    // eslint-disable-next-line react-hooks/exhaustive-deps
++  }, [googleResultado]);
++
+   // Sobe o formulário suavemente quando o teclado abre — animação roda na
+   // thread nativa (useNativeDriver), sem recalcular layout a cada frame,
+   // então não trava mesmo com o gradiente e o SVG de fundo na tela.
+@@ -77,8 +109,13 @@ export default function LoginScreen({ navigation }: Props) {
+     }
+   }
+ 
+-  function handleGoogleLogin() {
+-    setErrorMessage('Login com Google ainda não está disponível.');
++  async function handleGoogleLogin() {
++    setErrorMessage(null);
++    if (!googleDisponivel) {
++      setErrorMessage('Login com Google não está disponível nessa versão do app.');
++      return;
++    }
++    await promptGoogleAsync();
+   }
+ 
+   return (
+@@ -143,9 +180,15 @@ export default function LoginScreen({ navigation }: Props) {
+               <View style={styles.orLine} />
+             </View>
+ 
+-            <Pressable style={styles.googleButton} onPress={handleGoogleLogin}>
++            <Pressable
++              style={[styles.googleButton, googleResultado.status === 'loading' && styles.googleButtonDisabled]}
++              onPress={handleGoogleLogin}
++              disabled={googleResultado.status === 'loading'}
++            >
+               <Text style={styles.googleG}>G</Text>
+-              <Text style={styles.googleLabel}>Entrar com Google</Text>
++              <Text style={styles.googleLabel}>
++                {googleResultado.status === 'loading' ? 'Entrando…' : 'Entrar com Google'}
++              </Text>
+             </Pressable>
+ 
+             <Text style={styles.terms}>
+@@ -283,6 +326,9 @@ const styles = StyleSheet.create({
+     borderColor: colors.primary,
+     marginBottom: spacing.lg,
+   },
++  googleButtonDisabled: {
++    opacity: 0.6,
++  },
+   googleG: {
+     fontSize: 18,
+     fontWeight: '700',
+diff --git a/frontend/src/services/authService.ts b/frontend/src/services/authService.ts
+index f49500a..af0eb03 100644
+--- a/frontend/src/services/authService.ts
++++ b/frontend/src/services/authService.ts
+@@ -69,6 +69,30 @@ export async function loginWithPhone(payload: PhoneLoginPayload): Promise<User>
+   return data.user;
+ }
+ 
++// Login com Google: o front já validou o usuário com o próprio Google e só
++// manda o id_token pro backend confirmar (assinatura + audience) e criar ou
++// achar a conta pelo email — que já vem confirmado, sem precisar do fluxo de
++// código por email do cadastro normal.
++export async function loginWithGoogle(idToken: string): Promise<User> {
++  if (USE_MOCK) {
++    const fakeUser: User = {
++      id: 'mock-user-google',
++      name: 'Usuário Google',
++      email: 'usuario@gmail.com',
++      emailVerificado: true,
++    };
++    await saveToken('mock-token-google-123');
++    return mockDelay(fakeUser);
++  }
++
++  // Formato esperado do backend: POST /auth/google -> { user, tokens }
++  const { data } = await api.post<{ user: User; tokens: AuthTokens }>('/auth/google', {
++    idToken,
++  });
++  await saveToken(data.tokens.accessToken);
++  return data.user;
++}
++
+ // Cadastro nunca loga direto: o backend manda um código de 6 dígitos por email
+ // e só libera o token depois que esse código é confirmado (ver verifyEmail abaixo).
+ export async function register(payload: RegisterPayload): Promise<RegisterResult> {

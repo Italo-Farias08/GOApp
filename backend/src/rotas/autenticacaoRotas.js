@@ -12,6 +12,7 @@ roteador.post('/resend-code', limitadorCodigoVerificacao, autenticacaoControlado
 roteador.post('/change-pending-email', autenticacaoControlador.alterarEmailPendente);
 roteador.post('/login', limitadorLogin, autenticacaoControlador.entrar);
 roteador.post('/login-phone', limitadorLogin, autenticacaoControlador.entrarComTelefone);
+roteador.post('/google', limitadorLogin, autenticacaoControlador.entrarComGoogle);
 
 // Rotas protegidas (exigem token)
 roteador.get('/me', autenticacaoIntermediario, autenticacaoControlador.obterPerfil);
