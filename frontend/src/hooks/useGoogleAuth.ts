@@ -1,14 +1,41 @@
 import { useEffect, useRef, useState } from 'react';
-import {
-  GoogleSignin,
-  isErrorWithCode,
-  isSuccessResponse,
-  statusCodes,
-} from '@react-native-google-signin/google-signin';
+import { NativeModules } from 'react-native';
 
+// O Google Sign-In é um módulo NATIVO — só existe dentro de um app
+// buildado (EAS build / dev client), nunca dentro do Expo Go. Se a gente
+// simplesmente importasse '@react-native-google-signin/google-signin' lá
+// em cima como um import normal, o próprio carregamento do arquivo já
+// travava o app inteiro no Expo Go (é o erro "TurboModuleRegistry
+// could not be found" que apareceu).
+//
+// Pra rodar em Expo Go sem quebrar o resto do app, primeiro checamos se o
+// módulo nativo existe de verdade no aparelho, e só chamamos `require`
+// (que roda na hora, diferente de `import` que roda antes de tudo) quando
+// ele existe. Assim, no Expo Go, a gente nunca chega a carregar essa
+// biblioteca — o app roda normal, só o botão do Google fica desabilitado.
+const nativoDisponivel = !!NativeModules.RNGoogleSignin;
+
+let GoogleSignin: typeof import('@react-native-google-signin/google-signin').GoogleSignin;
+let isErrorWithCode: typeof import('@react-native-google-signin/google-signin').isErrorWithCode;
+let isSuccessResponse: typeof import('@react-native-google-signin/google-signin').isSuccessResponse;
+let statusCodes: typeof import('@react-native-google-signin/google-signin').statusCodes;
+
+if (nativoDisponivel) {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const lib = require('@react-native-google-signin/google-signin');
+  GoogleSignin = lib.GoogleSignin;
+  isErrorWithCode = lib.isErrorWithCode;
+  isSuccessResponse = lib.isSuccessResponse;
+  statusCodes = lib.statusCodes;
+}
+
+// Precisa do Web Client ID pra conseguir o id_token (é ele quem o backend
+// valida) e do iOS Client ID pra identificar o app no iOS. O Android usa
+// só o Web Client ID mesmo (webClientId funciona como "server client id"
+// pros dois SDKs).
 let configurado = false;
 function garantirConfigurado() {
-  if (configurado) return;
+  if (configurado || !nativoDisponivel) return;
   GoogleSignin.configure({
     webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
     iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
@@ -37,6 +64,17 @@ export function useGoogleAuth() {
 
   async function promptAsync() {
     if (emAndamento.current) return;
+
+    if (!nativoDisponivel) {
+      // Testando pelo Expo Go — não crasha o app, só avisa que esse
+      // login específico precisa do app buildado (EAS build / dev client).
+      setResultado({
+        status: 'error',
+        message: 'Login com Google não funciona testando pelo Expo Go. Abra pelo app buildado (EAS build) pra testar isso.',
+      });
+      return;
+    }
+
     emAndamento.current = true;
     setResultado({ status: 'loading' });
     try {
@@ -91,7 +129,7 @@ export function useGoogleAuth() {
   }
 
   return {
-    disponivel: !!process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+    disponivel: nativoDisponivel && !!process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
     resultado,
     promptAsync,
     resetar,

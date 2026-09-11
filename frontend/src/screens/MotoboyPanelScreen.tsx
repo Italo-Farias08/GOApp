@@ -18,11 +18,11 @@ import {
 } from 'react-native';
 import {
   AlertIcon,
+  CarIcon,
   CheckIcon,
   ChevronLeftIcon,
   HistoryIcon,
   MoneyIcon,
-  MotoIcon,
 } from '../components/icons';
 import { useAuth } from '../context/AuthContext';
 import * as driverService from '../services/driverService';
@@ -32,9 +32,9 @@ import type { ResumoMotoboyHoje, RootStackParamList } from '../types';
 type Props = NativeStackScreenProps<RootStackParamList, 'MotoboyPanel'>;
 
 // Tela acessível a QUALQUER usuário logado (cliente ou motorista) a partir
-// das configurações. Só quem é motorista aprovado com veículo do tipo moto
-// (ou seja, um motoboy de fato) enxerga o resumo do dia — todo mundo mais
-// cai no aviso de "isso aqui é só pra motoboy".
+// das configurações. Só quem é motorista aprovado (carro ou moto) enxerga
+// o resumo do dia — todo mundo mais cai no aviso de "isso aqui é só pra
+// motorista".
 export default function MotoboyPanelScreen({ navigation }: Props) {
   const { user } = useAuth();
 
@@ -68,7 +68,7 @@ export default function MotoboyPanelScreen({ navigation }: Props) {
 
   useEffect(() => {
     // Cliente sem nenhum cadastro de motorista nem precisa bater no backend
-    // pra saber que não é motoboy.
+    // pra saber que não é motorista.
     if (user?.driverStatus !== 'approved') {
       setEhMotoboy(false);
       setCarregando(false);
@@ -132,7 +132,7 @@ function Header({ onBack }: { onBack: () => void }) {
       <Pressable onPress={onBack} hitSlop={10} style={styles.backButton}>
         <ChevronLeftIcon size={22} color={colors.text} strokeWidth={2} />
       </Pressable>
-      <Text style={styles.headerTitle}>Painel do Motoboy</Text>
+      <Text style={styles.headerTitle}>Painel do Motorista</Text>
       <View style={styles.backButton} />
     </View>
   );
@@ -142,13 +142,12 @@ function NaoEhMotoboyAviso() {
   return (
     <View style={styles.avisoWrap}>
       <View style={styles.avisoIconeWrap}>
-        <MotoIcon size={36} color={colors.warning} strokeWidth={1.5} />
+        <CarIcon size={36} color={colors.warning} strokeWidth={1.5} />
       </View>
-      <Text style={styles.avisoTitulo}>Você não é motoboy</Text>
+      <Text style={styles.avisoTitulo}>Você ainda não é motorista</Text>
       <Text style={styles.avisoTexto}>
-        Esse painel é exclusivo para motoristas do GO cadastrados com moto. Se você entrega de
-        moto, cadastre-se como motorista em Configurações {'>'} Motorista escolhendo o veículo
-        "Moto".
+        Esse painel é exclusivo para motoristas do GO aprovados (carro ou moto). Cadastre-se em
+        Configurações {'>'} Motorista pra liberar seu resumo do dia.
       </Text>
     </View>
   );

@@ -133,7 +133,7 @@ function MenuView({
       />
       <MenuItem
         renderIcon={(cor) => <MoneyIcon size={22} color={cor} />}
-        label="Painel do Motoboy"
+        label="Painel do Motorista"
         sublabel="Corridas e valor lucrado hoje"
         onPress={onSelectMotoboyPanel}
       />
