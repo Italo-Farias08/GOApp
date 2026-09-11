@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { getToken } from '../services/api';
 import * as authService from '../services/authService';
+import { configurarNotificacoesPush } from '../services/notificacaoPushService';
 import type {
   DriverStatus,
   LoginPayload,
@@ -51,6 +52,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (token) {
           const me = await authService.fetchMe();
           setUser(me);
+          // Fire-and-forget: garante que o token de push continua atualizado
+          // mesmo quando o usuário já estava logado (não passou por
+          // signIn/signInWithGoogle nesta sessão do app).
+          configurarNotificacoesPush();
         }
       } catch {
         setUser(null);
@@ -65,6 +70,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const loggedUser = await authService.login(payload);
       setUser(loggedUser);
+      configurarNotificacoesPush();
     } catch (err: any) {
       setError(err?.response?.data?.message ?? err.message ?? 'Erro ao entrar.');
       throw err;
@@ -76,6 +82,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const loggedUser = await authService.loginWithPhone(payload);
       setUser(loggedUser);
+      configurarNotificacoesPush();
     } catch (err: any) {
       setError(err?.response?.data?.message ?? err.message ?? 'Erro ao entrar.');
       throw err;
@@ -87,6 +94,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const loggedUser = await authService.loginWithGoogle(idToken);
       setUser(loggedUser);
+      configurarNotificacoesPush();
     } catch (err: any) {
       setError(err?.response?.data?.message ?? err.message ?? 'Erro ao entrar com Google.');
       throw err;
@@ -110,6 +118,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const verifiedUser = await authService.verifyEmail({ email, code });
       setUser(verifiedUser);
+      configurarNotificacoesPush();
     } catch (err: any) {
       setError(err?.response?.data?.message ?? err.message ?? 'Código inválido.');
       throw err;

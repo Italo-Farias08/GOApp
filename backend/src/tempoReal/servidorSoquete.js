@@ -2,6 +2,7 @@ const { Server } = require('socket.io');
 const { verificarToken } = require('../utilitarios/token');
 const motoristaModelo = require('../modelos/motoristaModelo');
 const corridaModelo = require('../modelos/corridaModelo');
+const push = require('../utilitarios/pushNotificacoes');
 
 let io = null;
 
@@ -159,13 +160,26 @@ function configurarSoquete(servidorHttp) {
 // e não devem recebê-la de novo.
 function notificarNovaCorrida(corrida, origem, idsIgnorados = []) {
   if (!io) return;
+  const motoristasAlvo = [];
   for (const [usuarioId, dados] of motoristasDisponiveis.entries()) {
     if (idsIgnorados.includes(usuarioId)) continue;
     if (dados.tipoVeiculo !== corrida.tipoVeiculo) continue;
     if (calcularDistanciaKm(origem, dados) <= RAIO_NOTIFICACAO_KM) {
       io.to(dados.socketId).emit('corrida:nova', corrida);
+      motoristasAlvo.push(usuarioId);
     }
   }
+
+  // Além do evento em tempo real (só chega se o app do motorista estiver
+  // aberto), manda push pros mesmos motoristas — cobre o caso de estar com
+  // o app em segundo plano ou a tela bloqueada.
+  push
+    .enviarParaUsuarios(motoristasAlvo, {
+      titulo: 'Nova corrida disponível!',
+      corpo: `Corrida de ${corrida.tipoVeiculo === 'moto' ? 'moto' : 'carro'} por perto — toque pra ver os detalhes.`,
+      dados: { tipo: 'corrida_nova', corridaId: corrida.id },
+    })
+    .catch((erro) => console.error('[push] falha ao notificar nova corrida:', erro));
 }
 
 // Tira o motorista da lista de disponíveis assim que ele aceita uma corrida
@@ -185,6 +199,14 @@ function notificarCorridaAceita({ corridaId, passageiroId, motoristaId, motorist
   corridasAtivas.set(corridaId, { passageiroId, motoristaId });
   io.to(`usuario:${passageiroId}`).emit('corrida:aceita', { corridaId, motorista });
   io.to('motoristas-online').emit('corrida:indisponivel', { corridaId });
+
+  push
+    .enviarParaUsuario(passageiroId, {
+      titulo: 'Motorista a caminho!',
+      corpo: `${motorista?.nome || 'Seu motorista'} aceitou sua corrida e já está indo até você.`,
+      dados: { tipo: 'corrida_aceita', corridaId },
+    })
+    .catch((erro) => console.error('[push] falha ao notificar corrida aceita:', erro));
 }
 
 // Motorista confirmou que pegou o passageiro — o mapa do passageiro (e do
@@ -198,6 +220,14 @@ function notificarCorridaFinalizada({ corridaId, passageiroId }) {
   if (!io) return;
   corridasAtivas.delete(corridaId);
   io.to(`usuario:${passageiroId}`).emit('corrida:finalizada', { corridaId });
+
+  push
+    .enviarParaUsuario(passageiroId, {
+      titulo: 'Corrida finalizada',
+      corpo: 'Você chegou ao seu destino. Obrigado por viajar com o #GO!',
+      dados: { tipo: 'corrida_finalizada', corridaId },
+    })
+    .catch((erro) => console.error('[push] falha ao notificar corrida finalizada:', erro));
 }
 
 function notificarCorridaCancelada({ corridaId, passageiroId, motoristaId, canceladoPor, motivo }) {
@@ -206,6 +236,18 @@ function notificarCorridaCancelada({ corridaId, passageiroId, motoristaId, cance
   const payload = { corridaId, canceladoPor, motivo };
   if (passageiroId) io.to(`usuario:${passageiroId}`).emit('corrida:cancelada', payload);
   if (motoristaId) io.to(`usuario:${motoristaId}`).emit('corrida:cancelada', payload);
+
+  const corpo = motivo ? `Corrida cancelada: ${motivo}` : 'Sua corrida foi cancelada.';
+  if (passageiroId) {
+    push
+      .enviarParaUsuario(passageiroId, { titulo: 'Corrida cancelada', corpo, dados: { tipo: 'corrida_cancelada', corridaId } })
+      .catch((erro) => console.error('[push] falha ao notificar cancelamento (passageiro):', erro));
+  }
+  if (motoristaId) {
+    push
+      .enviarParaUsuario(motoristaId, { titulo: 'Corrida cancelada', corpo, dados: { tipo: 'corrida_cancelada', corridaId } })
+      .catch((erro) => console.error('[push] falha ao notificar cancelamento (motorista):', erro));
+  }
 }
 
 // Motorista cancelou uma corrida que já tinha aceito, mas ela ainda tem
@@ -216,11 +258,27 @@ function notificarMotoristaCancelouReoferta({ corridaId, passageiroId }) {
   if (!io) return;
   corridasAtivas.delete(corridaId);
   io.to(`usuario:${passageiroId}`).emit('corrida:motorista_cancelou', { corridaId });
+
+  push
+    .enviarParaUsuario(passageiroId, {
+      titulo: 'Procurando outro motorista',
+      corpo: 'O motorista cancelou, mas já estamos buscando outro pra você.',
+      dados: { tipo: 'corrida_motorista_cancelou', corridaId },
+    })
+    .catch((erro) => console.error('[push] falha ao notificar reoferta:', erro));
 }
 
 function notificarMotoristaAprovado(usuarioId) {
   if (!io) return;
   io.to(`usuario:${usuarioId}`).emit('motorista:aprovado');
+
+  push
+    .enviarParaUsuario(usuarioId, {
+      titulo: 'Cadastro aprovado!',
+      corpo: 'Seu cadastro de motorista foi aprovado. Você já pode ficar online e receber corridas.',
+      dados: { tipo: 'motorista_aprovado' },
+    })
+    .catch((erro) => console.error('[push] falha ao notificar motorista aprovado:', erro));
 }
 
 // Entrega uma mensagem de chat direto na sala pessoal do destinatário —
@@ -232,6 +290,14 @@ function notificarMotoristaAprovado(usuarioId) {
 function notificarMensagem({ destinatarioId, mensagem }) {
   if (!io || !destinatarioId) return;
   io.to(`usuario:${destinatarioId}`).emit('corrida:mensagem', mensagem);
+
+  push
+    .enviarParaUsuario(destinatarioId, {
+      titulo: 'Nova mensagem',
+      corpo: mensagem?.texto?.slice(0, 120) || 'Você recebeu uma nova mensagem.',
+      dados: { tipo: 'chat_mensagem', corridaId: mensagem?.corridaId },
+    })
+    .catch((erro) => console.error('[push] falha ao notificar mensagem:', erro));
 }
 
 module.exports = {

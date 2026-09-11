@@ -167,6 +167,37 @@ async function ajustarSaldoAReceber(id, delta) {
   return resultado.rows[0];
 }
 
+// Salva (ou substitui) o token de push notification do dispositivo atual do
+// usuário. Chamado pelo app assim que o usuário loga e a permissão de
+// notificação é concedida — um usuário só guarda UM token por vez (o do
+// último dispositivo em que logou), então logar num celular novo
+// naturalmente "desativa" as notificações no antigo.
+async function atualizarPushToken(id, pushToken) {
+  const resultado = await consultar(
+    `UPDATE usuarios SET push_token = $2, atualizado_em = NOW()
+     WHERE id = $1
+     RETURNING *`,
+    [id, pushToken]
+  );
+  return resultado.rows[0];
+}
+
+async function buscarPushTokenPorId(id) {
+  const resultado = await consultar('SELECT push_token FROM usuarios WHERE id = $1', [id]);
+  return resultado.rows[0]?.push_token || null;
+}
+
+// Busca os tokens de vários usuários de uma vez (ex: todos os motoristas
+// disponíveis perto de uma corrida nova) — evita uma query por usuário.
+async function buscarPushTokensPorIds(ids) {
+  if (!Array.isArray(ids) || ids.length === 0) return [];
+  const resultado = await consultar(
+    'SELECT push_token FROM usuarios WHERE id = ANY($1) AND push_token IS NOT NULL',
+    [ids]
+  );
+  return resultado.rows.map((linha) => linha.push_token);
+}
+
 module.exports = {
   paraUsuarioPublico,
   buscarPorEmail,
@@ -182,4 +213,7 @@ module.exports = {
   zerarSaldoAReceber,
   devolverSaldoAReceber,
   ajustarSaldoAReceber,
+  atualizarPushToken,
+  buscarPushTokenPorId,
+  buscarPushTokensPorIds,
 };

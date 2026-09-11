@@ -17,5 +17,6 @@ roteador.post('/google', limitadorLogin, autenticacaoControlador.entrarComGoogle
 // Rotas protegidas (exigem token)
 roteador.get('/me', autenticacaoIntermediario, autenticacaoControlador.obterPerfil);
 roteador.put('/me', autenticacaoIntermediario, autenticacaoControlador.atualizarPerfil);
+roteador.put('/push-token', autenticacaoIntermediario, autenticacaoControlador.atualizarPushToken);
 
 module.exports = roteador;

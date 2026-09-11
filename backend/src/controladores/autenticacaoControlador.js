@@ -353,6 +353,26 @@ async function atualizarPerfil(req, res, next) {
   }
 }
 
+// PUT /auth/push-token
+//
+// Chamado pelo app assim que o usuário loga (e sempre que a Expo gerar um
+// token novo pro dispositivo) — salva o token pra esse usuário poder receber
+// notificação de corrida nova, corrida aceita, chat, etc. mesmo com o app
+// fechado. Sem isso o backend não tem "endereço" nenhum pra mandar push.
+async function atualizarPushToken(req, res, next) {
+  try {
+    const { pushToken } = req.body;
+    if (!pushToken || typeof pushToken !== 'string') {
+      throw new ErroHttp(400, 'Token de notificação inválido.');
+    }
+
+    await usuarioModelo.atualizarPushToken(req.usuarioId, pushToken);
+    return res.status(204).send();
+  } catch (erro) {
+    next(erro);
+  }
+}
+
 module.exports = {
   registrar,
   verificarEmail,
@@ -363,4 +383,5 @@ module.exports = {
   entrarComGoogle,
   obterPerfil,
   atualizarPerfil,
+  atualizarPushToken,
 };

@@ -5,6 +5,11 @@ export default {
     name: '#GO',
     slug: 'go-app',
     version: '1.0.0',
+    // Ícone real do app — aparece na tela inicial do celular, e também é o
+    // que o Android usa pra mostrar o selo colorido nas notificações
+    // (diferente do ícone branco de notification.icon, que é só o desenho
+    // pequeno da barra de status — regra do próprio Android, sem exceção).
+    icon: './assets/icon.png',
     // Usado pelo login com Google (e qualquer outro OAuth) pra saber pra
     // onde voltar depois que o usuário confirma o login no navegador do
     // sistema. Precisa bater com o redirect URI configurado no fluxo do
@@ -33,11 +38,34 @@ export default {
           apiKey: googleMapsApiKey,
         },
       },
-      permissions: ['ACCESS_FINE_LOCATION', 'ACCESS_COARSE_LOCATION'],
+      permissions: ['ACCESS_FINE_LOCATION', 'ACCESS_COARSE_LOCATION', 'POST_NOTIFICATIONS'],
+      // Ícone adaptativo (Android 8+): primeiro plano com só o "G" (sem o
+      // fundo navy) + a cor de fundo — é o Android quem monta o ícone final,
+      // aplicando a máscara (círculo, "squircle" etc) de cada fabricante.
+      adaptiveIcon: {
+        foregroundImage: './assets/adaptive-icon.png',
+        backgroundColor: '#001566',
+      },
+    },
+    // Ícone e cor usados na barra de status/notificação do Android — o
+    // Android sempre desenha esse ícone só com branco/transparente (ele
+    // ignora qualquer outra cor da imagem, incluindo a logo original), por
+    // isso o arquivo é a silhueta do "G" da logo, sem o fundo azul.
+    // "color" é a cor do círculo de fundo atrás do ícone.
+    notification: {
+      icon: './assets/notification-icon.png',
+      color: '#001566',
     },
     plugins: [
       'expo-secure-store',
       'expo-status-bar',
+      [
+        'expo-notifications',
+        {
+          icon: './assets/notification-icon.png',
+          color: '#001566',
+        },
+      ],
       // Login com Google via SDK nativo (ver src/hooks/useGoogleAuth.ts).
       // O Google não permite mais o fluxo antigo de navegador com esquema
       // de URL customizado ("goapp://") pra client IDs do tipo iOS/Android
