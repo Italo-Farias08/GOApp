@@ -1,4 +1,3 @@
-
 const googleMapsApiKey = process.env.GOOGLE_MAPS_API_KEY ?? '';
 
 export default {
@@ -36,7 +35,21 @@ export default {
       },
       permissions: ['ACCESS_FINE_LOCATION', 'ACCESS_COARSE_LOCATION'],
     },
-    plugins: ['expo-secure-store', 'expo-status-bar'],
+    plugins: [
+      'expo-secure-store',
+      'expo-status-bar',
+      // Login com Google via SDK nativo (ver src/hooks/useGoogleAuth.ts).
+      // O Google não permite mais o fluxo antigo de navegador com esquema
+      // de URL customizado ("goapp://") pra client IDs do tipo iOS/Android
+      // — por isso a troca. iosUrlScheme é o Client ID do iOS "invertido"
+      // (com.googleusercontent.apps.<a parte antes de .apps.googleusercontent.com>).
+      [
+        '@react-native-google-signin/google-signin',
+        {
+          iosUrlScheme: 'com.googleusercontent.apps.682727645534-dl62moirr693nuvenelqdce3ofg1siol',
+        },
+      ],
+    ],
     extra: {
       eas: {
         projectId: '72d0ff1f-2015-46ae-91b3-5c06624f49f2',
