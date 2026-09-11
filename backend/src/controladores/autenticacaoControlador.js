@@ -328,9 +328,27 @@ async function atualizarPerfil(req, res, next) {
     }
 
     const telefoneNormalizado = phone ? normalizarTelefone(phone) : undefined;
+
+    if (telefoneNormalizado) {
+      const outroUsuarioComTelefone = await usuarioModelo.buscarPorTelefone(telefoneNormalizado);
+      if (outroUsuarioComTelefone && outroUsuarioComTelefone.id !== req.usuarioId) {
+        throw new ErroHttp(409, 'Esse telefone já está em uso por outra conta.');
+      }
+    }
+
     const usuarioAtualizado = await usuarioModelo.atualizar(req.usuarioId, { nome: name, email, telefone: telefoneNormalizado });
     return res.json({ user: usuarioModelo.paraUsuarioPublico(usuarioAtualizado) });
   } catch (erro) {
+    // Segunda trava de segurança: se duas requisições caírem ao mesmo tempo
+    // (raro, mas possível), a checagem acima pode não pegar e o banco
+    // recusa direto com esse código — traduzimos pra uma mensagem normal
+    // em vez de deixar virar erro 500.
+    if (erro.code === '23505' && erro.constraint === 'usuarios_telefone_key') {
+      return next(new ErroHttp(409, 'Esse telefone já está em uso por outra conta.'));
+    }
+    if (erro.code === '23505' && erro.constraint === 'usuarios_email_key') {
+      return next(new ErroHttp(409, 'Esse email já está em uso por outra conta.'));
+    }
     next(erro);
   }
 }
