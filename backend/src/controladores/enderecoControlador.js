@@ -26,7 +26,6 @@ async function autocomplete(req, res, next) {
   }
 }
 
-// GET /addresses/details?placeId=...&sessiontoken=...
 async function detalhes(req, res, next) {
   try {
     const { placeId, sessiontoken } = req.query;
@@ -45,4 +44,23 @@ async function detalhes(req, res, next) {
   }
 }
 
-module.exports = { autocomplete, detalhes };
+async function reverso(req, res, next) {
+  try {
+    const { latitude, longitude } = req.query;
+
+    if (latitude == null || longitude == null) {
+      throw new ErroHttp(400, 'latitude e longitude são obrigatórios.');
+    }
+
+    const endereco = await googlePlaces.enderecoReverso({
+      latitude: Number(latitude),
+      longitude: Number(longitude),
+    });
+
+    return res.json(endereco);
+  } catch (erro) {
+    next(erro);
+  }
+}
+
+module.exports = { autocomplete, detalhes, reverso };

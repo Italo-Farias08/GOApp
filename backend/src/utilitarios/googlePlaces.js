@@ -119,6 +119,40 @@ async function geocodeComoSugestoes({ input, latitude, longitude }) {
   }));
 }
 
+// Geocodificação REVERSA: transforma coordenadas (lat/lng) num endereço
+// legível. Usada pra descobrir o endereço do PONTO DE EMBARQUE do
+// passageiro (ele só escolhe manualmente o destino — o embarque normalmente
+// é "onde ele está agora", só como coordenadas do GPS) — sem isso, o
+// motorista recebia a corrida sem nenhum endereço de onde buscar o
+// passageiro, só o pino no mapa.
+async function enderecoReverso({ latitude, longitude }) {
+  const params = new URLSearchParams({
+    latlng: `${latitude},${longitude}`,
+    key: obterChave(),
+    language: 'pt-BR',
+  });
+
+  const resposta = await fetch(`${GEOCODE_URL}?${params.toString()}`);
+  const dados = await resposta.json();
+
+  console.log(`[geocodificação reversa] ${latitude},${longitude} → status=${dados.status}`);
+
+  if (dados.status !== 'OK' && dados.status !== 'ZERO_RESULTS') {
+    const erro = new Error(dados.error_message || `Falha na geocodificação reversa (${dados.status}).`);
+    erro.statusCode = 502;
+    throw erro;
+  }
+
+  const primeiro = (dados.results || [])[0];
+  if (!primeiro) return null;
+
+  return {
+    descricao: primeiro.formatted_address,
+    latitude,
+    longitude,
+  };
+}
+
 // Junta uma lista nova de sugestões numa lista já existente, sem duplicar
 // place_id repetido.
 function mesclarSemDuplicar(basePrincipal, novasSugestoes) {
@@ -201,4 +235,4 @@ async function detalhes({ placeId, sessionToken }) {
   };
 }
 
-module.exports = { autocomplete, detalhes };
+module.exports = { autocomplete, detalhes, enderecoReverso };

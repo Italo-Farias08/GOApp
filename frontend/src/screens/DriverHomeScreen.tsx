@@ -1,9 +1,18 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, BackHandler, LayoutChangeEvent, Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  Animated,
+  BackHandler,
+  LayoutChangeEvent,
+  PanResponder,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import MapView, { Marker, Polyline, UrlTile } from 'react-native-maps';
+import MapView, { Marker, Polyline } from 'react-native-maps';
 import type { Socket } from 'socket.io-client';
 import Button from '../components/Button';
 import CancelRideModal from '../components/CancelRideModal';
@@ -36,7 +45,7 @@ import { conectarSoquete } from '../services/socketService';
 import { colors, radius, spacing, typography } from '../theme/theme';
 import type { Corrida, FormaPagamento, MensagemChat, PagamentoPix, RootStackParamList } from '../types';
 import { formatarDistancia, formatarDuracao, formatarMoeda } from '../utils/precoCorrida';
-import { STADIA_TILE_URL } from '../utils/mapaConfig';
+import { DARK_MAP_STYLE } from '../utils/mapaConfig';
 
 // Ícone e texto de cada forma de pagamento, pro motorista já saber de cara
 // como vai receber (ou se o Pix já caiu na conta, no caso do pré-pago).
@@ -59,6 +68,10 @@ const MOTIVOS_CANCELAMENTO_MOTORISTA = [
 // Sombra padrão dos elementos que "flutuam" sobre o mapa (pills do topo,
 // botão de recentralizar) — sem ela, esses elementos pareciam colados na
 // tela em vez de flutuando por cima do mapa.
+// Altura que fica visível (alça + cabeçalho) quando o motorista arrasta o
+// painel de corrida pra baixo pra "recolher" ele e ver o mapa por baixo.
+const ALTURA_MINIMA_PAINEL_ARRASTAVEL = 132;
+
 const sombraFlutuante = {
   shadowColor: '#000',
   shadowOffset: { width: 0, height: 3 },
@@ -151,9 +164,82 @@ export default function DriverHomeScreen() {
   // corrida, corrida ativa) — usada só pra posicionar o botão flutuante de
   // recentralizar sempre coladinho acima dele, sem sobrepor nada.
   const [alturaPainel, setAlturaPainel] = useState(0);
+  // Espelha `alturaPainel` num ref: o PanResponder é criado só uma vez (via
+  // useRef) e seus callbacks fecham sobre o valor de `alturaPainel` da
+  // primeira renderização — sem esse ref, o cálculo do limite de arrasto
+  // ficaria travado em 0 pra sempre.
+  const alturaPainelRef = useRef(0);
   function medirPainel(evento: LayoutChangeEvent) {
     const altura = evento.nativeEvent.layout.height;
+    alturaPainelRef.current = altura;
     setAlturaPainel((atual) => (Math.abs(atual - altura) > 0.5 ? altura : atual));
+  }
+
+  // --- Painel de corrida arrastável -------------------------------------
+  // Antes o card de "nova corrida" / "a caminho do passageiro" / "a caminho
+  // do destino" ficava sempre com a mesma altura fixa, cobrindo boa parte
+  // da tela sem nenhum jeito de recolher — a alcinha no topo era só
+  // decorativa, não respondia a gesto nenhum. Agora dá pra arrastar o
+  // painel pra baixo (ou simplesmente tocar na alça) pra deixar só a
+  // alça + cabeçalho visíveis e enxergar o mapa por baixo; arrastar de
+  // volta pra cima (ou tocar de novo) reabre ele por completo.
+  const arrastoPainel = useRef(new Animated.Value(0)).current;
+  const arrastoBaseRef = useRef(0);
+  const painelPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponderCapture: (_, gesto) => Math.abs(gesto.dy) > 2,
+      onPanResponderGrant: () => {
+        arrastoPainel.stopAnimation((valor) => {
+          arrastoBaseRef.current = valor;
+        });
+      },
+      onPanResponderMove: (_, gesto) => {
+        const limite = Math.max(alturaPainelRef.current - ALTURA_MINIMA_PAINEL_ARRASTAVEL, 0);
+        const novoValor = Math.min(Math.max(arrastoBaseRef.current + gesto.dy, 0), limite);
+        arrastoPainel.setValue(novoValor);
+      },
+      onPanResponderRelease: (_, gesto) => {
+        const limite = Math.max(alturaPainelRef.current - ALTURA_MINIMA_PAINEL_ARRASTAVEL, 0);
+        // Um toque simples na alça (sem arrastar quase nada) alterna entre
+        // recolhido/aberto; um arrasto de verdade decide pela distância
+        // percorrida (mais da metade do caminho) ou pela velocidade do gesto.
+        const foiToqueSemArrasto = Math.abs(gesto.dy) < 6 && Math.abs(gesto.vy) < 0.2;
+        const estavaMaisRecolhidoQueAberto = arrastoBaseRef.current > limite / 2;
+        const valorFinal = arrastoBaseRef.current + gesto.dy;
+        const deveRecolher = foiToqueSemArrasto
+          ? !estavaMaisRecolhidoQueAberto
+          : valorFinal > limite / 2 || gesto.vy > 0.5;
+
+        arrastoBaseRef.current = deveRecolher ? limite : 0;
+        Animated.spring(arrastoPainel, {
+          toValue: arrastoBaseRef.current,
+          useNativeDriver: true,
+          friction: 8,
+          tension: 65,
+        }).start();
+      },
+    })
+  ).current;
+
+  // Troca de contexto (nova oferta chegou, corrida foi aceita, embarque
+  // confirmado, corrida encerrada) sempre reabre o painel por completo —
+  // não faria sentido o painel continuar recolhido de um estado anterior
+  // quando o conteúdo embaixo dele mudou.
+  useEffect(() => {
+    arrastoBaseRef.current = 0;
+    arrastoPainel.setValue(0);
+  }, [corridaRecebida?.id, corridaAtiva?.id, embarcado]);
+
+  // Alça arrastável reaproveitada pelos 3 painéis de corrida (nova corrida
+  // / a caminho do passageiro / a caminho do destino) — a área de toque é
+  // maior que o traço visual só pra facilitar pegar o gesto com o dedo.
+  function renderAlcaArrastavel() {
+    return (
+      <View style={styles.alcaArea} {...painelPanResponder.panHandlers}>
+        <View style={styles.grabber} />
+      </View>
+    );
   }
 
   // Desde quando o motorista está online nessa sessão de busca — só pra
@@ -674,8 +760,7 @@ export default function DriverHomeScreen() {
 
   return (
     <View style={styles.container}>
-      <MapView ref={mapRef} style={styles.map} showsUserLocation showsMyLocationButton={false}>
-        <UrlTile urlTemplate={STADIA_TILE_URL} maximumZ={20} flipY={false} />
+      <MapView ref={mapRef} style={styles.map} showsUserLocation showsMyLocationButton={false} customMapStyle={DARK_MAP_STYLE}>
 
         {coords && (
           <Marker
@@ -695,7 +780,11 @@ export default function DriverHomeScreen() {
             <Marker
               coordinate={alvoAtual}
               anchor={{ x: 0.5, y: 0.85 }}
-              title={embarcado ? 'Destino' : 'Passageiro'}
+              title={
+                embarcado
+                  ? corridaAtiva.destino.endereco ?? 'Destino'
+                  : corridaAtiva.origem.endereco ?? 'Local do passageiro'
+              }
               tracksViewChanges={false}
             >
               <MapPin variant="destino" />
@@ -819,11 +908,12 @@ export default function DriverHomeScreen() {
                 {
                   scale: novaCorridaAnim.interpolate({ inputRange: [0, 1], outputRange: [0.94, 1] }),
                 },
+                { translateY: arrastoPainel },
               ],
             },
           ]}
         >
-          <View style={styles.grabber} />
+          {renderAlcaArrastavel()}
           <View style={styles.painelHeaderComIcone}>
             <View style={styles.veiculoAvatar}>
               {corridaRecebida.tipoVeiculo === 'moto' ? (
@@ -843,15 +933,21 @@ export default function DriverHomeScreen() {
           </View>
           <View style={styles.novaCorridaLinha}>
             <View style={[styles.pontoRota, styles.pontoOrigem]} />
-            <Text style={styles.novaCorridaEndereco} numberOfLines={1}>
-              {corridaRecebida.origem.endereco ?? 'Ponto de partida'}
-            </Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.novaCorridaEnderecoLabel}>Embarque</Text>
+              <Text style={styles.novaCorridaEndereco} numberOfLines={2}>
+                {corridaRecebida.origem.endereco ?? 'Endereço de embarque não informado'}
+              </Text>
+            </View>
           </View>
           <View style={styles.novaCorridaLinha}>
             <View style={[styles.pontoRota, styles.pontoDestino]} />
-            <Text style={styles.novaCorridaEndereco} numberOfLines={1}>
-              {corridaRecebida.destino.endereco ?? 'Destino'}
-            </Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.novaCorridaEnderecoLabel}>Destino</Text>
+              <Text style={styles.novaCorridaEndereco} numberOfLines={2}>
+                {corridaRecebida.destino.endereco ?? 'Destino não informado'}
+              </Text>
+            </View>
           </View>
           <View style={styles.novaCorridaResumo}>
             <Text style={styles.novaCorridaPreco}>{formatarMoeda(corridaRecebida.preco)}</Text>
@@ -889,11 +985,15 @@ export default function DriverHomeScreen() {
       )}
 
       {corridaAtiva && !embarcado && (
-        <View
-          style={[styles.painelInferior, { paddingBottom: spacing.xl + insets.bottom }]}
+        <Animated.View
+          style={[
+            styles.painelInferior,
+            { paddingBottom: spacing.xl + insets.bottom },
+            { transform: [{ translateY: arrastoPainel }] },
+          ]}
           onLayout={medirPainel}
         >
-          <View style={styles.grabber} />
+          {renderAlcaArrastavel()}
           <View style={styles.corridaAtivaTopo}>
             <View style={styles.corridaAtivaBadge}>
               <CheckIcon size={11} color={colors.background} />
@@ -919,9 +1019,12 @@ export default function DriverHomeScreen() {
           </View>
           <View style={styles.novaCorridaLinha}>
             <View style={[styles.pontoRota, styles.pontoOrigem]} />
-            <Text style={styles.novaCorridaEndereco} numberOfLines={1}>
-              {corridaAtiva.origem.endereco ?? 'Buscar passageiro'}
-            </Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.novaCorridaEnderecoLabel}>Buscar o passageiro em</Text>
+              <Text style={styles.novaCorridaEndereco} numberOfLines={2}>
+                {corridaAtiva.origem.endereco ?? 'Endereço de embarque não informado — veja o pino no mapa'}
+              </Text>
+            </View>
           </View>
           <View style={styles.novaCorridaPagamentoRow}>
             {(() => {
@@ -966,15 +1069,19 @@ export default function DriverHomeScreen() {
             disabled={embarcando || cancelando}
             style={styles.cancelarCorridaBotao}
           />
-        </View>
+        </Animated.View>
       )}
 
       {corridaAtiva && embarcado && (
-        <View
-          style={[styles.painelInferior, { paddingBottom: spacing.xl + insets.bottom }]}
+        <Animated.View
+          style={[
+            styles.painelInferior,
+            { paddingBottom: spacing.xl + insets.bottom },
+            { transform: [{ translateY: arrastoPainel }] },
+          ]}
           onLayout={medirPainel}
         >
-          <View style={styles.grabber} />
+          {renderAlcaArrastavel()}
           <View style={styles.corridaAtivaTopo}>
             <View style={styles.corridaAtivaBadge}>
               <CheckIcon size={11} color={colors.background} />
@@ -1000,9 +1107,12 @@ export default function DriverHomeScreen() {
           </View>
           <View style={styles.novaCorridaLinha}>
             <View style={[styles.pontoRota, styles.pontoDestino]} />
-            <Text style={styles.novaCorridaEndereco} numberOfLines={1}>
-              {corridaAtiva.destino.endereco ?? 'Destino final'}
-            </Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.novaCorridaEnderecoLabel}>Destino</Text>
+              <Text style={styles.novaCorridaEndereco} numberOfLines={2}>
+                {corridaAtiva.destino.endereco ?? 'Destino não informado'}
+              </Text>
+            </View>
           </View>
           <View style={styles.novaCorridaPagamentoRow}>
             {(() => {
@@ -1039,7 +1149,7 @@ export default function DriverHomeScreen() {
             loading={finalizando && !pixModalVisivel}
             style={styles.painelBotao}
           />
-        </View>
+        </Animated.View>
       )}
 
       <StatusToast message={toastMensagem} tone={toastTom} topOffset={insets.top + spacing.xxl + spacing.xs} />
@@ -1197,15 +1307,25 @@ const styles = StyleSheet.create({
     shadowRadius: 14,
     elevation: 10,
   },
+  // Área de toque da alça arrastável — bem maior que o traço visual (só o
+  // "grabber" abaixo) pra ficar fácil de pegar o gesto com o dedo, sem
+  // precisar acertar milimetricamente uma linha fina de 4px de altura.
+  alcaArea: {
+    alignSelf: 'stretch',
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+    marginTop: -spacing.sm,
+    marginBottom: spacing.xs,
+  },
   // Alcinha no topo do painel — mesmo sinal visual de "bottom sheet" usado
-  // na tela do passageiro, dá a sensação de painel que pode ser puxado.
+  // na tela do passageiro, e agora responde de verdade a arrastar/tocar
+  // (ver renderAlcaArrastavel) pra recolher o painel e revelar o mapa.
   grabber: {
     alignSelf: 'center',
     width: 40,
     height: 4,
     borderRadius: 2,
     backgroundColor: colors.border,
-    marginBottom: spacing.md,
   },
   erroLinha: {
     flexDirection: 'row',
@@ -1325,7 +1445,17 @@ const styles = StyleSheet.create({
   pontoRota: { width: 8, height: 8, borderRadius: 4, marginRight: spacing.sm },
   pontoOrigem: { backgroundColor: colors.primary },
   pontoDestino: { backgroundColor: colors.danger },
-  novaCorridaEndereco: { ...typography.body, color: colors.text, flex: 1 },
+  // Legenda curta acima do endereço ("Embarque" / "Buscar o passageiro em" /
+  // "Destino") — deixa claro qual ponto é qual, principalmente agora que o
+  // endereço de embarque passa a aparecer de verdade (antes só o destino
+  // tinha endereço; o embarque ficava só com um rótulo genérico).
+  novaCorridaEnderecoLabel: {
+    ...typography.caption,
+    fontSize: 11,
+    color: colors.textSecondary,
+    marginBottom: 1,
+  },
+  novaCorridaEndereco: { ...typography.body, color: colors.text },
   novaCorridaResumo: {
     flexDirection: 'row',
     justifyContent: 'space-between',

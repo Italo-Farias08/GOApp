@@ -16,7 +16,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import MapView, { Marker, Polyline, UrlTile } from 'react-native-maps';
+import MapView, { Marker, Polyline } from 'react-native-maps';
 import type { Socket } from 'socket.io-client';
 import Button from '../components/Button';
 import CancelRideModal from '../components/CancelRideModal';
@@ -44,12 +44,13 @@ import { useAuth } from '../context/AuthContext';
 import { useCurrentLocation } from '../hooks/useCurrentLocation';
 import { useAddressSearch, EnderecoSugerido, SugestaoEndereco } from '../hooks/useAddressSearch';
 import { useRota } from '../hooks/useRota';
+import * as addressService from '../services/addressService';
 import * as paymentService from '../services/paymentService';
 import * as rideService from '../services/rideService';
 import { conectarSoquete } from '../services/socketService';
 import { colors, radius, spacing, typography } from '../theme/theme';
 import type { Corrida, FormaPagamento, MensagemChat, MotoristaInfo, PagamentoPix } from '../types';
-import { STADIA_TILE_URL } from '../utils/mapaConfig';
+import { DARK_MAP_STYLE } from '../utils/mapaConfig';
 import {
   EstimativaCorrida,
   TipoVeiculo,
@@ -446,6 +447,22 @@ export default function HomeScreen() {
     }
   }, [sugestoes.length, corridaConfirmada]);
 
+  // --- Entrada animada da lista de sugestões de endereço: some/aparece com
+  // um leve "subir + crescer" pra dar mais vida quando os resultados chegam,
+  // em vez de simplesmente aparecer travado na tela. ---
+  const sugestoesAnim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (sugestoes.length > 0) {
+      sugestoesAnim.setValue(0);
+      Animated.spring(sugestoesAnim, {
+        toValue: 1,
+        friction: 8,
+        tension: 60,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [sugestoes.length > 0]);
+
   // Conecta ao socket e escuta o ciclo de vida da corrida (aceita, localização
   // do motorista ao vivo, finalizada, cancelada).
   useEffect(() => {
@@ -806,8 +823,23 @@ export default function HomeScreen() {
     setOpcoesVisiveis(false);
     if (!escolhida || !destinoSelecionado || !coords) return;
 
+    // Descobre o endereço legível do ponto de embarque (o passageiro nunca
+    // digita isso — é sempre a localização atual dele, que só existe como
+    // coordenadas de GPS). Sem essa geocodificação reversa, o motorista
+    // recebia a corrida sem NENHUM endereço de onde buscar o passageiro, só
+    // o pino no mapa. Se a chamada falhar (sem internet, API fora do ar
+    // etc.) a corrida segue mesmo assim — só sem o endereço de embarque —
+    // pra nunca travar o pedido por causa disso.
+    let enderecoEmbarque: string | undefined;
+    try {
+      const enderecoReverso = await addressService.buscarEnderecoReverso(coords.latitude, coords.longitude);
+      enderecoEmbarque = enderecoReverso?.descricao;
+    } catch {
+      enderecoEmbarque = undefined;
+    }
+
     const dadosCorrida = {
-      origem: { latitude: coords.latitude, longitude: coords.longitude },
+      origem: { latitude: coords.latitude, longitude: coords.longitude, endereco: enderecoEmbarque },
       destino: {
         latitude: destinoSelecionado.latitude,
         longitude: destinoSelecionado.longitude,
@@ -957,9 +989,8 @@ export default function HomeScreen() {
         region={coords && !destinoSelecionado ? region : undefined}
         showsUserLocation
         showsMyLocationButton={false}
+        customMapStyle={DARK_MAP_STYLE}
       >
-        <UrlTile urlTemplate={STADIA_TILE_URL} maximumZ={20} flipY={false} />
-
         {coords && (
           <Marker
             coordinate={coords}
@@ -1009,10 +1040,6 @@ export default function HomeScreen() {
       </MapView>
 
       <View pointerEvents="none" style={styles.mapBrightener} />
-
-      <View style={styles.attribution}>
-        <Text style={styles.attributionText}>© Stadia Maps © OpenMapTiles © OpenStreetMap</Text>
-      </View>
 
       {isLoading && (
         <View style={styles.loadingOverlay}>
@@ -1080,7 +1107,14 @@ export default function HomeScreen() {
           </View>
         </View>
         <Pressable
-          onPress={() => setSettingsVisible(true)}
+          onPress={() => {
+            // O iOS às vezes mantém o campo de texto focado "flutuando" numa
+            // camada acima de views abertas depois dele (bug conhecido de
+            // TextInput nativo focado) — fechar o teclado antes de abrir o
+            // menu evita esse vazamento visual.
+            Keyboard.dismiss();
+            setSettingsVisible(true);
+          }}
           style={({ pressed }) => [styles.settingsButton, pressed && styles.pressedFeedback]}
           hitSlop={6}
         >
@@ -1111,14 +1145,17 @@ export default function HomeScreen() {
         </Animated.View>
       )}
 
-      <SettingsModal visible={settingsVisible} onClose={() => setSettingsVisible(false)} />
-
       <Animated.View
+        // Enquanto as configurações estão abertas, esse cartão fica
+        // totalmente invisível e "morto" pra toque — assim, seja lá qual
+        // for o motivo dele às vezes aparecer por cima de outros modais,
+        // ele não tem como vazar: não está nem visível.
+        pointerEvents={settingsVisible ? 'none' : 'auto'}
         style={[
           styles.bottomSheet,
           {
             height: alturaAnimada,
-            opacity: entradaAnimAtrasada,
+            opacity: settingsVisible ? 0 : entradaAnimAtrasada,
             transform: [
               {
                 translateY: Animated.add(
@@ -1154,7 +1191,7 @@ export default function HomeScreen() {
                   deveria pesquisar/trocar destino ou disparar outra corrida
                   por cima da atual. Só volta a aparecer depois que a corrida
                   atual for cancelada ou finalizada (resetarCorrida). */}
-              {!corridaConfirmada && (
+              {!corridaConfirmada && !settingsVisible && (
                 <Animated.View
                   style={[
                     styles.destinationRow,
@@ -1400,24 +1437,64 @@ export default function HomeScreen() {
             )}
 
             {!corridaConfirmada && !destinoSelecionado && sugestoes.length > 0 && (
-              <View style={styles.sugestoesLista}>
-                {sugestoes.map((item) => (
-                  <Pressable
-                    key={item.id}
-                    style={({ pressed }) => [
-                      styles.sugestaoItem,
-                      pressed && styles.sugestaoItemPressed,
-                    ]}
-                    onPress={() => selecionarSugestao(item)}
-                    disabled={resolvendoDestino}
-                  >
-                    <PinIcon size={16} color={colors.textMuted} />
-                    <Text style={styles.sugestaoTexto} numberOfLines={2}>
-                      {item.descricao}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
+              <Animated.View
+                style={[
+                  styles.sugestoesLista,
+                  {
+                    opacity: sugestoesAnim,
+                    transform: [
+                      {
+                        translateY: sugestoesAnim.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [14, 0],
+                        }),
+                      },
+                      {
+                        scale: sugestoesAnim.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [0.97, 1],
+                        }),
+                      },
+                    ],
+                  },
+                ]}
+              >
+                {sugestoes.map((item, index) => {
+                  // Separa "Rua Tal, 123" (linha principal, em destaque) do
+                  // resto do endereço ("Bairro, Cidade - UF", menor e
+                  // discreto) — deixa mais fácil bater o olho e achar o
+                  // endereço certo rápido.
+                  const [linhaPrincipal, ...restoPartes] = item.descricao.split(',');
+                  const linhaSecundaria = restoPartes.join(',').trim();
+
+                  return (
+                    <Pressable
+                      key={item.id}
+                      style={({ pressed }) => [
+                        styles.sugestaoItem,
+                        index === sugestoes.length - 1 && styles.sugestaoItemUltimo,
+                        pressed && styles.sugestaoItemPressed,
+                      ]}
+                      onPress={() => selecionarSugestao(item)}
+                      disabled={resolvendoDestino}
+                    >
+                      <View style={styles.sugestaoIconeWrap}>
+                        <PinIcon size={18} color={colors.primary} />
+                      </View>
+                      <View style={styles.sugestaoTextos}>
+                        <Text style={styles.sugestaoTextoPrincipal} numberOfLines={1}>
+                          {linhaPrincipal.trim()}
+                        </Text>
+                        {!!linhaSecundaria && (
+                          <Text style={styles.sugestaoTextoSecundario} numberOfLines={1}>
+                            {linhaSecundaria}
+                          </Text>
+                        )}
+                      </View>
+                    </Pressable>
+                  );
+                })}
+              </Animated.View>
             )}
           </ScrollView>
 
@@ -1493,6 +1570,13 @@ export default function HomeScreen() {
         onEnviar={enviarMensagemChat}
         onFechar={() => setChatVisivel(false)}
       />
+
+      {/* Precisa ser o ÚLTIMO item renderizado aqui — ele não usa mais o
+          <Modal> nativo do React Native (ver comentário no topo do
+          SettingsModal.tsx), então o que garante que ele fique por cima de
+          tudo mais (mapa, busca de destino, botão "Buscar corrida", os
+          outros modais acima) é só a ordem em que aparece na árvore. */}
+      <SettingsModal visible={settingsVisible} onClose={() => setSettingsVisible(false)} />
     </View>
   );
 }
@@ -1508,19 +1592,6 @@ const styles = StyleSheet.create({
   mapBrightener: {
     ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(7, 25, 63, 0.25)',
-  },
-  attribution: {
-    position: 'absolute',
-    bottom: 4,
-    right: 8,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  attributionText: {
-    fontSize: 10,
-    color: '#fff',
   },
   loadingOverlay: {
     ...StyleSheet.absoluteFill,
@@ -1948,27 +2019,55 @@ const styles = StyleSheet.create({
   },
   sugestoesLista: {
     marginBottom: spacing.md,
-    borderRadius: radius.md,
+    borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: colors.border,
+    backgroundColor: colors.surface,
     overflow: 'hidden',
+    // Sombra sutil pra a lista "flutuar" sobre o mapa, em vez de parecer
+    // só mais uma faixa colada no cartão.
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 6,
   },
   sugestaoItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: spacing.sm,
+    paddingVertical: spacing.md,
     paddingHorizontal: spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
+  sugestaoItemUltimo: {
+    borderBottomWidth: 0,
+  },
   sugestaoItemPressed: {
     backgroundColor: colors.surfaceAlt,
   },
-  sugestaoTexto: {
-    ...typography.body,
-    color: colors.text,
-    marginLeft: spacing.sm,
+  sugestaoIconeWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.full,
+    backgroundColor: 'rgba(57, 255, 106, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.sm,
+  },
+  sugestaoTextos: {
     flex: 1,
+  },
+  sugestaoTextoPrincipal: {
+    ...typography.bodyBold,
+    fontSize: 17,
+    color: colors.text,
+  },
+  sugestaoTextoSecundario: {
+    ...typography.caption,
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginTop: 2,
   },
   promoSecao: {
     marginBottom: spacing.md,
@@ -1978,9 +2077,6 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontWeight: '600',
     marginBottom: spacing.sm,
-    // O carrossel embaixo agora não tem padding nenhum (vai de ponta a
-    // ponta na tela) — então é o rótulo que precisa desse respiro lateral
-    // pra ficar alinhado com o resto do conteúdo da folha.
     paddingHorizontal: spacing.lg,
   },
   confirmButtonWrapper: {

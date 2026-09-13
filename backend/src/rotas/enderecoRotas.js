@@ -8,5 +8,6 @@ roteador.use(autenticacaoIntermediario);
 
 roteador.get('/autocomplete', enderecoControlador.autocomplete);
 roteador.get('/details', enderecoControlador.detalhes);
+roteador.get('/reverse', enderecoControlador.reverso);
 
 module.exports = roteador;
