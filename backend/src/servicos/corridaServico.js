@@ -56,6 +56,15 @@ async function criarEDespachar({ passageiroId, origem, destino, tipoVeiculo, pre
 
   const { precoFinal, dividasIncluidas } = await calcularPrecoComDividasPendentes(passageiroId, preco);
 
+  // Checagem feita ANTES de despachar: se não tem nenhum motorista do tipo
+  // pedido disponível agora (dentro do raio de notificação), o passageiro
+  // precisa saber disso na hora — pra o app mostrar um aviso em vez de só
+  // ficar com o anel de "procurando" girando sem explicação nenhuma. A
+  // corrida é criada e a busca continua normalmente de qualquer jeito: se
+  // um motorista ficar disponível depois, a reoferta em
+  // 'motorista:disponivel' ainda alcança essa corrida.
+  const semMotoristasDisponiveis = !soquete.existeMotoristaDisponivelPara(tipoVeiculo, origem);
+
   const corrida = await corridaModelo.criar({
     passageiroId,
     origem,
@@ -76,9 +85,15 @@ async function criarEDespachar({ passageiroId, origem, destino, tipoVeiculo, pre
   const corridaPublica = {
     ...corridaModelo.paraCorridaPublica(corrida),
     passageiroNome: passageiro?.nome,
+    // Campo só de resposta (não persistido) — informa o estado do radar
+    // no exato instante da criação, pro app decidir se mostra o aviso.
+    semMotoristasDisponiveis,
   };
 
   soquete.notificarNovaCorrida(corridaPublica, origem);
+  if (semMotoristasDisponiveis) {
+    soquete.notificarSemMotoristas({ corridaId: corrida.id, passageiroId, tipoVeiculo });
+  }
 
   return corridaPublica;
 }

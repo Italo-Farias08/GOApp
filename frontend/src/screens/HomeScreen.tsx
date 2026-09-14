@@ -27,6 +27,7 @@ import DirectionIndicator from '../components/DirectionIndicator';
 import PixPaymentModal from '../components/PixPaymentModal';
 import PromoBanners, { Banner } from '../components/PromoBanners';
 import RideOptionsModal from '../components/RideOptionsModal';
+import SemMotoristasModal from '../components/SemMotoristasModal';
 import SettingsModal from '../components/SettingsModal';
 import StatusToast, { StatusToastTone } from '../components/StatusToast';
 import {
@@ -166,6 +167,11 @@ export default function HomeScreen() {
   // --- Corrida real (backend + tempo real) ---
   const [corridaId, setCorridaId] = useState<string | null>(null);
   const [motoristaAtribuido, setMotoristaAtribuido] = useState<MotoristaInfo | null>(null);
+  // Aviso de "nenhum motorista desse tipo disponível agora" — mostrado logo
+  // após pedir a corrida (ou via socket, no caso do Pix pré-pago, que só
+  // nasce depois do pagamento confirmado). A busca continua normalmente
+  // mesmo com o modal aberto; ele só informa o passageiro.
+  const [semMotoristasVisivel, setSemMotoristasVisivel] = useState(false);
   const [localizacaoMotorista, setLocalizacaoMotorista] = useState<{ latitude: number; longitude: number } | null>(null);
   // --- Marcador do motorista "em movimento" no mapa ---
   // Referência ao Marker do motorista — usada pra deslizar ele suavemente
@@ -517,7 +523,18 @@ export default function HomeScreen() {
     function aoAceitar({ corridaId: id, motorista }: { corridaId: string; motorista: MotoristaInfo }) {
       if (!ativo || id !== corridaIdRef.current) return;
       setMotoristaAtribuido(motorista);
+      setSemMotoristasVisivel(false);
       avisar(`${motorista.nome.split(' ')[0]} aceitou sua corrida e já está a caminho!`, 'success');
+    }
+
+    // Cobre o fluxo de Pix pré-pago: a corrida só nasce depois do pagamento
+    // confirmado, então a resposta que o app recebe do polling de status
+    // não carrega o campo `semMotoristasDisponiveis` (só o corridaId) — o
+    // backend avisa por aqui em vez disso, pro passageiro ver o mesmo aviso
+    // independente da forma de pagamento escolhida.
+    function aoSemMotoristas({ corridaId: id }: { corridaId: string; tipoVeiculo: string }) {
+      if (!ativo || id !== corridaIdRef.current) return;
+      setSemMotoristasVisivel(true);
     }
 
     function aoAtualizarLocalizacao({ corridaId: id, latitude, longitude }: { corridaId: string; latitude: number; longitude: number }) {
@@ -568,6 +585,7 @@ export default function HomeScreen() {
 
       soquete.on('corrida:mensagem', aoReceberMensagem);
       soquete.on('corrida:aceita', aoAceitar);
+      soquete.on('corrida:sem_motoristas', aoSemMotoristas);
       soquete.on('corrida:localizacao_motorista', aoAtualizarLocalizacao);
       soquete.on('corrida:embarque', aoEmbarcar);
       soquete.on('corrida:motorista_cancelou', aoMotoristaCancelar);
@@ -579,6 +597,7 @@ export default function HomeScreen() {
       ativo = false;
       soquete?.off('corrida:mensagem', aoReceberMensagem);
       soquete?.off('corrida:aceita', aoAceitar);
+      soquete?.off('corrida:sem_motoristas', aoSemMotoristas);
       soquete?.off('corrida:localizacao_motorista', aoAtualizarLocalizacao);
       soquete?.off('corrida:embarque', aoEmbarcar);
       soquete?.off('corrida:motorista_cancelou', aoMotoristaCancelar);
@@ -646,6 +665,7 @@ export default function HomeScreen() {
     setCorridaId(null);
     setCorridaConfirmada(null);
     setMotoristaAtribuido(null);
+    setSemMotoristasVisivel(false);
     setLocalizacaoMotorista(null);
     setCoordenadaInicialMotorista(null);
     posicaoAnteriorMotoristaRef.current = null;
@@ -908,6 +928,13 @@ export default function HomeScreen() {
     try {
       const corrida = await rideService.criarCorrida({ ...dadosCorrida, formaPagamento });
       setCorridaId(corrida.id);
+      // Backend já sabe, no instante da criação, se não tinha nenhum
+      // motorista do tipo pedido disponível por perto — mostra o aviso na
+      // hora em vez de deixar o passageiro só olhando o anel de
+      // "procurando" girar sem explicação.
+      if (corrida.semMotoristasDisponiveis) {
+        setSemMotoristasVisivel(true);
+      }
       // IMPORTANTE: o preço que volta aqui é o preço REAL da corrida — se o
       // passageiro tinha dívida pendente de uma corrida anterior não paga,
       // o backend já somou ela aqui (ver corridaServico.criarEDespachar no
@@ -1613,6 +1640,16 @@ export default function HomeScreen() {
         carregando={cancelandoCorrida}
         onConfirmar={confirmarCancelamento}
         onFechar={() => setCancelamentoVisivel(false)}
+      />
+
+      <SemMotoristasModal
+        visible={semMotoristasVisivel}
+        tipoVeiculo={corridaConfirmada?.tipo ?? 'carro'}
+        onContinuar={() => setSemMotoristasVisivel(false)}
+        onCancelarCorrida={() => {
+          setSemMotoristasVisivel(false);
+          abrirCancelamento();
+        }}
       />
 
       <CompleteProfileModal

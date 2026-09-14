@@ -182,6 +182,32 @@ function notificarNovaCorrida(corrida, origem, idsIgnorados = []) {
     .catch((erro) => console.error('[push] falha ao notificar nova corrida:', erro));
 }
 
+// Verifica se existe AGORA pelo menos um motorista disponível do tipo de
+// veículo pedido, dentro do mesmo raio usado pra despachar a corrida —
+// usado como pré-checagem em corridaServico.criarEDespachar pra o app do
+// passageiro avisar (com um modal) que, no momento, não há motorista desse
+// tipo por perto, mesmo continuando a busca em segundo plano (motoristas
+// que ficarem disponíveis depois ainda recebem a oferta, via reoferta em
+// 'motorista:disponivel').
+function existeMotoristaDisponivelPara(tipoVeiculo, origem) {
+  for (const dados of motoristasDisponiveis.values()) {
+    if (dados.tipoVeiculo !== tipoVeiculo) continue;
+    if (calcularDistanciaKm(origem, dados) <= RAIO_NOTIFICACAO_KM) return true;
+  }
+  return false;
+}
+
+// Avisa o passageiro, pelo socket, que a corrida foi criada mas não tinha
+// nenhum motorista do tipo pedido disponível no momento — cobre também o
+// fluxo de Pix pré-pago (POST /payments/pix), onde a corrida nasce depois
+// da confirmação do pagamento e a resposta que o app recebe do polling não
+// carrega esse dado (só o corridaId). Emitir por aqui garante que os dois
+// fluxos de criação avisem o passageiro do mesmo jeito.
+function notificarSemMotoristas({ corridaId, passageiroId, tipoVeiculo }) {
+  if (!io) return;
+  io.to(`usuario:${passageiroId}`).emit('corrida:sem_motoristas', { corridaId, tipoVeiculo });
+}
+
 // Mesmo efeito de 'motorista:atualizar_localizacao' / atualização de
 // posição de 'motorista:disponivel', só que chamado a partir de uma
 // requisição HTTP comum (ver motoristaControlador.atualizarLocalizacao) em
@@ -348,4 +374,6 @@ module.exports = {
   notificarMotoristaAprovado,
   notificarMensagem,
   atualizarLocalizacaoPorHttp,
+  existeMotoristaDisponivelPara,
+  notificarSemMotoristas,
 };
