@@ -173,6 +173,32 @@ async function resumoHoje(req, res, next) {
   }
 }
 
+// POST /driver/location — usado pelo app quando o motorista está com o
+// app minimizado/tela travada e a tarefa de segundo plano (expo-task-manager)
+// manda a localização por HTTP em vez de socket (ver
+// frontend/src/services/backgroundLocationTask.ts). Faz o mesmo papel dos
+// eventos de socket 'motorista:atualizar_localizacao', só que sem depender
+// de a conexão em tempo real estar de pé naquele momento.
+async function atualizarLocalizacao(req, res, next) {
+  try {
+    const { latitude, longitude, corridaId } = req.body;
+
+    if (typeof latitude !== 'number' || typeof longitude !== 'number') {
+      throw new ErroHttp(400, 'Informe latitude e longitude válidas.');
+    }
+
+    soquete.atualizarLocalizacaoPorHttp(req.usuarioId, {
+      corridaId: corridaId || null,
+      latitude,
+      longitude,
+    });
+
+    return res.status(204).send();
+  } catch (erro) {
+    next(erro);
+  }
+}
+
 // GET /driver/pending (admin)
 async function listarPendentes(req, res, next) {
   try {
@@ -211,6 +237,7 @@ module.exports = {
   consultarStatus,
   consultarMeuCadastro,
   atualizarVeiculo,
+  atualizarLocalizacao,
   resumoHoje,
   listarPendentes,
   aprovar,

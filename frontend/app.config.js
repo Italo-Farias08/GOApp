@@ -29,6 +29,13 @@ export default {
       infoPlist: {
         NSLocationWhenInUseUsageDescription:
           'O #GO usa sua localização pra mostrar onde você está no mapa e encontrar corridas por perto.',
+        // Necessário pro rastreamento em segundo plano do motorista (ver
+        // useDriverLocationWatcher/backgroundLocationTask): sem essa chave o
+        // iOS nem mostra a opção "Permitir sempre" no pedido de permissão, e
+        // a localização para de atualizar assim que o app sai de primeiro
+        // plano ou a tela é bloqueada.
+        NSLocationAlwaysAndWhenInUseUsageDescription:
+          'O #GO precisa da sua localização em segundo plano pra manter o rastreamento ao vivo da corrida e continuar te oferecendo corridas com a tela bloqueada ou o app minimizado.',
       },
     },
     android: {
@@ -38,7 +45,18 @@ export default {
           apiKey: googleMapsApiKey,
         },
       },
-      permissions: ['ACCESS_FINE_LOCATION', 'ACCESS_COARSE_LOCATION', 'POST_NOTIFICATIONS'],
+      // ACCESS_BACKGROUND_LOCATION + FOREGROUND_SERVICE(_LOCATION): sem elas
+      // o Android suspende o GPS assim que o app perde o foco (minimizado ou
+      // tela travada) — era exatamente isso que interrompia o rastreamento
+      // ao vivo do motorista e contribuía pro motorista "sumir" do radar.
+      permissions: [
+        'ACCESS_FINE_LOCATION',
+        'ACCESS_COARSE_LOCATION',
+        'ACCESS_BACKGROUND_LOCATION',
+        'FOREGROUND_SERVICE',
+        'FOREGROUND_SERVICE_LOCATION',
+        'POST_NOTIFICATIONS',
+      ],
       // Ícone adaptativo (Android 8+): primeiro plano com só o "G" (sem o
       // fundo navy) + a cor de fundo — é o Android quem monta o ícone final,
       // aplicando a máscara (círculo, "squircle" etc) de cada fabricante.
@@ -59,6 +77,21 @@ export default {
     plugins: [
       'expo-secure-store',
       'expo-status-bar',
+      'expo-task-manager',
+      // Habilita o rastreamento em segundo plano (Location.startLocationUpdatesAsync)
+      // usado pelo motorista: no Android liga a permissão ACCESS_BACKGROUND_LOCATION +
+      // o serviço em primeiro plano (mantém o processo vivo com tela travada); no iOS
+      // liga o background mode "location" no Info.plist.
+      [
+        'expo-location',
+        {
+          isAndroidBackgroundLocationEnabled: true,
+          isAndroidForegroundServiceEnabled: true,
+          isIosBackgroundLocationEnabled: true,
+          locationAlwaysAndWhenInUsePermission:
+            'O #GO precisa da sua localização em segundo plano pra manter o rastreamento ao vivo da corrida e continuar te oferecendo corridas com a tela bloqueada ou o app minimizado.',
+        },
+      ],
       [
         'expo-notifications',
         {

@@ -10,6 +10,7 @@ roteador.post('/apply', autenticacaoIntermediario, motoristaControlador.solicita
 roteador.get('/status', autenticacaoIntermediario, motoristaControlador.consultarStatus);
 roteador.get('/me', autenticacaoIntermediario, motoristaControlador.consultarMeuCadastro);
 roteador.put('/vehicle', autenticacaoIntermediario, motoristaControlador.atualizarVeiculo);
+roteador.post('/location', autenticacaoIntermediario, motoristaControlador.atualizarLocalizacao);
 roteador.get('/today-summary', autenticacaoIntermediario, motoristaControlador.resumoHoje);
 
 // Rotas administrativas — aprovar/reprovar cadastro de motorista.

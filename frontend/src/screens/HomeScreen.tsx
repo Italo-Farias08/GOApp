@@ -23,6 +23,7 @@ import CancelRideModal from '../components/CancelRideModal';
 import ChatModal from '../components/ChatModal';
 import CompleteProfileModal from '../components/CompleteProfileModal';
 import MapPin from '../components/MapPin';
+import DirectionIndicator from '../components/DirectionIndicator';
 import PixPaymentModal from '../components/PixPaymentModal';
 import PromoBanners, { Banner } from '../components/PromoBanners';
 import RideOptionsModal from '../components/RideOptionsModal';
@@ -135,9 +136,18 @@ export default function HomeScreen() {
   const { user, precisaCompletarCadastro, updateAccount } = useAuth();
   const [perfilModalVisivel, setPerfilModalVisivel] = useState(false);
   const [salvandoPerfil, setSalvandoPerfil] = useState(false);
-  const { coords, isLoading, errorMessage } = useCurrentLocation();
+  const { coords, heading, isLoading, errorMessage } = useCurrentLocation();
   const [destination, setDestination] = useState('');
   const [destinoSelecionado, setDestinoSelecionado] = useState<EnderecoSugerido | null>(null);
+  // Posição em PIXEL (x,y) na tela onde a sua coordenada real cai
+  // atualmente no mapa. Antes o farol ficava fixo no centro da tela, o que
+  // só batia com sua localização enquanto o mapa estava perfeitamente
+  // centralizado nela — desalinhava assim que você dava zoom (o pinça
+  // geralmente centraliza no ponto onde os dedos tocaram, não no centro da
+  // tela) ou arrastava o mapa. Recalculando esse ponto a cada movimento do
+  // mapa via `pointForCoordinate`, o farol acompanha sua posição real na
+  // tela em vez de ficar preso ao centro.
+  const [pontoTelaUsuario, setPontoTelaUsuario] = useState<{ x: number; y: number } | null>(null);
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [opcoesVisiveis, setOpcoesVisiveis] = useState(false);
   const [estimativas, setEstimativas] = useState<EstimativaCorrida[]>([]);
@@ -337,6 +347,11 @@ export default function HomeScreen() {
   const valorAtualRef = useRef(alturaExpandida - SHEET_ALTURA_RECOLHIDA_PADRAO);
   const keyboardOffset = useRef(new Animated.Value(0)).current;
   const mapRef = useRef<MapView>(null);
+  // Ref não é mais usado (a rotação hoje é 100% via overlay em HTML/CSS,
+  // não mais via Marker nativo) — mantido aqui comentado só pra explicar
+  // por que não tem mais nenhum <Marker> de "Você está aqui" no return()
+  // abaixo: era ele que causava a "bolinha verde duplicada", desalinhada
+  // do cone novo.
 
   // Altura do cartão como Animated.Value — antes essa transição rodava por
   // LayoutAnimation (motor de animação separado do Animated.spring que já
@@ -709,6 +724,32 @@ export default function HomeScreen() {
     }
   }
 
+  // Força a rotação do pin "Você está aqui" via setNativeProps sempre que o
+  // heading mudar. Necessário porque, com tracksViewChanges={false}, a
+  // simples troca da prop `rotation` no JSX às vezes não é repassada pro
+  // marker nativo já renderizado (bug conhecido do react-native-maps) — o
+  // setNativeProps chama a atualização direto no componente nativo.
+  // Recalcula onde a sua coordenada real cai na tela (em pixel) AGORA,
+  // considerando o zoom/posição atual do mapa. Chamado sempre que sua
+  // localização muda e a cada movimento do mapa (zoom, arrastar) via
+  // onRegionChange no <MapView>.
+  async function atualizarPontoTelaUsuario() {
+    if (!coords) return;
+    try {
+      const ponto = await mapRef.current?.pointForCoordinate(coords);
+      if (ponto) setPontoTelaUsuario(ponto);
+    } catch {
+      // Mapa ainda não terminou de montar / método indisponível nesse
+      // instante — não tem problema, o próximo onRegionChange tenta de novo.
+    }
+  }
+
+  useEffect(() => {
+    atualizarPontoTelaUsuario();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [coords?.latitude, coords?.longitude]);
+
+
   const region = useMemo(
     () =>
       coords
@@ -990,17 +1031,9 @@ export default function HomeScreen() {
         showsUserLocation
         showsMyLocationButton={false}
         customMapStyle={DARK_MAP_STYLE}
+        onMapReady={atualizarPontoTelaUsuario}
+        onRegionChange={atualizarPontoTelaUsuario}
       >
-        {coords && (
-          <Marker
-            coordinate={coords}
-            anchor={{ x: 0.5, y: 0.5 }}
-            title="Você está aqui"
-            tracksViewChanges={false}
-          >
-            <MapPin variant="origem" />
-          </Marker>
-        )}
         {destinoSelecionado && (
           <Marker
             coordinate={destinoSelecionado}
@@ -1038,6 +1071,35 @@ export default function HomeScreen() {
           </Marker>
         )}
       </MapView>
+
+      {/* Indicador de direção sobreposto ao mapa (não é mais um <Marker>).
+          O rotation nativo do react-native-maps em Marker com
+          tracksViewChanges={false} não estava sendo aplicado de forma
+          confiável nesse setup (testado: setNativeProps também não girou).
+          Essa View normal do React Native, por outro lado, sempre
+          re-renderiza no `transform: rotate()` quando `heading` muda —
+          sem cache nenhum de bitmap nativo no meio do caminho. Só faz
+          sentido mostrar quando o mapa está de fato centralizado no
+          usuário (mesma condição usada no `region` do MapView acima).
+          Fica fixo no centro da tela porque é aí que o pin "Você está
+          aqui" cai quando o mapa está centralizado nele. */}
+      {!!coords && !destinoSelecionado && !!pontoTelaUsuario && (
+        <View
+          pointerEvents="none"
+          style={[
+            styles.farolOverlayPivo,
+            {
+              left: pontoTelaUsuario.x,
+              top: pontoTelaUsuario.y,
+              transform: [{ rotate: `${heading ?? 0}deg` }],
+            },
+          ]}
+        >
+          <View style={styles.direcaoOverlayCentralizador}>
+            <DirectionIndicator />
+          </View>
+        </View>
+      )}
 
       <View pointerEvents="none" style={styles.mapBrightener} />
 
@@ -1588,6 +1650,27 @@ const styles = StyleSheet.create({
   },
   map: {
     ...StyleSheet.absoluteFill,
+  },
+  // Indicador de direção sobreposto (não depende de rotação nativa de
+  // Marker — ver comentário no return()). farolOverlayPivo é posicionado
+  // no PIXEL exato (calculado via pointForCoordinate) onde sua coordenada
+  // real cai na tela — recalculado a cada zoom/arrastar do mapa via
+  // onRegionChange, então acompanha sua posição real mesmo fora do centro.
+  // O `rotate` vai nesse pivô, e o triângulo (filho, offset fixo pra cima)
+  // varre um círculo em volta dele — por isso ele aponta pro lado certo em
+  // vez de só girar em torno do próprio centro.
+  farolOverlayPivo: {
+    position: 'absolute',
+    width: 0,
+    height: 0,
+  },
+  // O <DirectionIndicator> (60x60) já tem seu próprio ponto central
+  // desenhado no centro do SVG — esse marginLeft/Top negativo (metade do
+  // tamanho) centraliza isso em cima do pivô (que é 0x0, plantado no pixel
+  // exato da sua coordenada real).
+  direcaoOverlayCentralizador: {
+    marginLeft: -30,
+    marginTop: -30,
   },
   mapBrightener: {
     ...StyleSheet.absoluteFill,

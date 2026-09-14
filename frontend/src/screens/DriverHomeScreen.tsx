@@ -21,6 +21,7 @@ import DriverMessagesModal from '../components/DriverMessagesModal';
 import ConfirmarPixPrepagoModal from '../components/ConfirmarPixPrepagoModal';
 import FinalizarCorridaModal, { FormaFinalizacao } from '../components/FinalizarCorridaModal';
 import MapPin from '../components/MapPin';
+import DirectionIndicator from '../components/DirectionIndicator';
 import PixPaymentModal from '../components/PixPaymentModal';
 import StatusToast, { StatusToastTone } from '../components/StatusToast';
 import SwipeButton from '../components/SwipeButton';
@@ -155,10 +156,36 @@ export default function DriverHomeScreen() {
   const [toastMensagem, setToastMensagem] = useState<string | null>(null);
   const [toastTom, setToastTom] = useState<StatusToastTone>('info');
 
-  const { coords } = useDriverLocationWatcher(disponivel || !!corridaAtiva);
-  const { rota, calcularRota, limparRota } = useRota();
+  const { coords, heading } = useDriverLocationWatcher(
+    disponivel || !!corridaAtiva,
+    corridaAtiva?.id ?? null
+  );
+  const { rota, calcularRota, limparRota, distanciaAteRota } = useRota();
   const mapRef = useRef<MapView>(null);
   const soqueteRef = useRef<Socket | null>(null);
+  // Posição em PIXEL (x,y) na tela onde sua coordenada real cai agora —
+  // mesma abordagem do HomeScreen (passageiro): rotação nativa de Marker
+  // não funcionava de forma confiável nesse setup, então o indicador de
+  // direção é uma View comum sobreposta ao mapa, reposicionada em pixel
+  // real a cada movimento de câmera (não fica preso ao centro da tela).
+  const [pontoTelaMotorista, setPontoTelaMotorista] = useState<{ x: number; y: number } | null>(
+    null
+  );
+
+  async function atualizarPontoTelaMotorista() {
+    if (!coords) return;
+    try {
+      const ponto = await mapRef.current?.pointForCoordinate(coords);
+      if (ponto) setPontoTelaMotorista(ponto);
+    } catch {
+      // Mapa ainda não terminou de montar — o próximo onRegionChange tenta de novo.
+    }
+  }
+
+  useEffect(() => {
+    atualizarPontoTelaMotorista();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [coords?.latitude, coords?.longitude]);
 
   // Altura real do painel inferior (varia conforme o estado: offline, nova
   // corrida, corrida ativa) — usada só pra posicionar o botão flutuante de
@@ -514,6 +541,37 @@ export default function DriverHomeScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [corridaAtiva?.id, embarcado]);
 
+  // --- Recálculo automático de rota por desvio ---------------------------
+  // Antes, se o motorista entrasse na rua errada ou perdesse uma conversão,
+  // a rota desenhada no mapa ficava "presa" no caminho antigo — o app não
+  // percebia que ele tinha saído do trajeto. Agora, a cada atualização de
+  // localização, checa a distância até a rota calculada; se ele se afastou
+  // demais dela, recalcula uma rota nova a partir de onde ele está agora,
+  // igual apps como 99/Uber fazem.
+  const DISTANCIA_DESVIO_ROTA_METROS = 60;
+  const INTERVALO_MINIMO_RECALCULO_MS = 15000;
+  const ultimoRecalculoPorDesvioRef = useRef(0);
+  const recalculandoPorDesvioRef = useRef(false);
+  useEffect(() => {
+    if (!corridaAtiva || !coords) return;
+
+    const desvioMetros = distanciaAteRota(coords);
+    if (desvioMetros == null || desvioMetros <= DISTANCIA_DESVIO_ROTA_METROS) return;
+    if (recalculandoPorDesvioRef.current) return;
+
+    const agora = Date.now();
+    if (agora - ultimoRecalculoPorDesvioRef.current < INTERVALO_MINIMO_RECALCULO_MS) return;
+
+    ultimoRecalculoPorDesvioRef.current = agora;
+    recalculandoPorDesvioRef.current = true;
+    const alvo = embarcado ? corridaAtiva.destino : corridaAtiva.origem;
+    avisar('Você saiu da rota — recalculando o caminho...', 'info');
+    calcularRota(coords, alvo).finally(() => {
+      recalculandoPorDesvioRef.current = false;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [coords?.latitude, coords?.longitude]);
+
   async function aceitarCorridaRecebida() {
     if (!corridaRecebida) return;
     setAceitando(true);
@@ -760,20 +818,15 @@ export default function DriverHomeScreen() {
 
   return (
     <View style={styles.container}>
-      <MapView ref={mapRef} style={styles.map} showsUserLocation showsMyLocationButton={false} customMapStyle={DARK_MAP_STYLE}>
-
-        {coords && (
-          <Marker
-            coordinate={coords}
-            anchor={{ x: 0.5, y: 0.5 }}
-            title="Você"
-            tracksViewChanges={false}
-          >
-            <View style={styles.marcadorMotorista}>
-              <CarIcon size={16} color={colors.background} />
-            </View>
-          </Marker>
-        )}
+      <MapView
+        ref={mapRef}
+        style={styles.map}
+        showsUserLocation
+        showsMyLocationButton={false}
+        customMapStyle={DARK_MAP_STYLE}
+        onMapReady={atualizarPontoTelaMotorista}
+        onRegionChange={atualizarPontoTelaMotorista}
+      >
 
         {corridaAtiva && alvoAtual && (
           <>
@@ -795,6 +848,24 @@ export default function DriverHomeScreen() {
           </>
         )}
       </MapView>
+
+      {!!coords && !!pontoTelaMotorista && (
+        <View
+          pointerEvents="none"
+          style={[
+            styles.direcaoOverlayPivo,
+            {
+              left: pontoTelaMotorista.x,
+              top: pontoTelaMotorista.y,
+              transform: [{ rotate: `${heading ?? 0}deg` }],
+            },
+          ]}
+        >
+          <View style={styles.direcaoOverlayCentralizador}>
+            <DirectionIndicator />
+          </View>
+        </View>
+      )}
 
       <View pointerEvents="none" style={styles.mapBrightener} />
 
@@ -1214,16 +1285,20 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(7, 25, 63, 0.25)',
   },
-  marcadorMotorista: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: colors.background,
-    ...sombraFlutuante,
+  // Indicador de direção sobreposto (mesma abordagem do HomeScreen do
+  // passageiro) — pivô de tamanho 0 posicionado no PIXEL exato onde sua
+  // coordenada cai na tela, recalculado a cada movimento do mapa.
+  direcaoOverlayPivo: {
+    position: 'absolute',
+    width: 0,
+    height: 0,
+  },
+  // O <DirectionIndicator> (60x60 por padrão) tem seu próprio ponto central
+  // desenhado no meio do SVG — esse marginLeft/Top negativo (metade do
+  // tamanho) centraliza isso em cima do pivô.
+  direcaoOverlayCentralizador: {
+    marginLeft: -30,
+    marginTop: -30,
   },
   topBar: {
     position: 'absolute',

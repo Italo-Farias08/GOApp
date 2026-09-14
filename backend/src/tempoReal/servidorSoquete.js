@@ -182,6 +182,42 @@ function notificarNovaCorrida(corrida, origem, idsIgnorados = []) {
     .catch((erro) => console.error('[push] falha ao notificar nova corrida:', erro));
 }
 
+// Mesmo efeito de 'motorista:atualizar_localizacao' / atualização de
+// posição de 'motorista:disponivel', só que chamado a partir de uma
+// requisição HTTP comum (ver motoristaControlador.atualizarLocalizacao) em
+// vez de um evento de socket.
+//
+// Existe porque o app do motorista agora manda localização em segundo
+// plano (expo-task-manager) mesmo com a tela travada ou o app minimizado —
+// nesse cenário o processo pode ter sido só "acordado" pelo sistema
+// operacional pra rodar essa tarefa, sem garantia nenhuma de que a conexão
+// de socket (presa ao componente React) esteja de pé. Um POST autocontido
+// evita que o motorista suma do radar / do rastreamento ao vivo só porque
+// o socket caiu com o app em segundo plano.
+//
+// Só atualiza a posição de quem JÁ está no mapa de disponíveis (não marca
+// ninguém como disponível por aqui) — quem decide entrar/sair do radar
+// continua sendo exclusivamente o evento 'motorista:disponivel' /
+// 'motorista:indisponivel', pra não reabrir o motorista pro radar depois
+// que ele mesmo se marcou como indisponível.
+function atualizarLocalizacaoPorHttp(usuarioId, { corridaId, latitude, longitude }) {
+  const existente = motoristasDisponiveis.get(usuarioId);
+  if (existente) {
+    motoristasDisponiveis.set(usuarioId, { ...existente, latitude, longitude });
+  }
+
+  if (!corridaId) return;
+
+  const corrida = corridasAtivas.get(corridaId);
+  if (corrida && corrida.motoristaId === usuarioId && io) {
+    io.to(`usuario:${corrida.passageiroId}`).emit('corrida:localizacao_motorista', {
+      corridaId,
+      latitude,
+      longitude,
+    });
+  }
+}
+
 // Tira o motorista da lista de disponíveis assim que ele aceita uma corrida
 // (pra não receber corrida nova enquanto está em atendimento).
 function marcarMotoristaOcupado(usuarioId) {
@@ -311,4 +347,5 @@ module.exports = {
   notificarMotoristaCancelouReoferta,
   notificarMotoristaAprovado,
   notificarMensagem,
+  atualizarLocalizacaoPorHttp,
 };

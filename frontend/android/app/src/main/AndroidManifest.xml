@@ -1,6 +1,16 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
   <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
   <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+  <!-- Sem essas três o Android suspende o GPS assim que o #GO sai de
+       primeiro plano (minimizado ou tela travada) — era isso que cortava o
+       rastreamento ao vivo do motorista. ACCESS_BACKGROUND_LOCATION libera
+       leitura de localização com o app em segundo plano; as duas de
+       FOREGROUND_SERVICE são exigidas a partir do Android 14 pro serviço
+       (com notificação fixa) que o expo-location sobe pra manter o processo
+       vivo enquanto rastreia. Ver src/services/backgroundLocationTask.ts. -->
+  <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION"/>
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
   <uses-permission android:name="android.permission.INTERNET"/>
   <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" tools:replace="android:maxSdkVersion"/>
   <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>

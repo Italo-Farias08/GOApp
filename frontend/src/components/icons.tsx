@@ -30,6 +30,17 @@ export function CarIcon({ size = 24, color = '#F5F5F7', strokeWidth = 1.7 }: Ico
   );
 }
 
+// Seta de navegação (estilo "agulha de bússola") — usada no marcador de
+// posição do motorista no mapa, girada conforme o rumo (heading) real dele,
+// pra ficar claro pra que lado está indo (like apps de navegação/GPS).
+export function NavigationArrowIcon({ size = 24, color = '#F5F5F7' }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M12 2.5L19.5 20L12 16.2L4.5 20L12 2.5Z" fill={color} />
+    </Svg>
+  );
+}
+
 // Ícone de moto (visão lateral, mesma linguagem visual do carro).
 export function MotoIcon({ size = 24, color = '#F5F5F7', strokeWidth = 1.7 }: IconProps) {
   return (
