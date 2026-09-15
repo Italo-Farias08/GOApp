@@ -60,6 +60,29 @@ async function renovarSessao(): Promise<string | null> {
   }
 }
 
+// Rotas públicas de autenticação: 401 (ou 400/404/409) que elas devolvem
+// significa "credenciais/código errados", NUNCA "seu token de acesso
+// expirou" — não fazem sentido nenhum passar pelo fluxo de renovação
+// automática abaixo. Sem essa lista, um login com senha errada (401)
+// disparava uma tentativa de refresh por baixo dos panos; se o refresh
+// token guardado no aparelho já estivesse vencido/revogado (ex: depois de
+// redefinir a senha), o app apagava os tokens e mostrava "sessão expirada"
+// — mesmo que a PRÓXIMA tentativa de login, já com a senha certa, tivesse
+// funcionado perfeitamente.
+const ROTAS_PUBLICAS_SEM_RENOVACAO = [
+  '/auth/login',
+  '/auth/login-phone',
+  '/auth/google',
+  '/auth/register',
+  '/auth/verify-email',
+  '/auth/resend-code',
+  '/auth/change-pending-email',
+  '/auth/forgot-password',
+  '/auth/reset-password',
+  '/auth/refresh',
+  '/auth/logout',
+];
+
 // Ponto único que trata erro 401 (token expirado): tenta renovar a sessão
 // nos bastidores e repetir a requisição original — o usuário só percebe
 // alguma coisa se o refresh token também já tiver vencido/sido revogado.
@@ -68,13 +91,16 @@ api.interceptors.response.use(
   async (error) => {
     const requisicaoOriginal = error?.config;
     const éErroDeAutenticacao = error?.response?.status === 401;
-    // Nunca tenta renovar a própria chamada de /auth/refresh (senão entra
-    // em loop infinito se o refresh também voltar 401).
-    const éRotaDeRefresh = requisicaoOriginal?.url?.includes('/auth/refresh');
+    // Nunca tenta renovar chamadas a rotas públicas de auth (login, cadastro,
+    // esqueci senha etc.) — 401 nelas é resposta normal de credencial
+    // errada, não de sessão expirada (ver comentário acima).
+    const éRotaPublicaDeAuth = ROTAS_PUBLICAS_SEM_RENOVACAO.some((rota) =>
+      requisicaoOriginal?.url?.includes(rota)
+    );
 
     if (
       éErroDeAutenticacao &&
-      !éRotaDeRefresh &&
+      !éRotaPublicaDeAuth &&
       requisicaoOriginal &&
       !requisicaoOriginal._jaTentouRenovar
     ) {

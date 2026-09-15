@@ -13,4 +13,10 @@ roteador.use(autenticacaoIntermediario);
 roteador.post('/pix', pagamentoControlador.criarPix);
 roteador.get('/pix/:id', pagamentoControlador.status);
 
+// Tela de "Pendências" (configurações do passageiro): ver o que está
+// devendo de corridas anteriores não pagas e quitar tudo na hora via Pix,
+// sem precisar esperar a próxima corrida embutir o valor.
+roteador.get('/dividas', pagamentoControlador.listarDividas);
+roteador.post('/pix-divida', pagamentoControlador.criarPixDivida);
+
 module.exports = roteador;

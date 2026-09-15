@@ -3,6 +3,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,
+  Image,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
@@ -143,6 +144,12 @@ export default function ResetPasswordScreen({ navigation, route }: Props) {
             </Pressable>
 
             <View style={styles.header}>
+              <Image
+                source={require('../../assets/logo.png')}
+                style={styles.logoImage}
+                resizeMode="contain"
+              />
+
               <Text style={styles.title}>Criar nova senha</Text>
               <Text style={styles.subtitle}>
                 Mandamos um código de 6 dígitos para{'\n'}
@@ -236,6 +243,11 @@ const styles = StyleSheet.create({
   header: {
     alignItems: 'center',
     marginBottom: spacing.xl,
+  },
+  logoImage: {
+    width: 220,
+    height: 154,
+    marginBottom: spacing.sm,
   },
   title: {
     ...typography.h2,

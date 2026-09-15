@@ -10,8 +10,9 @@ function paraPagamentoPublico(linha) {
     qrCode: linha.qr_code, // código "copia e cola"
     qrCodeBase64: linha.qr_code_base64, // imagem do QR code em base64 (PNG)
     corridaId: linha.corrida_id || undefined, // pré-pago: só vem depois de aprovado. pós-pago: vem desde a criação.
-    // 'prepago'  -> gerado ANTES da corrida existir (tela do passageiro)
-    // 'pos_pago' -> gerado pelo motorista ao FINALIZAR uma corrida já existente
+    // 'prepago'          -> gerado ANTES da corrida existir (tela do passageiro)
+    // 'pos_pago'         -> gerado pelo motorista ao FINALIZAR uma corrida já existente
+    // 'quitacao_divida'  -> gerado na tela de "Pendências", pra quitar dívidas antigas sem esperar a próxima corrida
     tipo: linha.tipo || 'prepago',
     expiraEm: linha.expira_em,
   };
@@ -41,6 +42,21 @@ async function criarPosPago({ passageiroId, corridaId, mercadoPagoId, valor, qrC
      VALUES ($1, $2, $3, $4, $5, '{}'::jsonb, $6, 'pos_pago', $7)
      RETURNING *`,
     [passageiroId, mercadoPagoId, valor, qrCode, qrCodeBase64, expiraEm, corridaId]
+  );
+  return resultado.rows[0];
+}
+
+// Cria o registro local da cobrança Pix pra QUITAR pendências direto pela
+// tela de "Pendências" — não tem nenhuma corrida envolvida, só guarda em
+// `dados_corrida` os IDs das dívidas que essa cobrança, uma vez aprovada,
+// vai quitar (ver pagamentoControlador.confirmarQuitacaoDividaSePago).
+async function criarQuitacaoDivida({ passageiroId, mercadoPagoId, valor, qrCode, qrCodeBase64, dividasIds, expiraEm }) {
+  const resultado = await consultar(
+    `INSERT INTO pagamentos_pix
+       (passageiro_id, mercado_pago_id, valor, qr_code, qr_code_base64, dados_corrida, expira_em, tipo)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, 'quitacao_divida')
+     RETURNING *`,
+    [passageiroId, mercadoPagoId, valor, qrCode, qrCodeBase64, JSON.stringify({ dividasIds }), expiraEm]
   );
   return resultado.rows[0];
 }
@@ -78,6 +94,7 @@ module.exports = {
   paraPagamentoPublico,
   criar,
   criarPosPago,
+  criarQuitacaoDivida,
   buscarPorId,
   buscarPorMercadoPagoId,
   atualizarStatus,

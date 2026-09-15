@@ -2,6 +2,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { LinearGradient } from 'expo-linear-gradient';
 import React, { useState } from 'react';
 import {
+  Image,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
@@ -63,6 +64,12 @@ export default function ForgotPasswordScreen({ navigation }: Props) {
             </Pressable>
 
             <View style={styles.header}>
+              <Image
+                source={require('../../assets/logo.png')}
+                style={styles.logoImage}
+                resizeMode="contain"
+              />
+
               <Text style={styles.title}>Esqueceu sua senha?</Text>
               <Text style={styles.subtitle}>
                 Digite o email da sua conta. A gente manda um código de 6 dígitos pra você criar uma senha nova.
@@ -122,6 +129,11 @@ const styles = StyleSheet.create({
   header: {
     alignItems: 'center',
     marginBottom: spacing.xl,
+  },
+  logoImage: {
+    width: 220,
+    height: 154,
+    marginBottom: spacing.sm,
   },
   title: {
     ...typography.h2,

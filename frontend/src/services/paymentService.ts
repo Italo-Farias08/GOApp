@@ -1,5 +1,5 @@
 import { api } from './api';
-import type { PagamentoPix, PontoCorrida } from '../types';
+import type { PagamentoPix, PontoCorrida, ResumoPendencias } from '../types';
 import type { TipoVeiculo } from '../utils/precoCorrida';
 
 type CriarPagamentoPixPayload = {
@@ -24,5 +24,22 @@ export async function criarPagamentoPix(payload: CriarPagamentoPixPayload): Prom
 // pros motoristas.
 export async function consultarPagamentoPix(id: string): Promise<PagamentoPix> {
   const { data } = await api.get<PagamentoPix>(`/payments/pix/${id}`);
+  return data;
+}
+
+// --- Pendências (tela "Pendências" nas configurações) ---
+
+// Lista as pendências do passageiro logado — corridas anteriores que ele
+// ficou devendo — e o total delas somado.
+export async function listarDividas(): Promise<ResumoPendencias> {
+  const { data } = await api.get<ResumoPendencias>('/payments/dividas');
+  return data;
+}
+
+// Gera a cobrança Pix pelo total das pendências. Uma vez aprovado (ver
+// consultarPagamentoPix, que também serve pra esse tipo de pagamento), o
+// backend quita todas as dívidas incluídas sozinho.
+export async function criarPagamentoPixDivida(): Promise<PagamentoPix> {
+  const { data } = await api.post<PagamentoPix>('/payments/pix-divida');
   return data;
 }

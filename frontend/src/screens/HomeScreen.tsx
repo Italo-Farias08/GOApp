@@ -460,7 +460,7 @@ export default function HomeScreen() {
     coords
   );
 
-  const { rota, carregando: calculandoRota, erro: erroRota, calcularRota, limparRota } = useRota();
+  const { rota, carregando: calculandoRota, erro: erroRota, calcularRota, limparRota, distanciaAteRota } = useRota();
 
   useEffect(() => {
     if (sugestoes.length > 0 || corridaConfirmada) {
@@ -556,6 +556,7 @@ export default function HomeScreen() {
       if (!ativo || id !== corridaIdRef.current) return;
       setMotoristaAtribuido(null);
       setLocalizacaoMotorista(null);
+      limparRota();
       avisar('Seu motorista precisou cancelar. Procurando outro motorista para você...', 'warning');
     }
 
@@ -649,7 +650,13 @@ export default function HomeScreen() {
           };
           setDestinoSelecionado(destino);
           setDestination(destino.descricao);
-          if (coords) calcularRota(coords, destino);
+          // Só traça direto coords->destino aqui se a corrida já estiver em
+          // andamento (embarque já confirmado) — aí sim a rota certa é até
+          // o destino final. Enquanto ainda está "aceita" (motorista a
+          // caminho do passageiro), a rota motorista->passageiro é
+          // calculada pelo efeito abaixo assim que a localização dele
+          // chegar pelo socket.
+          if (coords && corrida.status === 'em_andamento') calcularRota(coords, destino);
         }
       } catch {
         // Sem corrida ativa (ou falha ao consultar) — segue normal, tela em branco.
@@ -722,6 +729,56 @@ export default function HomeScreen() {
     posicaoAnteriorMotoristaRef.current = localizacaoMotorista;
     marcadorMotoristaRef.current?.animateMarkerToCoordinate(localizacaoMotorista, 900);
   }, [localizacaoMotorista]);
+
+  // Calcula a rota até o próximo ponto: enquanto o motorista ainda não
+  // confirmou o embarque, mostra o caminho DELE até o passageiro; depois do
+  // embarque, troca pra rota até o destino final — espelha exatamente o que
+  // a tela do motorista já faz (ver DriverHomeScreen). Recalcula sempre que
+  // a etapa muda (corrida aceita, embarque confirmado) ou na primeira vez
+  // que a localização do motorista chega pelo socket.
+  useEffect(() => {
+    if (!motoristaAtribuido || !localizacaoMotorista) return;
+    const alvo = embarcado ? destinoSelecionado : coords;
+    if (!alvo) return;
+
+    calcularRota(localizacaoMotorista, alvo).then((resultado) => {
+      if (resultado) {
+        mapRef.current?.fitToCoordinates(
+          [localizacaoMotorista, alvo],
+          { edgePadding: { top: 100, right: 60, bottom: 320, left: 60 }, animated: true }
+        );
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [!!motoristaAtribuido, embarcado, corridaId, !!localizacaoMotorista]);
+
+  // --- Recálculo automático da rota do motorista por desvio --------------
+  // Mesmo mecanismo do lado do motorista: se ele saiu do trajeto calculado
+  // (entrou na rua errada, perdeu uma conversão etc.), recalcula a partir de
+  // onde ele está agora em vez de deixar o traçado "preso" no caminho antigo.
+  const DISTANCIA_DESVIO_ROTA_MOTORISTA_METROS = 60;
+  const INTERVALO_MINIMO_RECALCULO_MOTORISTA_MS = 15000;
+  const ultimoRecalculoMotoristaRef = useRef(0);
+  const recalculandoMotoristaRef = useRef(false);
+  useEffect(() => {
+    if (!motoristaAtribuido || !localizacaoMotorista) return;
+    const alvo = embarcado ? destinoSelecionado : coords;
+    if (!alvo) return;
+
+    const desvioMetros = distanciaAteRota(localizacaoMotorista);
+    if (desvioMetros == null || desvioMetros <= DISTANCIA_DESVIO_ROTA_MOTORISTA_METROS) return;
+    if (recalculandoMotoristaRef.current) return;
+
+    const agora = Date.now();
+    if (agora - ultimoRecalculoMotoristaRef.current < INTERVALO_MINIMO_RECALCULO_MOTORISTA_MS) return;
+
+    ultimoRecalculoMotoristaRef.current = agora;
+    recalculandoMotoristaRef.current = true;
+    calcularRota(localizacaoMotorista, alvo).finally(() => {
+      recalculandoMotoristaRef.current = false;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [localizacaoMotorista?.latitude, localizacaoMotorista?.longitude]);
 
   function abrirCancelamento() {
     if (!corridaId) return;

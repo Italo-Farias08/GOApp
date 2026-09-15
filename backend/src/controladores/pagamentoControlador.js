@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const corridaModelo = require('../modelos/corridaModelo');
 const usuarioModelo = require('../modelos/usuarioModelo');
 const pagamentoPixModelo = require('../modelos/pagamentoPixModelo');
+const dividaModelo = require('../modelos/dividaModelo');
 const corridaServico = require('../servicos/corridaServico');
 const mercadoPago = require('../utilitarios/mercadoPago');
 const { ErroHttp } = require('../intermediarios/tratadorErros');
@@ -83,6 +84,78 @@ async function criarPix(req, res, next) {
   }
 }
 
+// GET /payments/dividas
+//
+// Lista as pendências do passageiro logado — corridas anteriores que ele
+// não pagou (marcadas "não pagou" pelo motorista ao finalizar) e que ainda
+// não foram quitadas. Alimenta a tela "Pendências" nas configurações, tanto
+// pro passageiro ver o que deve quanto pro total usado ao gerar o Pix
+// abaixo.
+async function listarDividas(req, res, next) {
+  try {
+    const dividasPendentes = await dividaModelo.listarPendentesPorPassageiro(req.usuarioId);
+    const dividas = dividasPendentes.map(dividaModelo.paraDividaPublica);
+    const total = Number(dividas.reduce((soma, d) => soma + d.valor, 0).toFixed(2));
+    return res.json({ dividas, total });
+  } catch (erro) {
+    next(erro);
+  }
+}
+
+// POST /payments/pix-divida
+//
+// Gera uma cobrança Pix pelo total das pendências do passageiro — pra ele
+// poder quitar tudo na hora, pela tela de "Pendências", em vez de esperar a
+// próxima corrida embutir o valor automaticamente. Assim que aprovada (ver
+// confirmarQuitacaoDividaSePago), cada dívida incluída é marcada como
+// quitada e o motorista credor correspondente recebe o saldo — igual já
+// acontece quando a dívida é paga embutida numa corrida nova.
+async function criarPixDivida(req, res, next) {
+  try {
+    const dividasPendentes = await dividaModelo.listarPendentesPorPassageiro(req.usuarioId);
+    if (dividasPendentes.length === 0) {
+      throw new ErroHttp(400, 'Você não tem nenhuma pendência pra pagar.');
+    }
+
+    const valorTotal = Number(
+      dividasPendentes.reduce((soma, d) => soma + Number(d.valor), 0).toFixed(2)
+    );
+
+    const passageiro = await usuarioModelo.buscarPorId(req.usuarioId);
+    if (!passageiro) throw new ErroHttp(404, 'Usuário não encontrado.');
+    exigirPerfilCompleto(passageiro);
+
+    const pagamentoMp = await mercadoPago.criarPagamentoPix({
+      valor: valorTotal,
+      descricao: 'Pendências #GO',
+      emailPagador: obterEmailPagador(passageiro),
+      referenciaExterna: req.usuarioId,
+      idempotencyKey: crypto.randomUUID(),
+    });
+
+    const dadosPix = pagamentoMp.point_of_interaction?.transaction_data;
+    if (!dadosPix?.qr_code) {
+      throw new ErroHttp(502, 'O Mercado Pago não retornou o QR code do Pix.');
+    }
+
+    const expiraEm = new Date(Date.now() + MINUTOS_EXPIRACAO_PIX * 60 * 1000);
+
+    const pagamento = await pagamentoPixModelo.criarQuitacaoDivida({
+      passageiroId: req.usuarioId,
+      mercadoPagoId: String(pagamentoMp.id),
+      valor: valorTotal,
+      qrCode: dadosPix.qr_code,
+      qrCodeBase64: dadosPix.qr_code_base64,
+      dividasIds: dividasPendentes.map((d) => d.id),
+      expiraEm,
+    });
+
+    return res.status(201).json(pagamentoPixModelo.paraPagamentoPublico(pagamento));
+  } catch (erro) {
+    next(erro);
+  }
+}
+
 // Cria a corrida a partir de um pagamento já aprovado, de forma IDEMPOTENTE
 // — chamado tanto pelo polling de status quanto pelo webhook, então precisa
 // ser seguro mesmo se os dois chegarem quase ao mesmo tempo.
@@ -146,6 +219,24 @@ async function confirmarFinalizacaoSePago(pagamento) {
   return pagamento;
 }
 
+// Espelho de confirmarFinalizacaoSePago, só que pra quitação de pendências
+// feita direto pela tela de "Pendências" — sem nenhuma corrida envolvida.
+// `dividaModelo.quitarVarias` só quita quem ainda estiver 'pendente', então
+// chamar isso de novo (webhook e polling confirmando quase ao mesmo tempo)
+// não quita a mesma dívida duas vezes nem credita o motorista em dobro.
+async function confirmarQuitacaoDividaSePago(pagamento) {
+  if (pagamento.status !== 'aprovado') {
+    return pagamento;
+  }
+
+  const dividasIds = pagamento.dados_corrida?.dividasIds || [];
+  if (Array.isArray(dividasIds) && dividasIds.length > 0) {
+    await dividaModelo.quitarVarias(dividasIds, null);
+  }
+
+  return pagamento;
+}
+
 // GET /payments/pix/:id
 //
 // O app fica chamando essa rota enquanto mostra o QR code. Além de devolver
@@ -174,9 +265,13 @@ async function status(req, res, next) {
       }
     }
 
-    pagamento = pagamento.tipo === 'pos_pago'
-      ? await confirmarFinalizacaoSePago(pagamento)
-      : await confirmarCorridaSePago(pagamento);
+    if (pagamento.tipo === 'pos_pago') {
+      pagamento = await confirmarFinalizacaoSePago(pagamento);
+    } else if (pagamento.tipo === 'quitacao_divida') {
+      pagamento = await confirmarQuitacaoDividaSePago(pagamento);
+    } else {
+      pagamento = await confirmarCorridaSePago(pagamento);
+    }
 
     return res.json(pagamentoPixModelo.paraPagamentoPublico(pagamento));
   } catch (erro) {
@@ -204,6 +299,8 @@ async function webhook(req, res) {
           const atualizado = await pagamentoPixModelo.atualizarStatus(pagamentoLocal.id, statusTraduzido);
           if (atualizado.tipo === 'pos_pago') {
             await confirmarFinalizacaoSePago(atualizado);
+          } else if (atualizado.tipo === 'quitacao_divida') {
+            await confirmarQuitacaoDividaSePago(atualizado);
           } else {
             await confirmarCorridaSePago(atualizado);
           }
@@ -217,4 +314,4 @@ async function webhook(req, res) {
   res.sendStatus(200);
 }
 
-module.exports = { criarPix, status, webhook };
+module.exports = { criarPix, listarDividas, criarPixDivida, status, webhook };

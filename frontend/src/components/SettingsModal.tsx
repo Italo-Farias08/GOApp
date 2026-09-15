@@ -29,7 +29,9 @@ import type {
 import Button from './Button';
 import ChatModal from './ChatModal';
 import Input from './Input';
+import PendenciasView from './PendenciasView';
 import {
+  AlertIcon,
   CameraIcon,
   CarIcon,
   ChatIcon,
@@ -41,7 +43,7 @@ import {
   UserIcon,
 } from './icons';
 
-type ModalView = 'menu' | 'account' | 'driver' | 'messages';
+type ModalView = 'menu' | 'account' | 'driver' | 'messages' | 'pendencias';
 
 type Props = {
   visible: boolean;
@@ -83,6 +85,7 @@ export default function SettingsModal({ visible, onClose }: Props) {
             onSelectAccount={() => setView('account')}
             onSelectDriver={() => setView('driver')}
             onSelectMessages={() => setView('messages')}
+            onSelectPendencias={() => setView('pendencias')}
             onSelectMotoboyPanel={handleOpenMotoboyPanel}
             onSignOut={handleSignOut}
           />
@@ -90,6 +93,7 @@ export default function SettingsModal({ visible, onClose }: Props) {
         {view === 'account' && <AccountView onBack={() => setView('menu')} />}
         {view === 'driver' && <DriverView onBack={() => setView('menu')} onClose={handleClose} />}
         {view === 'messages' && <MessagesView onBack={() => setView('menu')} />}
+        {view === 'pendencias' && <PendenciasView onBack={() => setView('menu')} />}
       </View>
     </Modal>
   );
@@ -102,6 +106,7 @@ function MenuView({
   onSelectAccount,
   onSelectDriver,
   onSelectMessages,
+  onSelectPendencias,
   onSelectMotoboyPanel,
   onSignOut,
 }: {
@@ -109,6 +114,7 @@ function MenuView({
   onSelectAccount: () => void;
   onSelectDriver: () => void;
   onSelectMessages: () => void;
+  onSelectPendencias: () => void;
   onSelectMotoboyPanel: () => void;
   onSignOut: () => void;
 }) {
@@ -121,6 +127,12 @@ function MenuView({
         label="Conta"
         sublabel="Dados e credenciais"
         onPress={onSelectAccount}
+      />
+      <MenuItem
+        renderIcon={(cor) => <AlertIcon size={20} color={cor} strokeWidth={1.8} />}
+        label="Pendências"
+        sublabel="O que você deve de corridas anteriores"
+        onPress={onSelectPendencias}
       />
       <MenuItem
         renderIcon={(cor) => <ChatIcon size={20} color={cor} />}

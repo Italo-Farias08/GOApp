@@ -227,9 +227,25 @@ export type PagamentoPix = {
   valor: number;
   qrCode: string; 
   qrCodeBase64: string;
-  tipo: 'prepago' | 'pos_pago';
+  tipo: 'prepago' | 'pos_pago' | 'quitacao_divida';
   corridaId?: string;
   expiraEm: string;
+};
+
+// --- Pendências (corridas anteriores que o passageiro ficou devendo) ---
+
+export type Divida = {
+  id: string;
+  valor: number;
+  status: 'pendente' | 'quitada';
+  criadoEm: string;
+};
+
+// Resposta de GET /payments/dividas — alimenta a tela "Pendências" nas
+// configurações.
+export type ResumoPendencias = {
+  dividas: Divida[];
+  total: number;
 };
 
 export type RootStackParamList = {
