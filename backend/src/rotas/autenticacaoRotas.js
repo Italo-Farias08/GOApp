@@ -1,7 +1,7 @@
 const express = require('express');
 const autenticacaoControlador = require('../controladores/autenticacaoControlador');
 const autenticacaoIntermediario = require('../intermediarios/autenticacaoIntermediario');
-const { limitadorLogin, limitadorCodigoVerificacao, limitadorRefresh } = require('../intermediarios/limitadorTaxa');
+const { limitadorLogin, limitadorCodigoVerificacao, limitadorRefresh, limitadorRecuperacaoSenha } = require('../intermediarios/limitadorTaxa');
 
 const roteador = express.Router();
 
@@ -12,6 +12,8 @@ roteador.post('/resend-code', limitadorCodigoVerificacao, autenticacaoControlado
 roteador.post('/change-pending-email', autenticacaoControlador.alterarEmailPendente);
 roteador.post('/login', limitadorLogin, autenticacaoControlador.entrar);
 roteador.post('/login-phone', limitadorLogin, autenticacaoControlador.entrarComTelefone);
+roteador.post('/forgot-password', limitadorRecuperacaoSenha, autenticacaoControlador.esqueciSenha);
+roteador.post('/reset-password', limitadorRecuperacaoSenha, autenticacaoControlador.redefinirSenha);
 roteador.post('/google', limitadorLogin, autenticacaoControlador.entrarComGoogle);
 // Renova a sessão usando o refresh token guardado no dispositivo — não
 // exige o access token (ele já pode ter expirado, é exatamente pra isso

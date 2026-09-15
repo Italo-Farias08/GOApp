@@ -48,4 +48,42 @@ async function enviarEmailVerificacao({ para, nome, codigo }) {
   }
 }
 
-module.exports = { enviarEmailVerificacao };
+// Mesmo transporte do código de verificação de cadastro, só muda o texto —
+// deixa claro que é sobre redefinir senha, não sobre confirmar a conta.
+async function enviarEmailRecuperacaoSenha({ para, nome, codigo }) {
+  if (!BREVO_API_KEY) {
+    console.warn(`[email] BREVO_API_KEY não configurada. Código de recuperação de senha para ${para}: ${codigo}`);
+    return;
+  }
+
+  const resposta = await fetch('https://api.brevo.com/v3/smtp/email', {
+    method: 'POST',
+    headers: {
+      'api-key': BREVO_API_KEY,
+      'Content-Type': 'application/json',
+      accept: 'application/json',
+    },
+    body: JSON.stringify({
+      sender: { name: EMAIL_REMETENTE_NOME, email: EMAIL_REMETENTE },
+      to: [{ email: para, name: nome || undefined }],
+      subject: 'Código para redefinir sua senha do GOApp',
+      htmlContent: `
+        <div style="font-family: sans-serif; background:#0B0B0F; padding:32px; border-radius:12px; color:#F5F5F7;">
+          <h2 style="color:#39FF6A; margin-bottom:4px;">GOApp</h2>
+          <p>Oi, ${nome || ''}!</p>
+          <p>Recebemos um pedido para redefinir a senha da sua conta. Use o código abaixo. Ele vale por 15 minutos.</p>
+          <p style="font-size:32px; font-weight:700; letter-spacing:8px; margin:24px 0; color:#39FF6A;">${codigo}</p>
+          <p style="color:#9A9AA5; font-size:13px;">Se você não pediu isso, pode ignorar este e-mail — sua senha atual continua valendo normalmente.</p>
+        </div>
+      `,
+    }),
+  });
+
+  if (!resposta.ok) {
+    const corpo = await resposta.text().catch(() => '');
+    console.error('[email] falha ao enviar via Brevo:', resposta.status, corpo);
+    throw new Error('Não foi possível enviar o e-mail de recuperação de senha.');
+  }
+}
+
+module.exports = { enviarEmailVerificacao, enviarEmailRecuperacaoSenha };

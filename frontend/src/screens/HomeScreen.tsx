@@ -769,6 +769,45 @@ export default function HomeScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [coords?.latitude, coords?.longitude]);
 
+  // Reforço só pro Android: mantém um loop CONTÍNUO (não depende de detectar
+  // toque) recalculando o ponto na tela via requestAnimationFrame, sempre
+  // que a Home está com o mapa centralizado no usuário. Tentamos antes
+  // detectar início/fim do toque (onTouchStart/onTouchEnd) pra só rodar o
+  // loop durante o gesto, mas o react-native-maps usa a SDK nativa do Google
+  // Maps por baixo — o gesto de arrastar/zoom é capturado direto no nível
+  // nativo e nem chega no sistema de eventos de toque do React Native, então
+  // aquele loop nunca era realmente iniciado. Rodar sempre (em vez de só
+  // durante o toque) é mais "bruto" em termos de CPU mas garante que o
+  // indicador realmente acompanhe o mapa em tempo real no Android — no iOS
+  // isso já acontece sozinho via onRegionChange, então mantemos o loop
+  // restrito ao Android.
+  const rafIdRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    if (!coords || destinoSelecionado) {
+      if (rafIdRef.current != null) {
+        cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = null;
+      }
+      return;
+    }
+    let ativo = true;
+    function loop() {
+      if (!ativo) return;
+      atualizarPontoTelaUsuario();
+      rafIdRef.current = requestAnimationFrame(loop);
+    }
+    rafIdRef.current = requestAnimationFrame(loop);
+    return () => {
+      ativo = false;
+      if (rafIdRef.current != null) {
+        cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = null;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [Platform.OS, !!coords, !!destinoSelecionado]);
+
 
   const region = useMemo(
     () =>
@@ -1060,6 +1099,15 @@ export default function HomeScreen() {
         customMapStyle={DARK_MAP_STYLE}
         onMapReady={atualizarPontoTelaUsuario}
         onRegionChange={atualizarPontoTelaUsuario}
+        // onRegionChange sozinho é suficiente no iOS (dispara várias vezes
+        // por segundo durante o próprio gesto de zoom/arraste). No Android
+        // esse mesmo evento é bem mais raro durante o gesto — muitas vezes
+        // só perto do fim — e é por isso que o indicador demorava a "se
+        // encaixar" depois do zoom. onRegionChangeComplete dispara de forma
+        // mais confiável nas duas plataformas ao FIM do gesto, então serve
+        // de reforço: garante o reencaixe final mesmo quando o Android não
+        // disparou onRegionChange durante o meio do movimento.
+        onRegionChangeComplete={atualizarPontoTelaUsuario}
       >
         {destinoSelecionado && (
           <Marker
@@ -1109,8 +1157,15 @@ export default function HomeScreen() {
           sentido mostrar quando o mapa está de fato centralizado no
           usuário (mesma condição usada no `region` do MapView acima).
           Fica fixo no centro da tela porque é aí que o pin "Você está
-          aqui" cai quando o mapa está centralizado nele. */}
-      {!!coords && !destinoSelecionado && !!pontoTelaUsuario && (
+          aqui" cai quando o mapa está centralizado nele.
+          Exige `heading !== null`: em aparelhos sem sensor de bússola
+          (existe, testamos — alguns Android simplesmente não têm
+          magnetômetro), o heading nunca chega a atualizar e a setinha
+          ficaria "congelada" sempre apontando pro mesmo lugar, parecendo
+          bug. Melhor não mostrar setinha nenhuma nesse caso do que mostrar
+          uma direção errada/parada — a bolinha de localização sozinha
+          (showsUserLocation, nativa) continua aparecendo normalmente. */}
+      {!!coords && heading !== null && !destinoSelecionado && !!pontoTelaUsuario && (
         <View
           pointerEvents="none"
           style={[
@@ -2056,9 +2111,9 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   motoristaAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
@@ -2066,13 +2121,13 @@ const styles = StyleSheet.create({
   },
   motoristaAvatarLetra: {
     ...typography.bodyBold,
-    fontSize: 14,
+    fontSize: 22,
     color: colors.background,
   },
   motoristaAvatarFoto: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     marginRight: spacing.sm,
     backgroundColor: colors.surface,
   },

@@ -150,12 +150,10 @@ async function resumoHoje(req, res, next) {
     }
 
     const resumo = await corridaModelo.resumoHojePorMotorista(req.usuarioId);
-    // Comissão da plataforma: R$1 por corrida paga, até R$10/dia — calculada
-    // aqui de forma determinística a partir da contagem de corridas (não
-    // precisa guardar por corrida no banco).
-    const comissaoHoje = Math.min(
-      resumo.corridasHoje * comissaoServico.VALOR_COMISSAO_POR_CORRIDA,
-      comissaoServico.LIMITE_COMISSAO_DIARIA
+    // Comissão da plataforma: R$0,50 fixos por corrida paga hoje, sem teto
+    // diário (antes era R$1 por corrida até um limite de R$8/dia).
+    const comissaoHoje = Number(
+      (resumo.corridasHoje * comissaoServico.VALOR_COMISSAO_POR_CORRIDA).toFixed(2)
     );
     const lucroHoje = Number((resumo.valorHoje - comissaoHoje).toFixed(2));
 

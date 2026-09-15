@@ -44,6 +44,19 @@ export type VerifyEmailPayload = {
   code: string;
 };
 
+// --- Esqueci minha senha ---
+
+export type ForgotPasswordResult = {
+  message: string;
+  email: string;
+};
+
+export type ResetPasswordPayload = {
+  email: string;
+  code: string;
+  newPassword: string;
+};
+
 // Edição de credenciais na tela de Conta — todos os campos opcionais
 // pra permitir salvar só o que o usuário alterou.
 export type UpdateAccountPayload = {
@@ -223,6 +236,8 @@ export type RootStackParamList = {
   Login: undefined;
   Register: undefined;
   VerifyEmail: { email: string };
+  ForgotPassword: undefined;
+  ResetPassword: { email: string };
   Home: undefined;
   DriverHome: undefined;
   MotoboyPanel: undefined;

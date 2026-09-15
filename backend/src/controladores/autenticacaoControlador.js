@@ -4,7 +4,7 @@ const tokenRenovacaoModelo = require('../modelos/tokenRenovacaoModelo');
 const { gerarToken, gerarRefreshToken, hashToken } = require('../utilitarios/token');
 const { normalizarTelefone } = require('../utilitarios/telefone');
 const { gerarCodigo, gerarExpiracao } = require('../utilitarios/codigoVerificacao');
-const { enviarEmailVerificacao } = require('../utilitarios/email');
+const { enviarEmailVerificacao, enviarEmailRecuperacaoSenha } = require('../utilitarios/email');
 const { verificarIdTokenGoogle } = require('../utilitarios/googleAuth');
 const { ErroHttp } = require('../intermediarios/tratadorErros');
 
@@ -274,6 +274,79 @@ async function entrarComTelefone(req, res, next) {
   }
 }
 
+// POST /auth/forgot-password
+//
+// Gera um código de 6 dígitos (mesmo mecanismo da verificação de cadastro,
+// mas em colunas próprias — não pode reaproveitar codigo_verificacao, senão
+// um pedido de "esqueci a senha" invalidaria um código de confirmação de
+// email pendente, e vice-versa) e manda por email. Só funciona pra conta
+// que tem senha (contas criadas só via Google não têm senha_hash).
+async function esqueciSenha(req, res, next) {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      throw new ErroHttp(400, 'Email é obrigatório.');
+    }
+
+    const usuario = await usuarioModelo.buscarPorEmail(email);
+    if (!usuario) {
+      throw new ErroHttp(404, 'Não existe conta com esse email.');
+    }
+    if (!usuario.senha_hash) {
+      throw new ErroHttp(409, 'Essa conta entra só com Google e não tem senha para redefinir.');
+    }
+
+    const codigo = gerarCodigo();
+    const expiraEm = gerarExpiracao();
+    await usuarioModelo.definirCodigoRecuperacaoSenha(usuario.id, { codigo, expiraEm });
+    await enviarEmailRecuperacaoSenha({ para: usuario.email, nome: usuario.nome, codigo });
+
+    return res.json({ message: 'Enviamos um código para o seu email.', email: usuario.email });
+  } catch (erro) {
+    next(erro);
+  }
+}
+
+// POST /auth/reset-password
+//
+// Confirma o código de 6 dígitos e já troca a senha na mesma chamada (a
+// tela do app junta os dois passos num só formulário). Depois de trocar,
+// revoga todos os refresh tokens do usuário: se alguém tinha acesso à conta
+// antes (sessão antiga, dispositivo perdido), a troca de senha já derruba
+// essa sessão em vez de deixá-la valendo até expirar sozinha.
+async function redefinirSenha(req, res, next) {
+  try {
+    const { email, code, newPassword } = req.body;
+
+    if (!email || !code || !newPassword) {
+      throw new ErroHttp(400, 'Email, código e nova senha são obrigatórios.');
+    }
+    if (newPassword.length < 6) {
+      throw new ErroHttp(400, 'A senha precisa ter pelo menos 6 caracteres.');
+    }
+
+    const usuario = await usuarioModelo.buscarPorEmail(email);
+    if (!usuario) {
+      throw new ErroHttp(404, 'Usuário não encontrado.');
+    }
+
+    if (!usuario.codigo_recuperacao_senha || usuario.codigo_recuperacao_senha !== code) {
+      throw new ErroHttp(400, 'Código inválido.');
+    }
+    if (usuario.codigo_recuperacao_senha_expira && new Date(usuario.codigo_recuperacao_senha_expira) < new Date()) {
+      throw new ErroHttp(400, 'Código expirado. Peça um novo.');
+    }
+
+    const senhaHash = await bcrypt.hash(newPassword, 10);
+    await usuarioModelo.redefinirSenha(usuario.id, senhaHash);
+    await tokenRenovacaoModelo.revogarTodosDoUsuario(usuario.id);
+
+    return res.json({ message: 'Senha redefinida com sucesso.' });
+  } catch (erro) {
+    next(erro);
+  }
+}
+
 // POST /auth/google
 //
 // O front manda o id_token que recebeu do Google depois do usuário fazer
@@ -450,6 +523,8 @@ module.exports = {
   alterarEmailPendente,
   entrar,
   entrarComTelefone,
+  esqueciSenha,
+  redefinirSenha,
   entrarComGoogle,
   renovarToken,
   sair,

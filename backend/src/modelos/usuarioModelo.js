@@ -97,6 +97,37 @@ async function marcarEmailVerificado(id) {
   return resultado.rows[0];
 }
 
+// Grava o código de 6 dígitos + validade pro fluxo de "Esqueci minha senha"
+// (POST /auth/forgot-password).
+async function definirCodigoRecuperacaoSenha(id, { codigo, expiraEm }) {
+  const resultado = await consultar(
+    `UPDATE usuarios SET
+       codigo_recuperacao_senha = $2,
+       codigo_recuperacao_senha_expira = $3,
+       atualizado_em = NOW()
+     WHERE id = $1
+     RETURNING *`,
+    [id, codigo, expiraEm]
+  );
+  return resultado.rows[0];
+}
+
+// Troca a senha (já em hash) e limpa o código de recuperação, pra ele não
+// poder ser reaproveitado numa segunda tentativa depois de já ter servido.
+async function redefinirSenha(id, senhaHash) {
+  const resultado = await consultar(
+    `UPDATE usuarios SET
+       senha_hash = $2,
+       codigo_recuperacao_senha = NULL,
+       codigo_recuperacao_senha_expira = NULL,
+       atualizado_em = NOW()
+     WHERE id = $1
+     RETURNING *`,
+    [id, senhaHash]
+  );
+  return resultado.rows[0];
+}
+
 async function atualizarStatusMotorista(id, status) {
   const resultado = await consultar(
     `UPDATE usuarios SET status_motorista = $2, atualizado_em = NOW()
@@ -220,6 +251,8 @@ module.exports = {
   alterarEmailPendente,
   definirCodigoVerificacao,
   marcarEmailVerificado,
+  definirCodigoRecuperacaoSenha,
+  redefinirSenha,
   atualizarStatusMotorista,
   atualizarAvatar,
   atualizarChavePix,

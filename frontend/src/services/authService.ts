@@ -8,6 +8,8 @@ import type {
   UpdateAccountPayload,
   User,
   AuthTokens,
+  ForgotPasswordResult,
+  ResetPasswordPayload,
 } from '../types';
 
 // Flag simples: enquanto o backend não estiver pronto, usamos respostas mockadas
@@ -147,6 +149,30 @@ export async function changePendingEmail(email: string, newEmail: string): Promi
   }
   const { data } = await api.post<RegisterResult>('/auth/change-pending-email', { email, newEmail });
   return data;
+}
+
+// Pede pro backend gerar e mandar um código de 6 dígitos pro email da conta,
+// pra iniciar o fluxo de "Esqueci minha senha".
+export async function forgotPassword(email: string): Promise<ForgotPasswordResult> {
+  if (USE_MOCK) {
+    return mockDelay({ message: 'Enviamos um código para o seu email.', email }, 400);
+  }
+  const { data } = await api.post<ForgotPasswordResult>('/auth/forgot-password', { email });
+  return data;
+}
+
+// Confirma o código recebido por email e já troca a senha na mesma chamada.
+// Não loga o usuário automaticamente: por segurança, todas as sessões
+// antigas são derrubadas no backend e a pessoa precisa entrar de novo.
+export async function resetPassword(payload: ResetPasswordPayload): Promise<void> {
+  if (USE_MOCK) {
+    if (payload.code !== '123456') {
+      throw new Error('Código inválido.');
+    }
+    await mockDelay(undefined, 500);
+    return;
+  }
+  await api.post('/auth/reset-password', payload);
 }
 
 export async function fetchMe(): Promise<User> {

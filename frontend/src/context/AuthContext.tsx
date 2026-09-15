@@ -11,6 +11,8 @@ import type {
   RegisterResult,
   UpdateAccountPayload,
   User,
+  ForgotPasswordResult,
+  ResetPasswordPayload,
 } from '../types';
 
 type AuthContextValue = {
@@ -29,6 +31,8 @@ type AuthContextValue = {
   verifyEmail: (email: string, code: string) => Promise<void>;
   resendCode: (email: string) => Promise<void>;
   changePendingEmail: (email: string, newEmail: string) => Promise<RegisterResult>;
+  forgotPassword: (email: string) => Promise<ForgotPasswordResult>;
+  resetPassword: (payload: ResetPasswordPayload) => Promise<void>;
   signOut: () => Promise<void>;
   updateAccount: (payload: UpdateAccountPayload) => Promise<void>;
   updateDriverStatus: (status: DriverStatus) => void;
@@ -158,6 +162,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  async function forgotPassword(email: string) {
+    setError(null);
+    try {
+      return await authService.forgotPassword(email);
+    } catch (err: any) {
+      setError(err?.response?.data?.message ?? err.message ?? 'Não foi possível enviar o código.');
+      throw err;
+    }
+  }
+
+  async function resetPassword(payload: ResetPasswordPayload) {
+    setError(null);
+    try {
+      await authService.resetPassword(payload);
+    } catch (err: any) {
+      setError(err?.response?.data?.message ?? err.message ?? 'Não foi possível redefinir a senha.');
+      throw err;
+    }
+  }
+
   async function signOut() {
     await authService.logout();
     setUser(null);
@@ -203,6 +227,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         verifyEmail,
         resendCode,
         changePendingEmail,
+        forgotPassword,
+        resetPassword,
         signOut,
         updateAccount,
         updateDriverStatus,

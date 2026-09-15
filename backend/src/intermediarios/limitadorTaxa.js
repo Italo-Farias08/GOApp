@@ -55,6 +55,17 @@ const limitadorRefresh = rateLimit({
   handler: respostaPadrao('Muitas tentativas de renovação de sessão. Espera um pouco e tenta de novo.'),
 });
 
+// Esqueci minha senha / redefinir senha — mesmo raciocínio do código de
+// verificação de email: sem limite, dá pra tentar as ~1 milhão de
+// combinações do código de 6 dígitos dentro da janela em que ele é válido.
+const limitadorRecuperacaoSenha = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: respostaPadrao('Muitas tentativas. Espera 15 minutos e tenta de novo.'),
+});
+
 // Rotas administrativas protegidas só por um segredo fixo (x-admin-secret).
 // Enquanto não existir um painel de admin de verdade, isso reduz o risco de
 // alguém tentar adivinhar o segredo por tentativa e erro.
@@ -71,5 +82,6 @@ module.exports = {
   limitadorLogin,
   limitadorCodigoVerificacao,
   limitadorRefresh,
+  limitadorRecuperacaoSenha,
   limitadorAdmin,
 };

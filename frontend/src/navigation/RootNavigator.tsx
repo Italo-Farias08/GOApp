@@ -4,10 +4,12 @@ import React from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import { useAuth } from '../context/AuthContext';
 import DriverHomeScreen from '../screens/DriverHomeScreen';
+import ForgotPasswordScreen from '../screens/ForgotPasswordScreen';
 import HomeScreen from '../screens/HomeScreen';
 import LoginScreen from '../screens/LoginScreen';
 import MotoboyPanelScreen from '../screens/MotoboyPanelScreen';
 import RegisterScreen from '../screens/RegisterScreen';
+import ResetPasswordScreen from '../screens/ResetPasswordScreen';
 import VerifyEmailScreen from '../screens/VerifyEmailScreen';
 import { colors } from '../theme/theme';
 import type { RootStackParamList } from '../types';
@@ -51,6 +53,8 @@ export default function RootNavigator() {
             <Stack.Screen name="Login" component={LoginScreen} />
             <Stack.Screen name="Register" component={RegisterScreen} />
             <Stack.Screen name="VerifyEmail" component={VerifyEmailScreen} />
+            <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
+            <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} />
           </>
         )}
       </Stack.Navigator>

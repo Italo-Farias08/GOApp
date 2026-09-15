@@ -167,6 +167,14 @@ export default function LoginScreen({ navigation }: Props) {
               />
             </View>
 
+            <Pressable
+              onPress={() => navigation.navigate('ForgotPassword')}
+              hitSlop={8}
+              style={styles.forgotPasswordRow}
+            >
+              <Text style={styles.forgotPasswordLabel}>Esqueci minha senha</Text>
+            </Pressable>
+
             <Button
               label="Continuar"
               onPress={handleContinue}
@@ -297,6 +305,16 @@ const styles = StyleSheet.create({
   passwordInput: {
     ...typography.body,
     color: colors.text,
+  },
+  forgotPasswordRow: {
+    alignSelf: 'flex-end',
+    marginBottom: spacing.md,
+    marginTop: -spacing.xs,
+  },
+  forgotPasswordLabel: {
+    ...typography.caption,
+    color: colors.primary,
+    fontWeight: '600',
   },
   continueButton: {
     marginBottom: spacing.lg,

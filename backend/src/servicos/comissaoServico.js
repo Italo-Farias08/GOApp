@@ -1,19 +1,14 @@
 const usuarioModelo = require('../modelos/usuarioModelo');
-const corridaModelo = require('../modelos/corridaModelo');
 
-const VALOR_COMISSAO_POR_CORRIDA = 1;
-const LIMITE_COMISSAO_DIARIA = 8;
+// Comissão da plataforma: R$0,50 fixos em TODA corrida paga, sem limite
+// diário (antes era R$1 por corrida, com um teto de R$8/dia — depois disso
+// o motorista ficava sem cobrança pro resto do dia).
+const VALOR_COMISSAO_POR_CORRIDA = 0.5;
+
 async function aplicarComissao({ motoristaId, valorCorrida, foiPagoEmDinheiro }) {
-  if (!motoristaId) return null; 
+  if (!motoristaId) return null;
 
-  const corridasPagasHoje = await corridaModelo.contarCorridasPagasHoje(motoristaId);
-
-  const comissaoJaCobradaHoje = Math.min(
-    Math.max(corridasPagasHoje - 1, 0) * VALOR_COMISSAO_POR_CORRIDA,
-    LIMITE_COMISSAO_DIARIA
-  );
-  const comissao =
-    comissaoJaCobradaHoje >= LIMITE_COMISSAO_DIARIA ? 0 : VALOR_COMISSAO_POR_CORRIDA;
+  const comissao = VALOR_COMISSAO_POR_CORRIDA;
 
   const delta = foiPagoEmDinheiro ? -comissao : Number(valorCorrida) - comissao;
 
@@ -27,5 +22,4 @@ async function aplicarComissao({ motoristaId, valorCorrida, foiPagoEmDinheiro })
 module.exports = {
   aplicarComissao,
   VALOR_COMISSAO_POR_CORRIDA,
-  LIMITE_COMISSAO_DIARIA,
 };
