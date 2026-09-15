@@ -584,8 +584,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   logoPequeno: {
-    width: 64,
-    height: 45,
+    width: 74,
+    height: 65,
     marginBottom: spacing.xs,
   },
   logoGerando: {

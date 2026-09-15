@@ -1,4 +1,5 @@
 const { consultar } = require('../configuracao/banco');
+const { VALOR_COMISSAO_POR_CORRIDA } = require('../servicos/comissaoServico');
 
 // Converte a linha do banco pro formato que o front espera.
 function paraDividaPublica(linha) {
@@ -47,10 +48,19 @@ async function buscarPorId(id) {
   return resultado.rows[0] || null;
 }
 
-// Quita uma dívida (a corrida que a incluía no preço acabou de ser paga) e
-// devolve pro motorista credor original a parte que ele não tinha recebido
-// — soma direto no saldo dele, dentro da mesma operação, pra nunca ficar
-// "a dívida quitou mas o motorista não recebeu".
+// Quita uma dívida (a corrida que a incluía no preço acabou de ser paga, ou
+// o passageiro pagou direto pela tela de "Pendências") e devolve pro
+// motorista credor original a parte que ele não tinha recebido — soma
+// direto no saldo dele, dentro da mesma operação, pra nunca ficar "a dívida
+// quitou mas o motorista não recebeu".
+//
+// A comissão da plataforma (R$0,50) é descontada aqui igual em qualquer
+// outra corrida paga — na hora em que a corrida original não foi paga, a
+// plataforma NÃO cobrou comissão nenhuma dela (só cobra de corrida com
+// status_pagamento = 'pago'). Então, quando a dívida finalmente é quitada,
+// é agora que a plataforma cobra a comissão que ficou pra trás, e só o
+// restante vai pro motorista. GREATEST(...,0) evita saldo negativo numa
+// dívida menor que a própria comissão.
 async function quitar(id, corridaQuitacaoId) {
   const resultado = await consultar(
     `WITH divida_quitada AS (
@@ -60,11 +70,11 @@ async function quitar(id, corridaQuitacaoId) {
        RETURNING *
      )
      UPDATE usuarios
-     SET saldo_a_receber = saldo_a_receber + divida_quitada.valor
+     SET saldo_a_receber = saldo_a_receber + GREATEST(divida_quitada.valor - $3, 0)
      FROM divida_quitada
      WHERE usuarios.id = divida_quitada.motorista_credor_id
      RETURNING divida_quitada.*`,
-    [id, corridaQuitacaoId]
+    [id, corridaQuitacaoId, VALOR_COMISSAO_POR_CORRIDA]
   );
   return resultado.rows[0] || null;
 }
