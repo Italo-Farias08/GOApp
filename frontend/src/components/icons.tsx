@@ -97,6 +97,22 @@ export function UserIcon({ size = 20, color = '#F5F5F7', strokeWidth = 1.7 }: Ic
   );
 }
 
+// Ícone de câmera — usado no botão de tirar a selfie do motorista.
+export function CameraIcon({ size = 20, color = '#F5F5F7', strokeWidth = 1.7 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M4.5 8.2 Q4.5 6.8 5.9 6.8 H8.1 L9.2 5 H14.8 L15.9 6.8 H18.1 Q19.5 6.8 19.5 8.2 V17 Q19.5 18.4 18.1 18.4 H5.9 Q4.5 18.4 4.5 17 Z"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Circle cx="12" cy="12.4" r="3.4" stroke={color} strokeWidth={strokeWidth} />
+    </Svg>
+  );
+}
+
 // Ícone de saída (porta + seta) — usado no item "Sair" do menu de
 // configurações, no lugar do emoji 🚪.
 export function ExitIcon({ size = 20, color = '#FF4D4D', strokeWidth = 1.7 }: IconProps) {

@@ -1,6 +1,7 @@
 const bcrypt = require('bcryptjs');
 const usuarioModelo = require('../modelos/usuarioModelo');
-const { gerarToken } = require('../utilitarios/token');
+const tokenRenovacaoModelo = require('../modelos/tokenRenovacaoModelo');
+const { gerarToken, gerarRefreshToken, hashToken } = require('../utilitarios/token');
 const { normalizarTelefone } = require('../utilitarios/telefone');
 const { gerarCodigo, gerarExpiracao } = require('../utilitarios/codigoVerificacao');
 const { enviarEmailVerificacao } = require('../utilitarios/email');
@@ -8,6 +9,27 @@ const { verificarIdTokenGoogle } = require('../utilitarios/googleAuth');
 const { ErroHttp } = require('../intermediarios/tratadorErros');
 
 const REGEX_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const DIAS_EXPIRACAO_REFRESH = Number(process.env.REFRESH_TOKEN_EXPIRA_DIAS || 30);
+
+// Gera o par de tokens de uma sessão nova (login, cadastro confirmado,
+// login com Google) e já salva o HASH do refresh token no banco. O access
+// token dura pouco de propósito (ver JWT_EXPIRA_EM) — é o refresh token,
+// validado contra o banco em /auth/refresh, que decide se a sessão
+// continua viva sem precisar deslogar a pessoa a cada expiração.
+async function gerarParDeTokens(usuarioId) {
+  const accessToken = gerarToken(usuarioId);
+  const refreshToken = gerarRefreshToken();
+  const expiraEm = new Date(Date.now() + DIAS_EXPIRACAO_REFRESH * 24 * 60 * 60 * 1000);
+
+  await tokenRenovacaoModelo.criar({
+    usuarioId,
+    tokenHash: hashToken(refreshToken),
+    expiraEm,
+  });
+
+  return { accessToken, refreshToken };
+}
 
 // POST /auth/register
 async function registrar(req, res, next) {
@@ -77,8 +99,8 @@ async function verificarEmail(req, res, next) {
     }
 
     if (usuario.email_verificado) {
-      const accessToken = gerarToken(usuario.id);
-      return res.json({ user: usuarioModelo.paraUsuarioPublico(usuario), tokens: { accessToken } });
+      const tokens = await gerarParDeTokens(usuario.id);
+      return res.json({ user: usuarioModelo.paraUsuarioPublico(usuario), tokens });
     }
 
     if (!usuario.codigo_verificacao || usuario.codigo_verificacao !== code) {
@@ -90,11 +112,11 @@ async function verificarEmail(req, res, next) {
     }
 
     const usuarioVerificado = await usuarioModelo.marcarEmailVerificado(usuario.id);
-    const accessToken = gerarToken(usuarioVerificado.id);
+    const tokens = await gerarParDeTokens(usuarioVerificado.id);
 
     return res.json({
       user: usuarioModelo.paraUsuarioPublico(usuarioVerificado),
-      tokens: { accessToken },
+      tokens,
     });
   } catch (erro) {
     next(erro);
@@ -198,11 +220,11 @@ async function entrar(req, res, next) {
       throw erro;
     }
 
-    const accessToken = gerarToken(usuario.id);
+    const tokens = await gerarParDeTokens(usuario.id);
 
     return res.json({
       user: usuarioModelo.paraUsuarioPublico(usuario),
-      tokens: { accessToken },
+      tokens,
     });
   } catch (erro) {
     next(erro);
@@ -241,11 +263,11 @@ async function entrarComTelefone(req, res, next) {
       throw erro;
     }
 
-    const accessToken = gerarToken(usuario.id);
+    const tokens = await gerarParDeTokens(usuario.id);
 
     return res.json({
       user: usuarioModelo.paraUsuarioPublico(usuario),
-      tokens: { accessToken },
+      tokens,
     });
   } catch (erro) {
     next(erro);
@@ -283,11 +305,11 @@ async function entrarComGoogle(req, res, next) {
       usuario = await usuarioModelo.marcarEmailVerificado(usuario.id);
     }
 
-    const accessToken = gerarToken(usuario.id);
+    const tokens = await gerarParDeTokens(usuario.id);
 
     return res.json({
       user: usuarioModelo.paraUsuarioPublico(usuario),
-      tokens: { accessToken },
+      tokens,
     });
   } catch (erro) {
     if (erro instanceof ErroHttp) return next(erro);
@@ -295,6 +317,54 @@ async function entrarComGoogle(req, res, next) {
     // audience errada) chegam aqui como erro genérico — tratamos como 401
     // em vez de deixar virar 500, já que é uma falha de autenticação.
     next(new ErroHttp(401, erro.message || 'Não foi possível validar o login com Google.'));
+  }
+}
+
+// POST /auth/refresh
+//
+// O access token dura pouco de propósito (ver JWT_EXPIRA_EM) — é o refresh
+// token, validado aqui contra o banco, que decide se a sessão continua
+// viva. Cada chamada aqui derruba o refresh token antigo e emite um novo
+// (rotação): se um refresh token vazar, ele só serve uma vez antes de virar
+// inválido.
+async function renovarToken(req, res, next) {
+  try {
+    const { refreshToken } = req.body;
+    if (!refreshToken) {
+      throw new ErroHttp(400, 'refreshToken é obrigatório.');
+    }
+
+    const tokenHash = hashToken(refreshToken);
+    const registro = await tokenRenovacaoModelo.buscarValidoPorHash(tokenHash);
+
+    if (!registro) {
+      throw new ErroHttp(401, 'Sessão expirada. Faça login novamente.');
+    }
+
+    await tokenRenovacaoModelo.revogarPorHash(tokenHash);
+    const tokens = await gerarParDeTokens(registro.usuario_id);
+
+    return res.json({ tokens });
+  } catch (erro) {
+    next(erro);
+  }
+}
+
+// POST /auth/logout
+//
+// Revoga só o refresh token dessa sessão/dispositivo (não mexe em outras
+// sessões, se o usuário estiver logado em mais de um aparelho). Não exige
+// o access token — a pessoa pode estar chamando isso exatamente porque ele
+// já expirou.
+async function sair(req, res, next) {
+  try {
+    const { refreshToken } = req.body;
+    if (refreshToken) {
+      await tokenRenovacaoModelo.revogarPorHash(hashToken(refreshToken));
+    }
+    return res.status(204).send();
+  } catch (erro) {
+    next(erro);
   }
 }
 
@@ -381,6 +451,8 @@ module.exports = {
   entrar,
   entrarComTelefone,
   entrarComGoogle,
+  renovarToken,
+  sair,
   obterPerfil,
   atualizarPerfil,
   atualizarPushToken,

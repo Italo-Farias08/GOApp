@@ -110,6 +110,14 @@ export default {
           iosUrlScheme: 'com.googleusercontent.apps.682727645534-dl62moirr693nuvenelqdce3ofg1siol',
         },
       ],
+      // Selfie do motorista (mostrada pro passageiro quando ele aceita a
+      // corrida). Só pede permissão de câmera — não mexe na galeria de fotos.
+      [
+        'expo-image-picker',
+        {
+          cameraPermission: 'O #GO usa a câmera pra tirar a sua foto de motorista, mostrada ao passageiro quando você aceita uma corrida.',
+        },
+      ],
     ],
     extra: {
       eas: {

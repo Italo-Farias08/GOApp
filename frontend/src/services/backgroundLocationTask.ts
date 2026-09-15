@@ -88,10 +88,6 @@ export async function iniciarRastreamentoSegundoPlano(): Promise<boolean> {
     timeInterval: 15000,
     distanceInterval: 30,
     showsBackgroundLocationIndicator: true,
-    // Android: sobe um serviço em primeiro plano com notificação fixa
-    // enquanto o motorista está disponível/em corrida. É esse serviço que
-    // impede o sistema de matar o processo do app (e, junto com ele, tanto
-    // esta tarefa quanto o socket em tempo real) quando a tela trava.
     foregroundService: {
       notificationTitle: '#GO — localização ativa',
       notificationBody:

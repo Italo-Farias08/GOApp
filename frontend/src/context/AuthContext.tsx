@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { getToken } from '../services/api';
+import { Alert } from 'react-native';
+import { getToken, registrarAoExpirarSessao } from '../services/api';
 import * as authService from '../services/authService';
 import { configurarNotificacoesPush } from '../services/notificacaoPushService';
 import type {
@@ -31,6 +32,7 @@ type AuthContextValue = {
   signOut: () => Promise<void>;
   updateAccount: (payload: UpdateAccountPayload) => Promise<void>;
   updateDriverStatus: (status: DriverStatus) => void;
+  updateAvatarUrl: (avatarUrl: string) => void;
   error: string | null;
 };
 
@@ -43,6 +45,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const precisaCompletarCadastro =
     !!user && (!user.name?.trim() || !user.email?.trim() || !user.phone?.trim());
+
+  // Registrado uma vez: quando o interceptor do axios não consegue mais
+  // renovar a sessão (refresh token também expirado ou revogado), a gente
+  // desloga aqui e avisa a pessoa — antes disso o app só apagava o token
+  // sem dizer nada, e ela via telas quebrarem sem entender por quê.
+  useEffect(() => {
+    registrarAoExpirarSessao(() => {
+      setUser(null);
+      Alert.alert('Sessão expirada', 'Faça login novamente para continuar.');
+    });
+  }, []);
 
   // Ao abrir o app, verifica se já existe um token salvo (mantém o usuário logado)
   useEffect(() => {
@@ -169,6 +182,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser((prev) => (prev ? { ...prev, driverStatus: status } : prev));
   }
 
+  // Atualiza localmente a foto do usuário depois do upload (a chamada de
+  // fato pro backend fica em src/services/driverService.ts) — assim a selfie
+  // aparece na hora, sem precisar recarregar o perfil inteiro.
+  function updateAvatarUrl(avatarUrl: string) {
+    setUser((prev) => (prev ? { ...prev, avatarUrl } : prev));
+  }
+
   return (
     <AuthContext.Provider
       value={{
@@ -186,6 +206,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         signOut,
         updateAccount,
         updateDriverStatus,
+        updateAvatarUrl,
         error,
       }}
     >

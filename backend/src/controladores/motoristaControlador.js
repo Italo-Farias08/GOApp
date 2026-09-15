@@ -4,6 +4,7 @@ const corridaModelo = require('../modelos/corridaModelo');
 const comissaoServico = require('../servicos/comissaoServico');
 const { ErroHttp } = require('../intermediarios/tratadorErros');
 const soquete = require('../tempoReal/servidorSoquete');
+const { comprimirEsalvarFoto, montarUrlPublica, apagarFotoAntiga } = require('../configuracao/armazenamento');
 
 const TIPOS_VEICULO_VALIDOS = ['carro', 'moto'];
 
@@ -199,6 +200,33 @@ async function atualizarLocalizacao(req, res, next) {
   }
 }
 
+// POST /driver/photo — recebe a selfie do motorista (multipart/form-data,
+// campo "photo"), salva no disco/volume e atualiza o avatar_url do usuário.
+// O arquivo em si NUNCA passa pelo banco — só a URL fica salva lá.
+async function enviarFoto(req, res, next) {
+  try {
+    if (!req.file) {
+      throw new ErroHttp(400, 'Envie uma foto no campo "photo".');
+    }
+
+    const usuarioAntes = await usuarioModelo.buscarPorId(req.usuarioId);
+
+    // req.file.buffer (não .filename) porque o multer guarda só na memória —
+    // quem escreve o arquivo em disco é comprimirEsalvarFoto, já reduzido.
+    const nomeArquivo = await comprimirEsalvarFoto(req.usuarioId, req.file.buffer);
+    const novaUrl = montarUrlPublica(nomeArquivo);
+
+    const usuarioAtualizado = await usuarioModelo.atualizarAvatar(req.usuarioId, novaUrl);
+
+    // Só apaga a antiga DEPOIS de garantir que a nova já está salva no banco.
+    apagarFotoAntiga(usuarioAntes?.avatar_url);
+
+    return res.json({ avatarUrl: usuarioAtualizado.avatar_url });
+  } catch (erro) {
+    next(erro);
+  }
+}
+
 // GET /driver/pending (admin)
 async function listarPendentes(req, res, next) {
   try {
@@ -238,6 +266,7 @@ module.exports = {
   consultarMeuCadastro,
   atualizarVeiculo,
   atualizarLocalizacao,
+  enviarFoto,
   resumoHoje,
   listarPendentes,
   aprovar,

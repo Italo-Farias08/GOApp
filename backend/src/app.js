@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
+const { PASTA_UPLOADS } = require('./configuracao/armazenamento');
 
 const autenticacaoRotas = require('./rotas/autenticacaoRotas');
 const motoristaRotas = require('./rotas/motoristaRotas');
@@ -50,6 +51,16 @@ app.use(limitadorGeral);
 app.get('/saude', (req, res) => {
   res.json({ status: 'ok' });
 });
+
+// Serve as fotos dos motoristas (salvas no disco/Volume do Railway — nunca
+// no banco). O helmet por padrão bloqueia esse tipo de recurso sendo
+// carregado por uma origem diferente (Cross-Origin-Resource-Policy); como
+// quem carrega as fotos é o app (não um navegador na mesma origem), isso
+// precisa ficar liberado só pra essa pasta.
+app.use('/uploads', (req, res, next) => {
+  res.set('Cross-Origin-Resource-Policy', 'cross-origin');
+  next();
+}, express.static(PASTA_UPLOADS));
 
 app.use('/auth', autenticacaoRotas);
 app.use('/driver', motoristaRotas);

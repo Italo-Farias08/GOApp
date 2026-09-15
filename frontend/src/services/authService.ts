@@ -1,4 +1,4 @@
-import { api, saveToken, clearToken } from './api';
+import { api, saveTokens, clearTokens } from './api';
 import type {
   LoginPayload,
   PhoneLoginPayload,
@@ -29,7 +29,7 @@ export async function login(payload: LoginPayload): Promise<User> {
       name: 'Usuário Teste',
       email: payload.email,
     };
-    await saveToken('mock-token-123');
+    await saveTokens({ accessToken: 'mock-token-123' });
     return mockDelay(fakeUser);
   }
 
@@ -38,7 +38,7 @@ export async function login(payload: LoginPayload): Promise<User> {
     '/auth/login',
     payload
   );
-  await saveToken(data.tokens.accessToken);
+  await saveTokens(data.tokens);
   return data.user;
 }
 
@@ -56,7 +56,7 @@ export async function loginWithPhone(payload: PhoneLoginPayload): Promise<User> 
       email: '',
       phone: `${payload.countryCode}${payload.phone}`,
     };
-    await saveToken('mock-token-phone-123');
+    await saveTokens({ accessToken: 'mock-token-phone-123' });
     return mockDelay(fakeUser);
   }
 
@@ -65,7 +65,7 @@ export async function loginWithPhone(payload: PhoneLoginPayload): Promise<User> 
     '/auth/login-phone',
     payload
   );
-  await saveToken(data.tokens.accessToken);
+  await saveTokens(data.tokens);
   return data.user;
 }
 
@@ -81,7 +81,7 @@ export async function loginWithGoogle(idToken: string): Promise<User> {
       email: 'usuario@gmail.com',
       emailVerificado: true,
     };
-    await saveToken('mock-token-google-123');
+    await saveTokens({ accessToken: 'mock-token-google-123' });
     return mockDelay(fakeUser);
   }
 
@@ -89,7 +89,7 @@ export async function loginWithGoogle(idToken: string): Promise<User> {
   const { data } = await api.post<{ user: User; tokens: AuthTokens }>('/auth/google', {
     idToken,
   });
-  await saveToken(data.tokens.accessToken);
+  await saveTokens(data.tokens);
   return data.user;
 }
 
@@ -117,7 +117,7 @@ export async function verifyEmail(payload: VerifyEmailPayload): Promise<User> {
       email: payload.email,
       emailVerificado: true,
     };
-    await saveToken('mock-token-123');
+    await saveTokens({ accessToken: 'mock-token-123' });
     return mockDelay(fakeUser);
   }
 
@@ -125,7 +125,7 @@ export async function verifyEmail(payload: VerifyEmailPayload): Promise<User> {
     '/auth/verify-email',
     payload
   );
-  await saveToken(data.tokens.accessToken);
+  await saveTokens(data.tokens);
   return data.user;
 }
 
@@ -187,5 +187,5 @@ export async function updateAccount(payload: UpdateAccountPayload): Promise<User
 }
 
 export async function logout(): Promise<void> {
-  await clearToken();
+  await clearTokens();
 }

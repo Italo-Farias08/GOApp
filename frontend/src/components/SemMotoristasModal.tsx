@@ -1,5 +1,5 @@
 import React from 'react';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { colors, radius, spacing, typography } from '../theme/theme';
 import Button from './Button';
 import { AlertIcon, CarIcon, MotoIcon } from './icons';
@@ -33,7 +33,14 @@ export default function SemMotoristasModal({
       <Pressable style={styles.backdrop} onPress={onContinuar} />
       <View style={styles.cartao}>
         <View style={styles.iconeBadge}>
-          <AlertIcon size={22} color={colors.warning} />
+          <Image
+            source={require('../../assets/logo-mark.png')}
+            style={styles.logo}
+            resizeMode="contain"
+          />
+          <View style={styles.alertaSelinho}>
+            <AlertIcon size={12} color={colors.background} />
+          </View>
         </View>
 
         <Text style={styles.titulo}>Nenhum motorista por perto agora</Text>
@@ -90,6 +97,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: spacing.md,
+  },
+  logo: {
+    width: 40,
+    height: 60,
+  },
+  // Selinho de alerta sobreposto no canto da logo — mantém o aviso visual
+  // de "atenção" mesmo com a marca do app no lugar do ícone genérico.
+  alertaSelinho: {
+    position: 'absolute',
+    bottom: -2,
+    right: -2,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: colors.warning,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: colors.surface,
   },
   titulo: {
     ...typography.h2,

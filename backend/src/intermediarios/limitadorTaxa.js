@@ -43,6 +43,18 @@ const limitadorCodigoVerificacao = rateLimit({
   handler: respostaPadrao('Muitas tentativas com esse código. Espera 15 minutos e tenta de novo.'),
 });
 
+// Refresh token — chamado automaticamente pelo app toda vez que o access
+// token vence (a cada JWT_EXPIRA_EM), então não pode ser tão apertado
+// quanto o login. Ainda assim limita alguém tentando adivinhar/forçar
+// tokens por tentativa e erro.
+const limitadorRefresh = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: respostaPadrao('Muitas tentativas de renovação de sessão. Espera um pouco e tenta de novo.'),
+});
+
 // Rotas administrativas protegidas só por um segredo fixo (x-admin-secret).
 // Enquanto não existir um painel de admin de verdade, isso reduz o risco de
 // alguém tentar adivinhar o segredo por tentativa e erro.
@@ -58,5 +70,6 @@ module.exports = {
   limitadorGeral,
   limitadorLogin,
   limitadorCodigoVerificacao,
+  limitadorRefresh,
   limitadorAdmin,
 };

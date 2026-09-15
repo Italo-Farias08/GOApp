@@ -107,6 +107,18 @@ async function atualizarStatusMotorista(id, status) {
   return resultado.rows[0];
 }
 
+// Salva a URL da foto (selfie do motorista, ou avatar em geral) — nunca o
+// arquivo em si, só o link pra onde ele está guardado.
+async function atualizarAvatar(id, avatarUrl) {
+  const resultado = await consultar(
+    `UPDATE usuarios SET avatar_url = $2, atualizado_em = NOW()
+     WHERE id = $1
+     RETURNING *`,
+    [id, avatarUrl]
+  );
+  return resultado.rows[0];
+}
+
 async function atualizarChavePix(id, { chavePix, chavePixTipo, cpf }) {
   const resultado = await consultar(
     `UPDATE usuarios SET
@@ -209,6 +221,7 @@ module.exports = {
   definirCodigoVerificacao,
   marcarEmailVerificado,
   atualizarStatusMotorista,
+  atualizarAvatar,
   atualizarChavePix,
   zerarSaldoAReceber,
   devolverSaldoAReceber,

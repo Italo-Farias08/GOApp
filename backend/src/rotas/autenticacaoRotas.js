@@ -1,7 +1,7 @@
 const express = require('express');
 const autenticacaoControlador = require('../controladores/autenticacaoControlador');
 const autenticacaoIntermediario = require('../intermediarios/autenticacaoIntermediario');
-const { limitadorLogin, limitadorCodigoVerificacao } = require('../intermediarios/limitadorTaxa');
+const { limitadorLogin, limitadorCodigoVerificacao, limitadorRefresh } = require('../intermediarios/limitadorTaxa');
 
 const roteador = express.Router();
 
@@ -13,6 +13,12 @@ roteador.post('/change-pending-email', autenticacaoControlador.alterarEmailPende
 roteador.post('/login', limitadorLogin, autenticacaoControlador.entrar);
 roteador.post('/login-phone', limitadorLogin, autenticacaoControlador.entrarComTelefone);
 roteador.post('/google', limitadorLogin, autenticacaoControlador.entrarComGoogle);
+// Renova a sessão usando o refresh token guardado no dispositivo — não
+// exige o access token (ele já pode ter expirado, é exatamente pra isso
+// que essa rota existe). O logout também não exige: a pessoa pode estar
+// chamando isso com o access token já vencido.
+roteador.post('/refresh', limitadorRefresh, autenticacaoControlador.renovarToken);
+roteador.post('/logout', autenticacaoControlador.sair);
 
 // Rotas protegidas (exigem token)
 roteador.get('/me', autenticacaoIntermediario, autenticacaoControlador.obterPerfil);

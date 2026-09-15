@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Image,
   Modal,
   Pressable,
   ScrollView,
@@ -10,6 +11,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAuth } from '../context/AuthContext';
@@ -28,6 +30,7 @@ import Button from './Button';
 import ChatModal from './ChatModal';
 import Input from './Input';
 import {
+  CameraIcon,
   CarIcon,
   ChatIcon,
   ChevronLeftIcon,
@@ -248,8 +251,63 @@ function AccountView({ onBack }: { onBack: () => void }) {
 
 // ---------- Motorista ----------
 
+// Campo de selfie reutilizado no cadastro e no painel do motorista aprovado.
+// `uri` é o caminho local da foto recém-tirada (ainda não enviada) OU a URL
+// já salva no servidor (quando o motorista já tem uma foto). Como as duas
+// coisas são só strings pro <Image>, funciona igual nos dois casos.
+function DriverSelfieField({
+  uri,
+  onChange,
+}: {
+  uri: string | null | undefined;
+  onChange: (novaUri: string) => void;
+}) {
+  const [erro, setErro] = useState<string | null>(null);
+
+  async function tirarFoto() {
+    setErro(null);
+    const permissao = await ImagePicker.requestCameraPermissionsAsync();
+    if (!permissao.granted) {
+      setErro('Precisamos da câmera pra tirar sua foto de motorista.');
+      return;
+    }
+
+    const resultado = await ImagePicker.launchCameraAsync({
+      cameraType: ImagePicker.CameraType.front,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.5, // selfie não precisa de qualidade máxima — mantém o upload leve
+    });
+
+    if (!resultado.canceled && resultado.assets?.[0]?.uri) {
+      onChange(resultado.assets[0].uri);
+    }
+  }
+
+  return (
+    <View style={styles.selfieCampo}>
+      <Pressable onPress={tirarFoto} style={styles.selfieCirculo}>
+        {uri ? (
+          <Image source={{ uri }} style={styles.selfieImagem} />
+        ) : (
+          <CameraIcon size={22} color={colors.textSecondary} />
+        )}
+      </Pressable>
+      <View style={styles.selfieTextos}>
+        <Text style={styles.fieldLabel}>Sua foto</Text>
+        <Text style={styles.sectionHint}>
+          {uri
+            ? 'Toque na foto pra tirar outra.'
+            : 'É essa foto que o passageiro vai ver quando você aceitar a corrida.'}
+        </Text>
+        {!!erro && <Text style={styles.errorText}>{erro}</Text>}
+      </View>
+    </View>
+  );
+}
+
 function DriverView({ onBack, onClose }: { onBack: () => void; onClose: () => void }) {
-  const { user, updateDriverStatus } = useAuth();
+  const { user, updateDriverStatus, updateAvatarUrl } = useAuth();
   const [cnhNumber, setCnhNumber] = useState('');
   const [cnhCategory, setCnhCategory] = useState('');
   const [vehicleType, setVehicleType] = useState<TipoVeiculo>('carro');
@@ -257,6 +315,7 @@ function DriverView({ onBack, onClose }: { onBack: () => void; onClose: () => vo
   const [vehicleModel, setVehicleModel] = useState('');
   const [vehicleColor, setVehicleColor] = useState('');
   const [vehicleYear, setVehicleYear] = useState('');
+  const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -264,6 +323,12 @@ function DriverView({ onBack, onClose }: { onBack: () => void; onClose: () => vo
 
   async function handleApply() {
     setError(null);
+
+    if (!photoUri) {
+      setError('Tire uma foto sua antes de enviar o cadastro.');
+      return;
+    }
+
     setLoading(true);
     try {
       const { status: newStatus } = await driverService.applyToBeDriver({
@@ -275,6 +340,17 @@ function DriverView({ onBack, onClose }: { onBack: () => void; onClose: () => vo
         vehicleColor: vehicleColor.trim(),
         vehicleYear: vehicleYear.trim(),
       });
+
+      // Cadastro já foi enviado nesse ponto — se o upload da foto falhar,
+      // avisamos mas não desfazemos o envio (o motorista pode enviar a foto
+      // de novo depois, assim que for aprovado).
+      try {
+        const { avatarUrl } = await driverService.uploadDriverPhoto(photoUri);
+        updateAvatarUrl(avatarUrl);
+      } catch {
+        setError('Cadastro enviado, mas a foto não foi salva. Tente enviá-la de novo no painel do motorista.');
+      }
+
       updateDriverStatus(newStatus);
     } catch (err: any) {
       setError(err?.message ?? 'Não foi possível enviar seu cadastro.');
@@ -354,6 +430,8 @@ function DriverView({ onBack, onClose }: { onBack: () => void; onClose: () => vo
       <Input label="Cor do veículo" value={vehicleColor} onChangeText={setVehicleColor} placeholder="Ex: Prata" />
       <Input label="Ano do veículo" value={vehicleYear} onChangeText={setVehicleYear} placeholder="Ex: 2020" keyboardType="number-pad" />
 
+      <DriverSelfieField uri={photoUri} onChange={setPhotoUri} />
+
       {!!error && <Text style={styles.errorText}>{error}</Text>}
 
       <Button label="Enviar cadastro" onPress={handleApply} loading={loading} style={styles.actionButton} />
@@ -365,6 +443,7 @@ function DriverView({ onBack, onClose }: { onBack: () => void; onClose: () => vo
 
 function DriverVehiclePanel({ onBack, onClose }: { onBack: () => void; onClose: () => void }) {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const { user, updateAvatarUrl } = useAuth();
   const [carregando, setCarregando] = useState(true);
   const [salvando, setSalvando] = useState(false);
   const [erroCarregar, setErroCarregar] = useState<string | null>(null);
@@ -378,6 +457,9 @@ function DriverVehiclePanel({ onBack, onClose }: { onBack: () => void; onClose: 
   const [vehicleModel, setVehicleModel] = useState('');
   const [vehicleColor, setVehicleColor] = useState('');
   const [vehicleYear, setVehicleYear] = useState('');
+
+  const [enviandoFoto, setEnviandoFoto] = useState(false);
+  const [erroFoto, setErroFoto] = useState<string | null>(null);
 
   useEffect(() => {
     let ativo = true;
@@ -425,6 +507,21 @@ function DriverVehiclePanel({ onBack, onClose }: { onBack: () => void; onClose: 
     }
   }
 
+  // Foto é enviada na hora (não fica esperando o botão "Salvar" dos dados
+  // do veículo) — assim que o motorista tira a selfie, ela já vai pro ar.
+  async function handleTrocarFoto(novaUri: string) {
+    setErroFoto(null);
+    setEnviandoFoto(true);
+    try {
+      const { avatarUrl } = await driverService.uploadDriverPhoto(novaUri);
+      updateAvatarUrl(avatarUrl);
+    } catch (err: any) {
+      setErroFoto(err?.message ?? 'Não foi possível salvar a foto.');
+    } finally {
+      setEnviandoFoto(false);
+    }
+  }
+
   return (
     <ScrollView showsVerticalScrollIndicator={false}>
       <Header title="Motorista" onBack={onBack} />
@@ -444,6 +541,12 @@ function DriverVehiclePanel({ onBack, onClose }: { onBack: () => void; onClose: 
         }}
         style={styles.actionButton}
       />
+
+      <View style={styles.divider} />
+
+      <DriverSelfieField uri={user?.avatarUrl} onChange={handleTrocarFoto} />
+      {enviandoFoto && <ActivityIndicator color={colors.primary} style={styles.selfieCarregando} />}
+      {!!erroFoto && <Text style={styles.errorText}>{erroFoto}</Text>}
 
       <View style={styles.divider} />
 
@@ -870,6 +973,33 @@ const styles = StyleSheet.create({
   },
   painelCarregando: {
     marginVertical: spacing.xl,
+  },
+  selfieCampo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  selfieCirculo: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    marginRight: spacing.md,
+  },
+  selfieImagem: {
+    width: '100%',
+    height: '100%',
+  },
+  selfieTextos: {
+    flex: 1,
+  },
+  selfieCarregando: {
+    marginBottom: spacing.md,
   },
   statusCard: {
     alignItems: 'center',

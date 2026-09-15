@@ -85,6 +85,33 @@ export async function updateVehicle(payload: VehicleUpdatePayload): Promise<Driv
   return data;
 }
 
+// Envia a selfie do motorista pro backend, que salva no disco/Volume do
+// Railway (nunca no banco) e devolve a URL pública já salva no avatar_url.
+// `uri` é o caminho local do arquivo devolvido pelo expo-image-picker.
+export async function uploadDriverPhoto(uri: string): Promise<{ avatarUrl: string }> {
+  if (USE_MOCK) {
+    return mockDelay({ avatarUrl: uri });
+  }
+
+  const nomeArquivo = uri.split('/').pop() || 'selfie.jpg';
+  const extensao = nomeArquivo.split('.').pop()?.toLowerCase();
+  const tipoMime = extensao === 'png' ? 'image/png' : extensao === 'webp' ? 'image/webp' : 'image/jpeg';
+
+  const formData = new FormData();
+  // No React Native, o FormData aceita esse objeto no lugar de um File/Blob.
+  formData.append('photo', {
+    uri,
+    name: nomeArquivo,
+    type: tipoMime,
+  } as any);
+
+  // Formato esperado do backend: POST /driver/photo (multipart/form-data) -> { avatarUrl }
+  const { data } = await api.post<{ avatarUrl: string }>('/driver/photo', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return data;
+}
+
 // Resumo do dia do motorista logado (corridas de hoje + valor lucrado hoje)
 // — usado no "Painel do Motoboy". O backend já garante que só motorista
 // aprovado com veículo do tipo moto recebe uma resposta 200 aqui; qualquer
