@@ -1,6 +1,6 @@
 import React from 'react';
 import Svg, { Circle, Defs, Path, RadialGradient, Stop } from 'react-native-svg';
-import { colors } from '../theme/theme';
+import { useTheme } from '../theme/ThemeContext';
 
 type Props = {
   size?: number;
@@ -14,6 +14,7 @@ type Props = {
 // A rotação é feita por FORA (transform: rotate() na View pai, em
 // HomeScreen.tsx); aqui é só o desenho, sempre apontando "pra cima".
 export default function DirectionIndicator({ size = 60 }: Props) {
+  const { colors } = useTheme();
   return (
     <Svg width={size} height={size} viewBox="0 0 60 60">
       <Defs>

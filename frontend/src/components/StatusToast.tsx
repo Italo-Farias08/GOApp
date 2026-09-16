@@ -1,6 +1,8 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { Animated, StyleSheet, Text, View } from 'react-native';
-import { colors, radius, spacing, typography } from '../theme/theme';
+import { radius, spacing, typography } from '../theme/theme';
+import type { ThemeColors } from '../theme/theme';
+import { useTheme } from '../theme/ThemeContext';
 import { AlertIcon, CheckIcon } from './icons';
 
 export type StatusToastTone = 'success' | 'info' | 'warning' | 'danger';
@@ -15,12 +17,14 @@ type Props = {
   onHide?: () => void;
 };
 
-const CORES: Record<StatusToastTone, string> = {
-  success: colors.primary,
-  info: colors.text,
-  warning: colors.warning,
-  danger: colors.danger,
-};
+function corPorTom(colors: ThemeColors): Record<StatusToastTone, string> {
+  return {
+    success: colors.primary,
+    info: colors.text,
+    warning: colors.warning,
+    danger: colors.danger,
+  };
+}
 
 // Banner animado que entra com uma molinha, fica um tempo na tela e some
 // sozinho — usado pra marcar momentos importantes do ciclo da corrida
@@ -33,6 +37,9 @@ export default function StatusToast({
   topOffset,
   onHide,
 }: Props) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   const [mensagemExibida, setMensagemExibida] = useState<string | null>(null);
   const [toneExibido, setToneExibido] = useState<StatusToastTone>(tone);
   const anim = useRef(new Animated.Value(0)).current;
@@ -71,7 +78,7 @@ export default function StatusToast({
 
   if (!mensagemExibida) return null;
 
-  const cor = CORES[toneExibido];
+  const cor = corPorTom(colors)[toneExibido];
 
   return (
     <Animated.View
@@ -91,9 +98,9 @@ export default function StatusToast({
     >
       <View style={[styles.iconeBadge, { backgroundColor: cor }]}>
         {toneExibido === 'danger' || toneExibido === 'warning' ? (
-          <AlertIcon size={14} color={colors.background} />
+          <AlertIcon size={14} color={colors.onPrimary} />
         ) : (
-          <CheckIcon size={14} color={colors.background} />
+          <CheckIcon size={14} color={colors.onPrimary} />
         )}
       </View>
       <Text style={styles.texto} numberOfLines={2}>
@@ -103,7 +110,8 @@ export default function StatusToast({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: ThemeColors) {
+  return StyleSheet.create({
   container: {
     position: 'absolute',
     top: spacing.xxl + spacing.lg,
@@ -136,3 +144,4 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 });
+}

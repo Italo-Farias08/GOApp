@@ -180,6 +180,38 @@ export function CheckIcon({ size = 14, color = '#0B0B0F', strokeWidth = 2.4 }: I
   );
 }
 
+// Ícone de sol — usado no toggle de aparência (tema claro).
+export function SunIcon({ size = 20, color = '#F5F5F7', strokeWidth = 1.8 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Circle cx="12" cy="12" r="4.5" stroke={color} strokeWidth={strokeWidth} />
+      <Line x1="12" y1="1.5" x2="12" y2="4.5" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" />
+      <Line x1="12" y1="19.5" x2="12" y2="22.5" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" />
+      <Line x1="1.5" y1="12" x2="4.5" y2="12" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" />
+      <Line x1="19.5" y1="12" x2="22.5" y2="12" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" />
+      <Line x1="4.4" y1="4.4" x2="6.5" y2="6.5" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" />
+      <Line x1="17.5" y1="17.5" x2="19.6" y2="19.6" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" />
+      <Line x1="4.4" y1="19.6" x2="6.5" y2="17.5" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" />
+      <Line x1="17.5" y1="6.5" x2="19.6" y2="4.4" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+// Ícone de lua — usado no toggle de aparência (tema escuro).
+export function MoonIcon({ size = 20, color = '#F5F5F7', strokeWidth = 1.8 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M20 14.2 A8.5 8.5 0 1 1 9.8 4 A6.8 6.8 0 0 0 20 14.2 Z"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
+    </Svg>
+  );
+}
+
 // Ícone de mira/GPS — usado no botão de recentralizar o mapa.
 export function LocationIcon({ size = 20, color = '#F5F5F7', strokeWidth = 1.8 }: IconProps) {
   return (

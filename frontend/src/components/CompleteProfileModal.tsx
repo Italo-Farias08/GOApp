@@ -1,6 +1,8 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
-import { colors, radius, spacing, typography } from '../theme/theme';
+import { radius, spacing, typography } from '../theme/theme';
+import type { ThemeColors } from '../theme/theme';
+import { useTheme } from '../theme/ThemeContext';
 import type { User } from '../types';
 import Button from './Button';
 import Input from './Input';
@@ -20,6 +22,9 @@ type Props = {
 // onde o telefone é pedido. Sem telefone o motorista não tem como contatar
 // o passageiro, então a corrida fica bloqueada até esses dados existirem.
 export default function CompleteProfileModal({ visible, user, carregando = false, onSalvar, onFechar }: Props) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   const [name, setName] = React.useState('');
   const [email, setEmail] = React.useState('');
   const [phone, setPhone] = React.useState('');
@@ -57,7 +62,7 @@ export default function CompleteProfileModal({ visible, user, carregando = false
 
         <View style={styles.tituloRow}>
           <View style={styles.avisoBadge}>
-            <PhoneIcon size={18} color={colors.background} />
+            <PhoneIcon size={18} color={colors.onPrimary} />
           </View>
           <View style={styles.tituloTextos}>
             <Text style={styles.titulo}>Complete seu cadastro</Text>
@@ -110,7 +115,8 @@ export default function CompleteProfileModal({ visible, user, carregando = false
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: ThemeColors) {
+  return StyleSheet.create({
   backdrop: {
     flex: 1,
     backgroundColor: colors.overlay,
@@ -166,3 +172,4 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
 });
+}

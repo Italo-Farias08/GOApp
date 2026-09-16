@@ -12,7 +12,9 @@ import {
 import { useAuth } from '../context/AuthContext';
 import * as rideService from '../services/rideService';
 import { conectarSoquete } from '../services/socketService';
-import { colors, radius, spacing, typography } from '../theme/theme';
+import { radius, spacing, typography } from '../theme/theme';
+import type { ThemeColors } from '../theme/theme';
+import { useTheme } from '../theme/ThemeContext';
 import type { HistoricoCorridaMotoristaItem, MensagemChat } from '../types';
 import ChatModal from './ChatModal';
 import { ChevronLeftIcon, HistoryIcon, UserIcon } from './icons';
@@ -27,6 +29,9 @@ type Props = {
 };
 
 export default function DriverMessagesModal({ visible, onClose }: Props) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   const { user } = useAuth();
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
@@ -201,6 +206,9 @@ function RideHistoryRow({
   item: HistoricoCorridaMotoristaItem;
   onPress: () => void;
 }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   const cancelada = item.corrida.status === 'cancelada';
   return (
     <Pressable style={({ pressed }) => [styles.rideRow, pressed && styles.rideRowPressed]} onPress={onPress}>
@@ -238,7 +246,8 @@ function formatarDataCorrida(iso: string): string {
   }
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: ThemeColors) {
+  return StyleSheet.create({
   backdrop: {
     flex: 1,
     backgroundColor: colors.overlay,
@@ -348,3 +357,4 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
 });
+}

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import {
   ActivityIndicator,
   Animated,
@@ -12,7 +12,9 @@ import {
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import * as paymentService from '../services/paymentService';
-import { colors, radius, spacing, typography } from '../theme/theme';
+import { radius, spacing, typography } from '../theme/theme';
+import type { ThemeColors } from '../theme/theme';
+import { useTheme } from '../theme/ThemeContext';
 import type { Divida, PagamentoPix } from '../types';
 import { formatarMoeda } from '../utils/precoCorrida';
 import Button from './Button';
@@ -28,6 +30,9 @@ type Props = {
 // automaticamente (ver corridaServico.calcularPrecoComDividasPendentes no
 // backend, que é o outro jeito dessa dívida ser cobrada).
 export default function PendenciasView({ onBack }: Props) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
   const [dividas, setDividas] = useState<Divida[]>([]);
@@ -249,6 +254,9 @@ function ResumoPendencias({
   onPagar: () => void;
   onTentarDeNovo: () => void;
 }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   if (carregando) {
     return <ActivityIndicator color={colors.primary} style={styles.carregando} />;
   }
@@ -339,6 +347,9 @@ function PagamentoPendencia({
   onTentarDeNovo: () => void;
   onFechar: () => void;
 }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   if (quitado) {
     return (
       <View style={styles.estadoCentral}>
@@ -356,7 +367,7 @@ function PagamentoPendencia({
               },
             ]}
           >
-            <CheckIcon size={22} color={colors.background} strokeWidth={3} />
+            <CheckIcon size={22} color={colors.onPrimary} strokeWidth={3} />
           </Animated.View>
         </View>
         <Text style={styles.statusTitulo}>Pendência quitada!</Text>
@@ -426,7 +437,7 @@ function PagamentoPendencia({
       </View>
 
       <Pressable style={styles.copiarBotao} onPress={onCopiar}>
-        <CopyIcon size={16} color={colors.background} />
+        <CopyIcon size={16} color={colors.onPrimary} />
         <Text style={styles.copiarTexto}>{copiado ? 'Código copiado!' : 'Copiar código Pix'}</Text>
       </Pressable>
 
@@ -455,7 +466,8 @@ function formatarDataDivida(iso: string): string {
   }
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: ThemeColors) {
+  return StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -584,8 +596,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   logoPequeno: {
-    width: 74,
-    height: 65,
+    width: 64,
+    height: 45,
     marginBottom: spacing.xs,
   },
   logoGerando: {
@@ -622,7 +634,7 @@ const styles = StyleSheet.create({
   },
   copiarTexto: {
     ...typography.bodyBold,
-    color: colors.background,
+    color: colors.onPrimary,
     marginLeft: spacing.sm,
   },
   statusRow: {
@@ -663,3 +675,4 @@ const styles = StyleSheet.create({
     borderColor: colors.surface,
   },
 });
+}

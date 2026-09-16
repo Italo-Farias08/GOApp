@@ -18,7 +18,9 @@ import { useAuth } from '../context/AuthContext';
 import * as driverService from '../services/driverService';
 import * as rideService from '../services/rideService';
 import { conectarSoquete } from '../services/socketService';
-import { colors, radius, spacing, typography } from '../theme/theme';
+import { radius, spacing, typography } from '../theme/theme';
+import type { ThemeColors } from '../theme/theme';
+import { useTheme } from '../theme/ThemeContext';
 import type {
   DriverStatus,
   HistoricoCorridaItem,
@@ -39,7 +41,9 @@ import {
   ExitIcon,
   HistoryIcon,
   MoneyIcon,
+  MoonIcon,
   MotoIcon,
+  SunIcon,
   UserIcon,
 } from './icons';
 
@@ -51,6 +55,9 @@ type Props = {
 };
 
 export default function SettingsModal({ visible, onClose }: Props) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { user, signOut } = useAuth();
   const [view, setView] = useState<ModalView>('menu');
@@ -118,9 +125,14 @@ function MenuView({
   onSelectMotoboyPanel: () => void;
   onSignOut: () => void;
 }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   return (
     <View>
       <Text style={styles.menuTitle}>Olá, {userName?.split(' ')[0] ?? 'por aí'}</Text>
+
+      <AparenciaToggle />
 
       <MenuItem
         renderIcon={(cor) => <UserIcon size={22} color={cor} />}
@@ -165,6 +177,37 @@ function MenuView({
   );
 }
 
+function AparenciaToggle() {
+  const { colors, scheme, setScheme } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
+  return (
+    <View style={styles.aparenciaCard}>
+      <Text style={styles.aparenciaLabel}>Aparência</Text>
+      <View style={styles.aparenciaSegmentado}>
+        <Pressable
+          onPress={() => setScheme('escuro')}
+          style={[styles.aparenciaOpcao, scheme === 'escuro' && styles.aparenciaOpcaoAtiva]}
+        >
+          <MoonIcon size={16} color={scheme === 'escuro' ? colors.onPrimary : colors.textSecondary} />
+          <Text style={[styles.aparenciaOpcaoTexto, scheme === 'escuro' && styles.aparenciaOpcaoTextoAtivo]}>
+            Escuro
+          </Text>
+        </Pressable>
+        <Pressable
+          onPress={() => setScheme('claro')}
+          style={[styles.aparenciaOpcao, scheme === 'claro' && styles.aparenciaOpcaoAtiva]}
+        >
+          <SunIcon size={16} color={scheme === 'claro' ? colors.onPrimary : colors.textSecondary} />
+          <Text style={[styles.aparenciaOpcaoTexto, scheme === 'claro' && styles.aparenciaOpcaoTextoAtivo]}>
+            Claro
+          </Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
 function MenuItem({
   renderIcon,
   label,
@@ -178,6 +221,9 @@ function MenuItem({
   danger?: boolean;
   onPress: () => void;
 }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   const corIcone = danger ? colors.danger : colors.text;
   return (
     <Pressable
@@ -197,6 +243,9 @@ function MenuItem({
 // Seta ">" simples reaproveitando o ChevronLeftIcon espelhado, pra não criar
 // mais um ícone só pra isso.
 function ChevronRightIcon() {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   return (
     <View style={{ transform: [{ rotate: '180deg' }] }}>
       <ChevronLeftIcon size={18} color={colors.textMuted} strokeWidth={1.8} />
@@ -207,6 +256,9 @@ function ChevronRightIcon() {
 // ---------- Conta ----------
 
 function AccountView({ onBack }: { onBack: () => void }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   const { user, updateAccount } = useAuth();
   const [name, setName] = useState(user?.name ?? '');
   const [email, setEmail] = useState(user?.email ?? '');
@@ -274,6 +326,9 @@ function DriverSelfieField({
   uri: string | null | undefined;
   onChange: (novaUri: string) => void;
 }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   const [erro, setErro] = useState<string | null>(null);
 
   async function tirarFoto() {
@@ -319,6 +374,9 @@ function DriverSelfieField({
 }
 
 function DriverView({ onBack, onClose }: { onBack: () => void; onClose: () => void }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   const { user, updateDriverStatus, updateAvatarUrl } = useAuth();
   const [cnhNumber, setCnhNumber] = useState('');
   const [cnhCategory, setCnhCategory] = useState('');
@@ -454,6 +512,9 @@ function DriverView({ onBack, onClose }: { onBack: () => void; onClose: () => vo
 // ---------- Painel do motorista aprovado (dados do veículo) ----------
 
 function DriverVehiclePanel({ onBack, onClose }: { onBack: () => void; onClose: () => void }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { user, updateAvatarUrl } = useAuth();
   const [carregando, setCarregando] = useState(true);
@@ -629,6 +690,9 @@ function DriverVehiclePanel({ onBack, onClose }: { onBack: () => void; onClose: 
 // corrida específica e enviando por REST (funciona mesmo com a corrida já
 // finalizada, diferente do chat em tempo real).
 function MessagesView({ onBack }: { onBack: () => void }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   const { user } = useAuth();
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
@@ -780,6 +844,9 @@ function MessagesView({ onBack }: { onBack: () => void }) {
 }
 
 function RideHistoryRow({ item, onPress }: { item: HistoricoCorridaItem; onPress: () => void }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   const cancelada = item.corrida.status === 'cancelada';
   return (
     <Pressable
@@ -821,6 +888,9 @@ function formatarDataCorrida(iso: string): string {
 // ---------- Peças compartilhadas ----------
 
 function Header({ title, onBack }: { title: string; onBack: () => void }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   return (
     <View style={styles.header}>
       <Pressable onPress={onBack} hitSlop={10} style={styles.backButton}>
@@ -841,6 +911,9 @@ function StatusCard({
   title: string;
   description: string;
 }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   return (
     <View style={styles.statusCard}>
       <View style={styles.statusIconWrap}>{icon}</View>
@@ -850,7 +923,8 @@ function StatusCard({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: ThemeColors) {
+  return StyleSheet.create({
   backdrop: {
     flex: 1,
     backgroundColor: colors.overlay,
@@ -876,6 +950,46 @@ const styles = StyleSheet.create({
     ...typography.h2,
     color: colors.text,
     marginBottom: spacing.md,
+  },
+  aparenciaCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.sm,
+    marginBottom: spacing.lg,
+  },
+  aparenciaLabel: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginLeft: spacing.xs,
+    marginBottom: spacing.sm,
+  },
+  aparenciaSegmentado: {
+    flexDirection: 'row',
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: radius.sm,
+    padding: 3,
+  },
+  aparenciaOpcao: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 36,
+    borderRadius: radius.sm - 2,
+  },
+  aparenciaOpcaoAtiva: {
+    backgroundColor: colors.primary,
+  },
+  aparenciaOpcaoTexto: {
+    ...typography.caption,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    marginLeft: spacing.xs,
+  },
+  aparenciaOpcaoTextoAtivo: {
+    color: colors.onPrimary,
   },
   menuItem: {
     flexDirection: 'row',
@@ -1079,3 +1193,4 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
   },
 });
+}

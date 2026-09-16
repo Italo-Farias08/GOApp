@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import {
   ActivityIndicator,
   Animated,
@@ -9,7 +9,9 @@ import {
   View,
   ViewStyle,
 } from 'react-native';
-import { colors, radius, spacing, typography } from '../theme/theme';
+import { radius, spacing, typography } from '../theme/theme';
+import type { ThemeColors } from '../theme/theme';
+import { useTheme } from '../theme/ThemeContext';
 import { ArrowRightIcon, CheckIcon } from './icons';
 
 type Props = {
@@ -40,6 +42,9 @@ const LIMIAR_CONFIRMACAO = 0.72;
 // dentro do carro), só confirma quando o puxador é arrastado até o fim da
 // trilha. Solta antes do fim e ele volta pro início sozinho.
 export default function SwipeButton({ label, onConfirm, loading = false, disabled = false, style }: Props) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   const [larguraTrilha, setLarguraTrilha] = useState(0);
   const [concluido, setConcluido] = useState(false);
   const pan = useRef(new Animated.Value(0)).current;
@@ -138,18 +143,19 @@ export default function SwipeButton({ label, onConfirm, loading = false, disable
 
       <Animated.View style={[styles.puxador, { transform: [{ translateX: pan }] }]} {...panResponder.panHandlers}>
         {loading ? (
-          <ActivityIndicator color={colors.background} size="small" />
+          <ActivityIndicator color={colors.onPrimary} size="small" />
         ) : concluido ? (
-          <CheckIcon size={20} color={colors.background} />
+          <CheckIcon size={20} color={colors.onPrimary} />
         ) : (
-          <ArrowRightIcon size={22} color={colors.background} />
+          <ArrowRightIcon size={22} color={colors.onPrimary} />
         )}
       </Animated.View>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: ThemeColors) {
+  return StyleSheet.create({
   trilha: {
     height: ALTURA,
     borderRadius: radius.md,
@@ -187,3 +193,4 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 });
+}

@@ -1,6 +1,6 @@
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { LinearGradient } from 'expo-linear-gradient';
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Image,
   Keyboard,
@@ -16,7 +16,9 @@ import {
 import Button from '../components/Button';
 import CityBackground from '../components/CityBackground';
 import { useAuth } from '../context/AuthContext';
-import { colors, radius, spacing, typography } from '../theme/theme';
+import { radius, spacing, typography } from '../theme/theme';
+import type { ThemeColors } from '../theme/theme';
+import { useTheme } from '../theme/ThemeContext';
 import type { RootStackParamList } from '../types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ForgotPassword'>;
@@ -24,6 +26,9 @@ type Props = NativeStackScreenProps<RootStackParamList, 'ForgotPassword'>;
 const REGEX_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function ForgotPasswordScreen({ navigation }: Props) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   const { forgotPassword } = useAuth();
   const [email, setEmail] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -101,7 +106,8 @@ export default function ForgotPasswordScreen({ navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: ThemeColors) {
+  return StyleSheet.create({
   flex: { flex: 1 },
   container: {
     flex: 1,
@@ -173,3 +179,4 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
   },
 });
+}

@@ -1,6 +1,8 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Image, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
-import { colors, radius, spacing, typography } from '../theme/theme';
+import { radius, spacing, typography } from '../theme/theme';
+import type { ThemeColors } from '../theme/theme';
+import { useTheme } from '../theme/ThemeContext';
 import { formatarMoeda } from '../utils/precoCorrida';
 import { AlertIcon, ChevronLeftIcon, MoneyIcon, PixIcon } from './icons';
 
@@ -22,6 +24,9 @@ type Props = {
 // - "nao_pagou" -> encerra mesmo assim, e a cobrança vira dívida na próxima
 //                  corrida desse passageiro
 export default function FinalizarCorridaModal({ visible, valor, carregando = false, onEscolher, onFechar }: Props) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={carregando ? undefined : onFechar}>
       <Pressable style={styles.backdrop} onPress={carregando ? undefined : onFechar} />
@@ -97,7 +102,8 @@ export default function FinalizarCorridaModal({ visible, valor, carregando = fal
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: ThemeColors) {
+  return StyleSheet.create({
   backdrop: {
     flex: 1,
     backgroundColor: colors.overlay,
@@ -197,3 +203,4 @@ const styles = StyleSheet.create({
     marginLeft: spacing.xs,
   },
 });
+}

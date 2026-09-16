@@ -16,7 +16,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import MapView, { Marker, Polyline } from 'react-native-maps';
+import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import type { Socket } from 'socket.io-client';
 import Button from '../components/Button';
 import CancelRideModal from '../components/CancelRideModal';
@@ -50,9 +50,11 @@ import * as addressService from '../services/addressService';
 import * as paymentService from '../services/paymentService';
 import * as rideService from '../services/rideService';
 import { conectarSoquete } from '../services/socketService';
-import { colors, radius, spacing, typography } from '../theme/theme';
+import { radius, spacing, typography } from '../theme/theme';
+import type { ThemeColors } from '../theme/theme';
+import { useTheme } from '../theme/ThemeContext';
 import type { Corrida, FormaPagamento, MensagemChat, MotoristaInfo, PagamentoPix } from '../types';
-import { DARK_MAP_STYLE } from '../utils/mapaConfig';
+import { LIGHT_MAP_STYLE, DARK_MAP_STYLE } from '../utils/mapaConfig';
 import {
   EstimativaCorrida,
   TipoVeiculo,
@@ -134,6 +136,9 @@ const MOTIVOS_CANCELAMENTO_PASSAGEIRO = [
 ];
 
 export default function HomeScreen() {
+  const { colors, scheme } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   const { user, precisaCompletarCadastro, updateAccount } = useAuth();
   const [perfilModalVisivel, setPerfilModalVisivel] = useState(false);
   const [salvandoPerfil, setSalvandoPerfil] = useState(false);
@@ -1103,6 +1108,17 @@ export default function HomeScreen() {
           setLocalizacaoMotorista(null);
           setEmbarcado(false);
           setCorridaId(atualizado.corridaId);
+          // Atualiza a ref NA HORA, sem esperar o próximo render — o
+          // backend já pode ter emitido 'corrida:sem_motoristas' (ou
+          // qualquer outro evento dessa corrida) no exato instante em que
+          // criou a corrida, ainda dentro dessa mesma resposta do
+          // polling. Se a gente esperasse só o useEffect (que roda depois
+          // do render) pra sincronizar a ref, o evento chegava com a ref
+          // ainda apontando pra corrida antiga (ou nula) e o listener
+          // descartava o aviso — foi isso que fez o passageiro ficar
+          // preso no radar "procurando" mesmo sem nenhum motorista
+          // disponível, sem nunca ver o aviso.
+          corridaIdRef.current = atualizado.corridaId;
 
           // Igual ao fluxo de dinheiro/Pix direto: busca a corrida de
           // verdade pra pegar o preço REAL (com dívida pendente somada, se
@@ -1148,12 +1164,26 @@ export default function HomeScreen() {
     <View style={styles.container}>
       <MapView
         ref={mapRef}
+        // O SDK nativo do Google Maps só lê `customMapStyle` na hora em que
+        // a view é criada — trocar a prop com o mapa já montado é
+        // ignorado silenciosamente (limitação conhecida do
+        // react-native-maps no Android). Colocando o tema na `key`, o
+        // React desmonta e remonta o MapView inteiro quando o usuário
+        // troca de Claro pra Escuro (ou vice-versa), forçando o estilo
+        // novo a ser aplicado de verdade.
+        key={scheme}
+        // Força o Google Maps nas duas plataformas: sem isso, no iOS o
+        // MapView usa o Apple Maps (MapKit) por padrão, que simplesmente
+        // ignora `customMapStyle` — e como o app tem `userInterfaceStyle:
+        // 'dark'` travado em app.config.js, o mapa nativo ficava sempre
+        // escuro mesmo com o app no tema claro.
+        provider={PROVIDER_GOOGLE}
         style={styles.map}
         initialRegion={region}
         region={coords && !destinoSelecionado ? region : undefined}
         showsUserLocation
         showsMyLocationButton={false}
-        customMapStyle={DARK_MAP_STYLE}
+        customMapStyle={scheme === 'claro' ? LIGHT_MAP_STYLE : DARK_MAP_STYLE}
         onMapReady={atualizarPontoTelaUsuario}
         onRegionChange={atualizarPontoTelaUsuario}
         // onRegionChange sozinho é suficiente no iOS (dispara várias vezes
@@ -1555,7 +1585,7 @@ export default function HomeScreen() {
               >
                 <View style={styles.motoristaAceitaTopo}>
                   <View style={styles.motoristaAceitaBadge}>
-                    <CheckIcon size={11} color={colors.background} />
+                    <CheckIcon size={11} color={colors.onPrimary} />
                   </View>
                   <Text style={styles.motoristaAceitaTexto}>
                     {embarcado
@@ -1624,7 +1654,7 @@ export default function HomeScreen() {
                   onPress={abrirChat}
                   style={({ pressed }) => [styles.ligarBotaoGrande, pressed && styles.pressedFeedback]}
                 >
-                  <ChatIcon size={18} color={colors.background} />
+                  <ChatIcon size={18} color={colors.onPrimary} />
                   <Text style={styles.ligarBotaoTexto}>Conversar com o motorista</Text>
                   {mensagensNaoLidas > 0 && (
                     <View style={styles.chatBadge}>
@@ -1792,7 +1822,8 @@ export default function HomeScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: ThemeColors) {
+  return StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
@@ -1916,7 +1947,7 @@ const styles = StyleSheet.create({
   },
   avatarLetra: {
     ...typography.bodyBold,
-    color: colors.background,
+    color: colors.onPrimary,
   },
   saudacaoLabel: {
     ...typography.caption,
@@ -2179,7 +2210,7 @@ const styles = StyleSheet.create({
   motoristaAvatarLetra: {
     ...typography.bodyBold,
     fontSize: 22,
-    color: colors.background,
+    color: colors.onPrimary,
   },
   motoristaAvatarFoto: {
     width: 52,
@@ -2221,7 +2252,7 @@ const styles = StyleSheet.create({
   },
   ligarBotaoTexto: {
     ...typography.bodyBold,
-    color: colors.background,
+    color: colors.onPrimary,
     marginLeft: spacing.sm,
   },
   chatBadge: {
@@ -2238,7 +2269,7 @@ const styles = StyleSheet.create({
     ...typography.caption,
     fontSize: 11,
     fontWeight: '700',
-    color: colors.background,
+    color: colors.onPrimary,
   },
   // Imagem do veículo (carro.png/moto.png) usada no marcador do motorista
   // em movimento no mapa — mesmo arquivo de imagem usado no card de "Sua
@@ -2317,3 +2348,4 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
 });
+}

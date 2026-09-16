@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import {
   Animated,
   BackHandler,
@@ -12,7 +12,7 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import MapView, { Marker, Polyline } from 'react-native-maps';
+import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import type { Socket } from 'socket.io-client';
 import Button from '../components/Button';
 import CancelRideModal from '../components/CancelRideModal';
@@ -43,10 +43,12 @@ import { useRota } from '../hooks/useRota';
 import * as paymentService from '../services/paymentService';
 import * as rideService from '../services/rideService';
 import { conectarSoquete } from '../services/socketService';
-import { colors, radius, spacing, typography } from '../theme/theme';
+import { radius, spacing, typography } from '../theme/theme';
+import type { ThemeColors } from '../theme/theme';
+import { useTheme } from '../theme/ThemeContext';
 import type { Corrida, FormaPagamento, MensagemChat, PagamentoPix, RootStackParamList } from '../types';
 import { formatarDistancia, formatarDuracao, formatarMoeda } from '../utils/precoCorrida';
-import { DARK_MAP_STYLE } from '../utils/mapaConfig';
+import { LIGHT_MAP_STYLE, DARK_MAP_STYLE } from '../utils/mapaConfig';
 
 // Ícone e texto de cada forma de pagamento, pro motorista já saber de cara
 // como vai receber (ou se o Pix já caiu na conta, no caso do pré-pago).
@@ -84,6 +86,9 @@ const sombraFlutuante = {
 // Switch animado de "ficar online" — troca o botão de texto cheio por um
 // controle compacto, do jeito que apps de motorista de verdade fazem.
 function ToggleOnline({ value, onToggle }: { value: boolean; onToggle: () => void }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   const anim = useRef(new Animated.Value(value ? 1 : 0)).current;
 
   useEffect(() => {
@@ -127,6 +132,9 @@ const toggleStyles = StyleSheet.create({
 });
 
 export default function DriverHomeScreen() {
+  const { colors, scheme } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   const { user } = useAuth();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const insets = useSafeAreaInsets();
@@ -820,10 +828,20 @@ export default function DriverHomeScreen() {
     <View style={styles.container}>
       <MapView
         ref={mapRef}
+        // Ver o comentário equivalente em HomeScreen.tsx: o Google Maps
+        // nativo só lê `customMapStyle` na criação da view, então a `key`
+        // força remontar o mapa quando o tema muda.
+        key={scheme}
+        // Força o Google Maps nas duas plataformas: sem isso, no iOS o
+        // MapView cai no Apple Maps (MapKit) por padrão, que ignora
+        // `customMapStyle` — com `userInterfaceStyle: 'dark'` travado em
+        // app.config.js, o mapa nativo ficava sempre escuro mesmo com o
+        // app no tema claro.
+        provider={PROVIDER_GOOGLE}
         style={styles.map}
         showsUserLocation
         showsMyLocationButton={false}
-        customMapStyle={DARK_MAP_STYLE}
+        customMapStyle={scheme === 'claro' ? LIGHT_MAP_STYLE : DARK_MAP_STYLE}
         onMapReady={atualizarPontoTelaMotorista}
         onRegionChange={atualizarPontoTelaMotorista}
       >
@@ -1067,7 +1085,7 @@ export default function DriverHomeScreen() {
           {renderAlcaArrastavel()}
           <View style={styles.corridaAtivaTopo}>
             <View style={styles.corridaAtivaBadge}>
-              <CheckIcon size={11} color={colors.background} />
+              <CheckIcon size={11} color={colors.onPrimary} />
             </View>
             <Text style={styles.corridaAtivaTexto}>Corrida aceita</Text>
           </View>
@@ -1125,7 +1143,7 @@ export default function DriverHomeScreen() {
             onPress={abrirChat}
             style={({ pressed }) => [styles.chatBotao, pressed && styles.pressedFeedback]}
           >
-            <ChatIcon size={18} color={colors.background} />
+            <ChatIcon size={18} color={colors.onPrimary} />
             <Text style={styles.chatBotaoTexto}>Conversar com o passageiro</Text>
             {mensagensNaoLidas > 0 && (
               <View style={styles.chatBadge}>
@@ -1155,7 +1173,7 @@ export default function DriverHomeScreen() {
           {renderAlcaArrastavel()}
           <View style={styles.corridaAtivaTopo}>
             <View style={styles.corridaAtivaBadge}>
-              <CheckIcon size={11} color={colors.background} />
+              <CheckIcon size={11} color={colors.onPrimary} />
             </View>
             <Text style={styles.corridaAtivaTexto}>Passageiro a bordo</Text>
           </View>
@@ -1206,7 +1224,7 @@ export default function DriverHomeScreen() {
             onPress={abrirChat}
             style={({ pressed }) => [styles.chatBotao, pressed && styles.pressedFeedback]}
           >
-            <ChatIcon size={18} color={colors.background} />
+            <ChatIcon size={18} color={colors.onPrimary} />
             <Text style={styles.chatBotaoTexto}>Conversar com o passageiro</Text>
             {mensagensNaoLidas > 0 && (
               <View style={styles.chatBadge}>
@@ -1278,7 +1296,8 @@ export default function DriverHomeScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: ThemeColors) {
+  return StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   map: { ...StyleSheet.absoluteFill },
   mapBrightener: {
@@ -1475,7 +1494,7 @@ const styles = StyleSheet.create({
   },
   chatBotaoTexto: {
     ...typography.bodyBold,
-    color: colors.background,
+    color: colors.onPrimary,
     marginLeft: spacing.sm,
   },
   chatBadge: {
@@ -1492,7 +1511,7 @@ const styles = StyleSheet.create({
     ...typography.caption,
     fontSize: 11,
     fontWeight: '700',
-    color: colors.background,
+    color: colors.onPrimary,
   },
   cancelarCorridaBotao: { marginTop: spacing.xs },
   corridaAtivaTopo: {
@@ -1574,3 +1593,4 @@ const styles = StyleSheet.create({
   },
   bloqueadoBotao: { minWidth: 160 },
 });
+}

@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
-import { colors } from '../theme/theme';
+import type { ThemeColors } from '../theme/theme';
+import { useTheme } from '../theme/ThemeContext';
 
 // Horizonte de prédios estilizado + estrada com brilho neon, tudo em SVG.
 // Sem depender de nenhuma imagem — fácil de ajustar mexendo nos valores abaixo.
@@ -29,11 +30,15 @@ const BUILDINGS = [
 ];
 
 export default function CityBackground() {
+  const { colors, scheme } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+  const claro = scheme === 'claro';
+
   return (
     <View style={styles.container} pointerEvents="none">
       <Svg width="100%" height={220} viewBox="0 0 400 220" preserveAspectRatio="none">
-        {/* Lua */}
-        <Circle cx={350} cy={30} r={12} fill="#2A3A66" opacity={0.7} />
+        {/* Sol (tema claro) / Lua (tema escuro) */}
+        <Circle cx={350} cy={30} r={12} fill={claro ? '#FFD873' : '#2A3A66'} opacity={claro ? 0.9 : 0.7} />
 
         {/* Prédios */}
         {BUILDINGS.map((b, i) => (
@@ -43,7 +48,7 @@ export default function CityBackground() {
             y={220 - b.h}
             width={b.w}
             height={b.h}
-            fill="#101733"
+            fill={claro ? '#C7CBDA' : '#101733'}
             opacity={0.9}
           />
         ))}
@@ -71,7 +76,8 @@ export default function CityBackground() {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: ThemeColors) {
+  return StyleSheet.create({
   container: {
     position: 'absolute',
     bottom: 0,
@@ -79,3 +85,4 @@ const styles = StyleSheet.create({
     right: 0,
   },
 });
+}

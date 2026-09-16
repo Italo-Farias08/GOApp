@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -11,7 +11,9 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { colors, radius, spacing, typography } from '../theme/theme';
+import { radius, spacing, typography } from '../theme/theme';
+import type { ThemeColors } from '../theme/theme';
+import { useTheme } from '../theme/ThemeContext';
 import { CloseIcon, SendIcon } from './icons';
 import type { MensagemChat } from '../types';
 
@@ -42,6 +44,9 @@ export default function ChatModal({
   onEnviar,
   onFechar,
 }: Props) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   const [texto, setTexto] = useState('');
   const listaRef = useRef<FlatList<MensagemChat>>(null);
 
@@ -150,7 +155,7 @@ export default function ChatModal({
                 pressed && !!texto.trim() && styles.pressedFeedback,
               ]}
             >
-              <SendIcon size={18} color={colors.background} />
+              <SendIcon size={18} color={colors.onPrimary} />
             </Pressable>
           </View>
         </View>
@@ -159,7 +164,8 @@ export default function ChatModal({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: ThemeColors) {
+  return StyleSheet.create({
   backdrop: {
     flex: 1,
     backgroundColor: colors.overlay,
@@ -266,7 +272,7 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   bolhaTextoMinha: {
-    color: colors.background,
+    color: colors.onPrimary,
   },
   bolhaHorario: {
     ...typography.caption,
@@ -309,3 +315,4 @@ const styles = StyleSheet.create({
     opacity: 0.4,
   },
 });
+}

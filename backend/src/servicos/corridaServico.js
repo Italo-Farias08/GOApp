@@ -14,7 +14,7 @@ const FORMAS_PAGAMENTO_VALIDAS = ['dinheiro', 'pix', 'pix_prepago'];
 // O Mercado Pago não aceita cobrança Pix abaixo desse valor — sem essa
 // checagem aqui, a corrida nasceria normal e só ia quebrar (com erro feio
 // do Mercado Pago) na hora de gerar o QR code pra pagar ou pra finalizar.
-const VALOR_MINIMO_CORRIDA = 4;
+const VALOR_MINIMO_CORRIDA = 5;
 
 function validarDadosCorrida({ origem, destino, tipoVeiculo, preco, distanciaKm, duracaoMin, formaPagamento }) {
   if (!origem?.latitude || !origem?.longitude || !destino?.latitude || !destino?.longitude) {

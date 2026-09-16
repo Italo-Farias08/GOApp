@@ -1,5 +1,5 @@
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState, useMemo } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -26,7 +26,9 @@ import {
 } from '../components/icons';
 import { useAuth } from '../context/AuthContext';
 import * as driverService from '../services/driverService';
-import { colors, radius, spacing, typography } from '../theme/theme';
+import { radius, spacing, typography } from '../theme/theme';
+import type { ThemeColors } from '../theme/theme';
+import { useTheme } from '../theme/ThemeContext';
 import type { ResumoMotoboyHoje, RootStackParamList } from '../types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'MotoboyPanel'>;
@@ -36,6 +38,9 @@ type Props = NativeStackScreenProps<RootStackParamList, 'MotoboyPanel'>;
 // o resumo do dia — todo mundo mais cai no aviso de "isso aqui é só pra
 // motorista".
 export default function MotoboyPanelScreen({ navigation }: Props) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   const { user } = useAuth();
 
   const [carregando, setCarregando] = useState(true);
@@ -127,6 +132,9 @@ export default function MotoboyPanelScreen({ navigation }: Props) {
 }
 
 function Header({ onBack }: { onBack: () => void }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   return (
     <View style={styles.header}>
       <Pressable onPress={onBack} hitSlop={10} style={styles.backButton}>
@@ -139,6 +147,9 @@ function Header({ onBack }: { onBack: () => void }) {
 }
 
 function NaoEhMotoboyAviso() {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   return (
     <View style={styles.avisoWrap}>
       <View style={styles.avisoIconeWrap}>
@@ -160,6 +171,9 @@ function ResumoMotoboy({
   resumo: ResumoMotoboyHoje | null;
   onAtualizar: () => void;
 }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   const saldoAReceber = resumo?.saldoAReceber ?? 0;
   const saldoFormatado = formatarMoeda(saldoAReceber);
   const comissaoFormatada = formatarMoeda(resumo?.comissaoHoje ?? 0);
@@ -258,6 +272,9 @@ function ModalSolicitarSaque({
   onFechar: () => void;
   onSolicitado: (valor: number) => void;
 }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   const [valor, setValor] = useState('');
   const [cpf, setCpf] = useState('');
   const [enviando, setEnviando] = useState(false);
@@ -346,7 +363,7 @@ function ModalSolicitarSaque({
               disabled={enviando}
             >
               {enviando ? (
-                <ActivityIndicator color={colors.background} size="small" />
+                <ActivityIndicator color={colors.onPrimary} size="small" />
               ) : (
                 <Text style={styles.modalBotaoPrimarioTexto}>Confirmar</Text>
               )}
@@ -369,6 +386,9 @@ function ModalSucessoSaque({
   valor: number;
   onFechar: () => void;
 }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   const escala = useState(() => new Animated.Value(0))[0];
 
   useEffect(() => {
@@ -388,7 +408,7 @@ function ModalSucessoSaque({
       <View style={styles.sucessoFundo}>
         <View style={styles.sucessoConteudo}>
           <Animated.View style={[styles.sucessoIconeWrap, { transform: [{ scale: escala }] }]}>
-            <CheckIcon size={36} color={colors.background} strokeWidth={2.4} />
+            <CheckIcon size={36} color={colors.onPrimary} strokeWidth={2.4} />
           </Animated.View>
           <Text style={styles.sucessoTitulo}>Pedido enviado!</Text>
           <Text style={styles.sucessoTexto}>
@@ -411,7 +431,8 @@ function formatarMoeda(valor: number): string {
   }
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: ThemeColors) {
+  return StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
@@ -555,7 +576,7 @@ const styles = StyleSheet.create({
   },
   receberBotaoTexto: {
     ...typography.body,
-    color: colors.background,
+    color: colors.onPrimary,
     fontWeight: '600',
   },
   modalFundo: {
@@ -618,7 +639,7 @@ const styles = StyleSheet.create({
   },
   modalBotaoPrimarioTexto: {
     ...typography.body,
-    color: colors.background,
+    color: colors.onPrimary,
     fontWeight: '600',
   },
   saldoTextos: {
@@ -682,3 +703,4 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
 });
+}

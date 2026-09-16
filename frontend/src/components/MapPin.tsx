@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { colors } from '../theme/theme';
+import type { ThemeColors } from '../theme/theme';
+import { useTheme } from '../theme/ThemeContext';
 
 type Props = {
   variant?: 'origem' | 'destino';
@@ -30,6 +31,9 @@ type Props = {
 // rotação gira a imagem inteira já "fotografada", o farol desenhado aqui
 // gira junto sem precisar de nenhum código extra neste arquivo.
 export default function MapPin({ variant = 'destino', comFarol = false }: Props) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   const isOrigem = variant === 'origem';
 
   return (
@@ -42,7 +46,8 @@ export default function MapPin({ variant = 'destino', comFarol = false }: Props)
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: ThemeColors) {
+  return StyleSheet.create({
   wrapper: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -93,3 +98,4 @@ const styles = StyleSheet.create({
     marginTop: -1,
   },
 });
+}

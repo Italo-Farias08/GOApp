@@ -1,4 +1,4 @@
-import { NavigationContainer, DarkTheme } from '@react-navigation/native';
+import { NavigationContainer, DarkTheme, DefaultTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import React from 'react';
 import { ActivityIndicator, View } from 'react-native';
@@ -11,25 +11,26 @@ import MotoboyPanelScreen from '../screens/MotoboyPanelScreen';
 import RegisterScreen from '../screens/RegisterScreen';
 import ResetPasswordScreen from '../screens/ResetPasswordScreen';
 import VerifyEmailScreen from '../screens/VerifyEmailScreen';
-import { colors } from '../theme/theme';
+import { useTheme } from '../theme/ThemeContext';
 import type { RootStackParamList } from '../types';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
-const navTheme = {
-  ...DarkTheme,
-  colors: {
-    ...DarkTheme.colors,
-    background: colors.background,
-    primary: colors.primary,
-    card: colors.surface,
-    text: colors.text,
-    border: colors.border,
-  },
-};
-
 export default function RootNavigator() {
   const { isAuthenticated, isLoading } = useAuth();
+  const { colors, scheme } = useTheme();
+
+  const navTheme = {
+    ...(scheme === 'claro' ? DefaultTheme : DarkTheme),
+    colors: {
+      ...(scheme === 'claro' ? DefaultTheme.colors : DarkTheme.colors),
+      background: colors.background,
+      primary: colors.primary,
+      card: colors.surface,
+      text: colors.text,
+      border: colors.border,
+    },
+  };
 
   if (isLoading) {
     return (

@@ -1,6 +1,8 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
-import { colors, radius, spacing, typography } from '../theme/theme';
+import { radius, spacing, typography } from '../theme/theme';
+import type { ThemeColors } from '../theme/theme';
+import { useTheme } from '../theme/ThemeContext';
 import Button from './Button';
 import { AlertIcon, CheckIcon } from './icons';
 
@@ -27,6 +29,9 @@ export default function CancelRideModal({
   onConfirmar,
   onFechar,
 }: Props) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   const [motivoSelecionado, setMotivoSelecionado] = React.useState<string | null>(null);
 
   React.useEffect(() => {
@@ -64,7 +69,7 @@ export default function CancelRideModal({
               >
                 <Text style={[styles.opcaoTexto, ativo && styles.opcaoTextoAtivo]}>{motivo}</Text>
                 <View style={[styles.checkCirculo, ativo && styles.checkCirculoAtivo]}>
-                  {ativo && <CheckIcon size={12} color={colors.background} />}
+                  {ativo && <CheckIcon size={12} color={colors.onPrimary} />}
                 </View>
               </Pressable>
             );
@@ -85,7 +90,8 @@ export default function CancelRideModal({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: ThemeColors) {
+  return StyleSheet.create({
   backdrop: {
     flex: 1,
     backgroundColor: colors.overlay,
@@ -185,3 +191,4 @@ const styles = StyleSheet.create({
     borderColor: colors.danger,
   },
 });
+}

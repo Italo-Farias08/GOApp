@@ -1,6 +1,8 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Image, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
-import { colors, radius, spacing, typography } from '../theme/theme';
+import { radius, spacing, typography } from '../theme/theme';
+import type { ThemeColors } from '../theme/theme';
+import { useTheme } from '../theme/ThemeContext';
 import Button from './Button';
 import { AlertIcon, CarIcon, MotoIcon } from './icons';
 import type { TipoVeiculo } from '../types';
@@ -25,6 +27,9 @@ export default function SemMotoristasModal({
   onContinuar,
   onCancelarCorrida,
 }: Props) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   const Icone = tipoVeiculo === 'moto' ? MotoIcon : CarIcon;
   const rotuloVeiculo = tipoVeiculo === 'moto' ? 'motos' : 'carros';
 
@@ -39,7 +44,7 @@ export default function SemMotoristasModal({
             resizeMode="contain"
           />
           <View style={styles.alertaSelinho}>
-            <AlertIcon size={12} color={colors.background} />
+            <AlertIcon size={12} color={colors.onPrimary} />
           </View>
         </View>
 
@@ -66,7 +71,8 @@ export default function SemMotoristasModal({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: ThemeColors) {
+  return StyleSheet.create({
   backdrop: {
     position: 'absolute',
     top: 0,
@@ -154,3 +160,4 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
 });
+}

@@ -1,6 +1,8 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { ActivityIndicator, Image, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
-import { colors, radius, spacing, typography } from '../theme/theme';
+import { radius, spacing, typography } from '../theme/theme';
+import type { ThemeColors } from '../theme/theme';
+import { useTheme } from '../theme/ThemeContext';
 import { formatarMoeda } from '../utils/precoCorrida';
 import { ChevronLeftIcon, PixIcon } from './icons';
 
@@ -24,6 +26,9 @@ export default function ConfirmarPixPrepagoModal({
   onConfirmar,
   onFechar,
 }: Props) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={carregando ? undefined : onFechar}>
       <Pressable style={styles.backdrop} onPress={carregando ? undefined : onFechar} />
@@ -51,7 +56,7 @@ export default function ConfirmarPixPrepagoModal({
           disabled={carregando}
         >
           {carregando ? (
-            <ActivityIndicator color={colors.background} size="small" />
+            <ActivityIndicator color={colors.onPrimary} size="small" />
           ) : (
             <Text style={styles.confirmarBotaoTexto}>Confirmar e finalizar</Text>
           )}
@@ -70,7 +75,8 @@ export default function ConfirmarPixPrepagoModal({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: ThemeColors) {
+  return StyleSheet.create({
   backdrop: {
     flex: 1,
     backgroundColor: colors.overlay,
@@ -152,7 +158,7 @@ const styles = StyleSheet.create({
   },
   confirmarBotaoTexto: {
     ...typography.bodyBold,
-    color: colors.background,
+    color: colors.onPrimary,
   },
   voltarBotao: {
     flexDirection: 'row',
@@ -170,3 +176,4 @@ const styles = StyleSheet.create({
     marginLeft: spacing.xs,
   },
 });
+}

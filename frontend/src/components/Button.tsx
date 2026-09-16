@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -6,7 +6,9 @@ import {
   Text,
   ViewStyle,
 } from 'react-native';
-import { colors, radius, spacing, typography } from '../theme/theme';
+import { radius, spacing, typography } from '../theme/theme';
+import type { ThemeColors } from '../theme/theme';
+import { useTheme } from '../theme/ThemeContext';
 
 type Props = {
   label: string;
@@ -25,6 +27,9 @@ export default function Button({
   disabled = false,
   style,
 }: Props) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   const isDisabled = disabled || loading;
 
   return (
@@ -42,7 +47,7 @@ export default function Button({
       ]}
     >
       {loading ? (
-        <ActivityIndicator color={variant === 'primary' ? colors.background : colors.primary} />
+        <ActivityIndicator color={variant === 'primary' ? colors.onPrimary : colors.primary} />
       ) : (
         <Text
           style={[
@@ -58,7 +63,8 @@ export default function Button({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: ThemeColors) {
+  return StyleSheet.create({
   base: {
     height: 52,
     borderRadius: radius.md,
@@ -88,9 +94,10 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   labelPrimary: {
-    color: colors.background,
+    color: colors.onPrimary,
   },
   labelGhost: {
     color: colors.primary,
   },
 });
+}

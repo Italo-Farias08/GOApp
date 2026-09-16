@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import {
   Dimensions,
   FlatList,
@@ -14,7 +14,9 @@ import {
   UIManager,
   View,
 } from 'react-native';
-import { colors, spacing, typography } from '../theme/theme';
+import { spacing, typography } from '../theme/theme';
+import type { ThemeColors } from '../theme/theme';
+import { useTheme } from '../theme/ThemeContext';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -47,6 +49,9 @@ const GAP_CARD = spacing.sm;
 const RAIO_CARD = 16;
 
 export default function PromoBanners({ banners, autoplayMs = 4000, destaque = false }: Props) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   const alturaCard = destaque ? ALTURA_CARD_DESTAQUE : ALTURA_CARD_BASE;
   const listRef = useRef<FlatList<Banner>>(null);
   const [indiceAtivo, setIndiceAtivo] = useState(0);
@@ -156,7 +161,8 @@ export default function PromoBanners({ banners, autoplayMs = 4000, destaque = fa
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: ThemeColors) {
+  return StyleSheet.create({
   container: {
     marginBottom: spacing.sm,
   },
@@ -212,3 +218,4 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
   },
 });
+}

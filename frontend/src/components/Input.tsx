@@ -1,6 +1,8 @@
-import React, { forwardRef, useState } from 'react';
+import React, { forwardRef, useState, useMemo } from 'react';
 import { StyleSheet, Text, TextInput, TextInputProps, View } from 'react-native';
-import { colors, radius, spacing, typography } from '../theme/theme';
+import { radius, spacing, typography } from '../theme/theme';
+import type { ThemeColors } from '../theme/theme';
+import { useTheme } from '../theme/ThemeContext';
 
 type Props = TextInputProps & {
   label: string;
@@ -11,6 +13,8 @@ const Input = forwardRef<TextInput, Props>(function Input(
   { label, errorMessage, style, ...rest },
   ref
 ) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [isFocused, setIsFocused] = useState(false);
 
   return (
@@ -42,7 +46,8 @@ const Input = forwardRef<TextInput, Props>(function Input(
 
 export default Input;
 
-const styles = StyleSheet.create({
+function createStyles(colors: ThemeColors) {
+  return StyleSheet.create({
   container: {
     marginBottom: spacing.md,
   },
@@ -73,3 +78,4 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
   },
 });
+}

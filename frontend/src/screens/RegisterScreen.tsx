@@ -1,6 +1,6 @@
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { LinearGradient } from 'expo-linear-gradient';
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useMemo } from 'react';
 import {
   Image,
   Keyboard,
@@ -18,12 +18,17 @@ import Button from '../components/Button';
 import CityBackground from '../components/CityBackground';
 import Input from '../components/Input';
 import { useAuth } from '../context/AuthContext';
-import { colors, spacing, typography } from '../theme/theme';
+import { spacing, typography } from '../theme/theme';
+import type { ThemeColors } from '../theme/theme';
+import { useTheme } from '../theme/ThemeContext';
 import type { RootStackParamList } from '../types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Register'>;
 
 export default function RegisterScreen({ navigation }: Props) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   const { signUp } = useAuth();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -152,7 +157,8 @@ export default function RegisterScreen({ navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: ThemeColors) {
+  return StyleSheet.create({
   flex: { flex: 1 },
   container: {
     flexGrow: 1,
@@ -203,3 +209,4 @@ const styles = StyleSheet.create({
   registerButton: { marginTop: spacing.sm, marginBottom: spacing.sm },
   submitError: { color: colors.danger, marginBottom: spacing.md, textAlign: 'center' },
 });
+}

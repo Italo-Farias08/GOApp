@@ -1,6 +1,6 @@
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { LinearGradient } from 'expo-linear-gradient';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import {
   Keyboard,
   KeyboardAvoidingView,
@@ -15,7 +15,9 @@ import {
 import Button from '../components/Button';
 import CityBackground from '../components/CityBackground';
 import { useAuth } from '../context/AuthContext';
-import { colors, radius, spacing, typography } from '../theme/theme';
+import { radius, spacing, typography } from '../theme/theme';
+import type { ThemeColors } from '../theme/theme';
+import { useTheme } from '../theme/ThemeContext';
 import type { RootStackParamList } from '../types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'VerifyEmail'>;
@@ -24,6 +26,9 @@ const TAMANHO_CODIGO = 6;
 const SEGUNDOS_PARA_REENVIAR = 30;
 
 export default function VerifyEmailScreen({ navigation, route }: Props) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   const { verifyEmail, resendCode, changePendingEmail } = useAuth();
 
   // O email pode mudar nesta tela (caso o usuário tenha digitado errado no
@@ -254,7 +259,8 @@ export default function VerifyEmailScreen({ navigation, route }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: ThemeColors) {
+  return StyleSheet.create({
   flex: { flex: 1 },
   container: {
     flex: 1,
@@ -372,3 +378,4 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
   },
 });
+}

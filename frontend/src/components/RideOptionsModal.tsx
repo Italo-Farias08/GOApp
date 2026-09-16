@@ -1,6 +1,8 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Image, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
-import { colors, radius, spacing, typography } from '../theme/theme';
+import { radius, spacing, typography } from '../theme/theme';
+import type { ThemeColors } from '../theme/theme';
+import { useTheme } from '../theme/ThemeContext';
 import type { FormaPagamento } from '../types';
 import {
   EstimativaCorrida,
@@ -53,6 +55,9 @@ export default function RideOptionsModal({
   onSelecionar,
   onClose,
 }: Props) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   const [selecionado, setSelecionado] = React.useState<TipoVeiculo | null>(null);
   const [formaPagamento, setFormaPagamento] = React.useState<FormaPagamento>('dinheiro');
 
@@ -123,7 +128,7 @@ export default function RideOptionsModal({
                 </Text>
 
                 <View style={[styles.checkCirculo, ativo && styles.checkCirculoAtivo]}>
-                  {ativo && <CheckIcon size={12} color={colors.background} />}
+                  {ativo && <CheckIcon size={12} color={colors.onPrimary} />}
                 </View>
               </Pressable>
             );
@@ -171,7 +176,8 @@ export default function RideOptionsModal({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: ThemeColors) {
+  return StyleSheet.create({
   backdrop: {
     flex: 1,
     backgroundColor: colors.overlay,
@@ -326,7 +332,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
   },
   pagamentoLabelAtivo: {
-    color: colors.background,
+    color: colors.onPrimary,
     fontWeight: '700',
   },
   pagamentoAviso: {
@@ -335,3 +341,4 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
 });
+}

@@ -1,4 +1,5 @@
 const express = require('express');
+const path = require('path');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
@@ -51,6 +52,12 @@ app.use(limitadorGeral);
 app.get('/saude', (req, res) => {
   res.json({ status: 'ok' });
 });
+
+// Termos de Uso e Política de Privacidade — públicos, sem autenticação.
+// URLs finais: https://<seu-dominio-railway>/legal/termos.html e
+// .../legal/privacidade.html — são as que você cola no Play Console e na
+// App Store Connect.
+app.use('/legal', express.static(path.join(__dirname, 'public/legal')));
 
 // Serve as fotos dos motoristas (salvas no disco/Volume do Railway — nunca
 // no banco). O helmet por padrão bloqueia esse tipo de recurso sendo

@@ -1,7 +1,9 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { ActivityIndicator, Image, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
-import { colors, radius, spacing, typography } from '../theme/theme';
+import { radius, spacing, typography } from '../theme/theme';
+import type { ThemeColors } from '../theme/theme';
+import { useTheme } from '../theme/ThemeContext';
 import type { PagamentoPix } from '../types';
 import { formatarMoeda } from '../utils/precoCorrida';
 import Button from './Button';
@@ -34,6 +36,9 @@ export default function PixPaymentModal({
   onNaoPagou,
   marcandoNaoPagou = false,
 }: Props) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   const [copiado, setCopiado] = React.useState(false);
 
   React.useEffect(() => {
@@ -94,7 +99,7 @@ export default function PixPaymentModal({
             </View>
 
             <Pressable style={styles.copiarBotao} onPress={copiarCodigo}>
-              <CopyIcon size={16} color={colors.background} />
+              <CopyIcon size={16} color={colors.onPrimary} />
               <Text style={styles.copiarTexto}>{copiado ? 'Código copiado!' : 'Copiar código Pix'}</Text>
             </Pressable>
 
@@ -123,7 +128,8 @@ export default function PixPaymentModal({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: ThemeColors) {
+  return StyleSheet.create({
   backdrop: {
     flex: 1,
     backgroundColor: colors.overlay,
@@ -209,7 +215,7 @@ const styles = StyleSheet.create({
   },
   copiarTexto: {
     ...typography.bodyBold,
-    color: colors.background,
+    color: colors.onPrimary,
     marginLeft: spacing.sm,
   },
   statusRow: {
@@ -235,3 +241,4 @@ const styles = StyleSheet.create({
     textDecorationLine: 'underline',
   },
 });
+}
