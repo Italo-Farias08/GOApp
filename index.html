@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>#GO — Aprovar motoristas</title>
+<title>#GO  Aprovar motoristas</title>
 <style>
   :root {
     --bg: #0B0B0F;
@@ -260,7 +260,6 @@
   const areaLista = document.getElementById('area-lista');
   const tituloLista = document.getElementById('titulo-lista');
 
-  // Lembra a URL e o segredo digitados, pra não ter que redigitar toda hora.
   campoUrl.value = localStorage.getItem('go_admin_url') || '';
   campoSegredo.value = localStorage.getItem('go_admin_segredo') || '';
 
@@ -273,10 +272,6 @@
     areaAviso.innerHTML = '';
   }
 
-  // Normaliza o que a pessoa digitou: adiciona "https://" se faltar o
-  // esquema, remove barras sobrando no final e, se alguém colar a URL já
-  // com "/driver" ou "/driver/pending" no final, tira esse pedaço — assim
-  // a base fica sempre só o domínio do backend.
   function urlBase() {
     let valor = campoUrl.value.trim();
     if (!valor) return '';
@@ -294,12 +289,6 @@
     return div.innerHTML;
   }
 
-  // Interpreta a resposta do fetch, distinguindo os casos mais comuns de
-  // erro pra dar uma mensagem que realmente ajuda a resolver:
-  // - 404 "Rota não encontrada" quase sempre é URL errada ou backend
-  //   publicado numa versão antiga, sem essas rotas de admin.
-  // - 403 é segredo admin errado.
-  // - Falha de rede/CORS normalmente é backend fora do ar ou domínio errado.
   async function interpretarResposta(resposta, urlChamada) {
     if (resposta.ok) return resposta.json();
 
@@ -391,8 +380,6 @@
     `).join('');
   }
 
-  // Delegação de evento em vez de onclick inline — evita quebrar o HTML se
-  // algum dado (nome, id) tiver aspas ou caracteres especiais.
   areaLista.addEventListener('click', (evento) => {
     const botao = evento.target.closest('button[data-usuario-id]');
     if (!botao) return;
