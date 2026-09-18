@@ -50,12 +50,16 @@ import type { Corrida, FormaPagamento, MensagemChat, PagamentoPix, RootStackPara
 import { formatarDistancia, formatarDuracao, formatarMoeda } from '../utils/precoCorrida';
 import { LIGHT_MAP_STYLE, DARK_MAP_STYLE } from '../utils/mapaConfig';
 
+// Ícone e texto de cada forma de pagamento, pro motorista já saber de cara
+// como vai receber (ou se o Pix já caiu na conta, no caso do pré-pago).
 const INFO_PAGAMENTO: Record<FormaPagamento, { label: string; Icone: typeof MoneyIcon }> = {
   dinheiro: { label: 'Dinheiro', Icone: MoneyIcon },
   pix: { label: 'Pix', Icone: PixIcon },
   pix_prepago: { label: 'Pix já pago', Icone: QrCodeIcon },
 };
 
+// Motivos pré-definidos pro motorista escolher ao cancelar uma corrida já
+// aceita — curtos e específicos o bastante pra dar sinal real do que houve.
 const MOTIVOS_CANCELAMENTO_MOTORISTA = [
   'O passageiro não apareceu',
   'Endereço muito longe do combinado',
@@ -64,7 +68,11 @@ const MOTIVOS_CANCELAMENTO_MOTORISTA = [
   'Outro motivo',
 ];
 
-
+// Sombra padrão dos elementos que "flutuam" sobre o mapa (pills do topo,
+// botão de recentralizar) — sem ela, esses elementos pareciam colados na
+// tela em vez de flutuando por cima do mapa.
+// Altura que fica visível (alça + cabeçalho) quando o motorista arrasta o
+// painel de corrida pra baixo pra "recolher" ele e ver o mapa por baixo.
 const ALTURA_MINIMA_PAINEL_ARRASTAVEL = 132;
 
 const sombraFlutuante = {
@@ -75,6 +83,8 @@ const sombraFlutuante = {
   elevation: 6,
 } as const;
 
+// Switch animado de "ficar online" — troca o botão de texto cheio por um
+// controle compacto, do jeito que apps de motorista de verdade fazem.
 function ToggleOnline({ value, onToggle }: { value: boolean; onToggle: () => void }) {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -161,7 +171,11 @@ export default function DriverHomeScreen() {
   const { rota, calcularRota, limparRota, distanciaAteRota } = useRota();
   const mapRef = useRef<MapView>(null);
   const soqueteRef = useRef<Socket | null>(null);
-
+  // Posição em PIXEL (x,y) na tela onde sua coordenada real cai agora —
+  // mesma abordagem do HomeScreen (passageiro): rotação nativa de Marker
+  // não funcionava de forma confiável nesse setup, então o indicador de
+  // direção é uma View comum sobreposta ao mapa, reposicionada em pixel
+  // real a cada movimento de câmera (não fica preso ao centro da tela).
   const [pontoTelaMotorista, setPontoTelaMotorista] = useState<{ x: number; y: number } | null>(
     null
   );
@@ -172,16 +186,23 @@ export default function DriverHomeScreen() {
       const ponto = await mapRef.current?.pointForCoordinate(coords);
       if (ponto) setPontoTelaMotorista(ponto);
     } catch {
-      
+      // Mapa ainda não terminou de montar — o próximo onRegionChange tenta de novo.
     }
   }
 
   useEffect(() => {
     atualizarPontoTelaMotorista();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [coords?.latitude, coords?.longitude]);
 
+  // Altura real do painel inferior (varia conforme o estado: offline, nova
+  // corrida, corrida ativa) — usada só pra posicionar o botão flutuante de
+  // recentralizar sempre coladinho acima dele, sem sobrepor nada.
   const [alturaPainel, setAlturaPainel] = useState(0);
-
+  // Espelha `alturaPainel` num ref: o PanResponder é criado só uma vez (via
+  // useRef) e seus callbacks fecham sobre o valor de `alturaPainel` da
+  // primeira renderização — sem esse ref, o cálculo do limite de arrasto
+  // ficaria travado em 0 pra sempre.
   const alturaPainelRef = useRef(0);
   function medirPainel(evento: LayoutChangeEvent) {
     const altura = evento.nativeEvent.layout.height;
@@ -189,6 +210,14 @@ export default function DriverHomeScreen() {
     setAlturaPainel((atual) => (Math.abs(atual - altura) > 0.5 ? altura : atual));
   }
 
+  // --- Painel de corrida arrastável -------------------------------------
+  // Antes o card de "nova corrida" / "a caminho do passageiro" / "a caminho
+  // do destino" ficava sempre com a mesma altura fixa, cobrindo boa parte
+  // da tela sem nenhum jeito de recolher — a alcinha no topo era só
+  // decorativa, não respondia a gesto nenhum. Agora dá pra arrastar o
+  // painel pra baixo (ou simplesmente tocar na alça) pra deixar só a
+  // alça + cabeçalho visíveis e enxergar o mapa por baixo; arrastar de
+  // volta pra cima (ou tocar de novo) reabre ele por completo.
   const arrastoPainel = useRef(new Animated.Value(0)).current;
   const arrastoBaseRef = useRef(0);
   const painelPanResponder = useRef(
@@ -207,7 +236,9 @@ export default function DriverHomeScreen() {
       },
       onPanResponderRelease: (_, gesto) => {
         const limite = Math.max(alturaPainelRef.current - ALTURA_MINIMA_PAINEL_ARRASTAVEL, 0);
-
+        // Um toque simples na alça (sem arrastar quase nada) alterna entre
+        // recolhido/aberto; um arrasto de verdade decide pela distância
+        // percorrida (mais da metade do caminho) ou pela velocidade do gesto.
         const foiToqueSemArrasto = Math.abs(gesto.dy) < 6 && Math.abs(gesto.vy) < 0.2;
         const estavaMaisRecolhidoQueAberto = arrastoBaseRef.current > limite / 2;
         const valorFinal = arrastoBaseRef.current + gesto.dy;
@@ -226,12 +257,18 @@ export default function DriverHomeScreen() {
     })
   ).current;
 
+  // Troca de contexto (nova oferta chegou, corrida foi aceita, embarque
+  // confirmado, corrida encerrada) sempre reabre o painel por completo —
+  // não faria sentido o painel continuar recolhido de um estado anterior
+  // quando o conteúdo embaixo dele mudou.
   useEffect(() => {
     arrastoBaseRef.current = 0;
     arrastoPainel.setValue(0);
   }, [corridaRecebida?.id, corridaAtiva?.id, embarcado]);
 
-
+  // Alça arrastável reaproveitada pelos 3 painéis de corrida (nova corrida
+  // / a caminho do passageiro / a caminho do destino) — a área de toque é
+  // maior que o traço visual só pra facilitar pegar o gesto com o dedo.
   function renderAlcaArrastavel() {
     return (
       <View style={styles.alcaArea} {...painelPanResponder.panHandlers}>
@@ -240,7 +277,9 @@ export default function DriverHomeScreen() {
     );
   }
 
-
+  // Desde quando o motorista está online nessa sessão de busca — só pra
+  // mostrar "Online há X min" no painel. Puramente local/visual, não muda
+  // nenhuma regra de negócio.
   const [inicioSessao, setInicioSessao] = useState<number | null>(null);
   const [, forcarRelogio] = useState(0);
   useEffect(() => {
@@ -269,7 +308,14 @@ export default function DriverHomeScreen() {
     setToastMensagem(mensagem + '\u200B'.repeat(avisoContadorRef.current % 2));
   }
 
-
+  // --- Trava de segurança: com uma corrida ativa, o motorista NÃO pode sair
+  // da tela por acidente. Antes, só o botão "Modo passageiro" ficava
+  // desabilitado — mas o gesto nativo de arrastar da borda pra voltar (iOS)
+  // e o botão físico de voltar (Android) continuavam funcionando por fora
+  // dele. Um arrasto mal feito no SwipeButton perto da borda esquerda podia
+  // disparar esse gesto e jogar o motorista de volta pra tela de passageiro
+  // no meio da corrida. Aqui a gente desliga o gesto e barra qualquer
+  // tentativa de navegação pra fora enquanto `corridaAtiva` existir.
   useEffect(() => {
     navigation.setOptions({ gestureEnabled: !corridaAtiva });
   }, [corridaAtiva, navigation]);
@@ -281,20 +327,22 @@ export default function DriverHomeScreen() {
       avisar('Finalize ou cancele a corrida atual antes de sair.', 'warning');
     });
     return cancelarSaida;
-    
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigation, corridaAtiva]);
 
   useEffect(() => {
     const assinatura = BackHandler.addEventListener('hardwareBackPress', () => {
       if (!corridaAtiva) return false;
       avisar('Finalize ou cancele a corrida atual antes de sair.', 'warning');
-      return true;
+      return true; // consome o back físico do Android, não deixa sair da tela
     });
     return () => assinatura.remove();
   }, [corridaAtiva]);
 
+  // --- Chat com o passageiro ---
   const [chatVisivel, setChatVisivel] = useState(false);
-
+  // Mensagens pós-corrida (passageiros de viagens já encerradas que
+  // mandaram recado) — independente do chat da corrida ativa acima.
   const [mensagensModalVisivel, setMensagensModalVisivel] = useState(false);
   const [mensagensChat, setMensagensChat] = useState<MensagemChat[]>([]);
   const [carregandoHistoricoChat, setCarregandoHistoricoChat] = useState(false);
@@ -308,6 +356,8 @@ export default function DriverHomeScreen() {
     corridaAtivaIdRef.current = corridaAtiva?.id ?? null;
   }, [corridaAtiva?.id]);
 
+  // Busca o histórico assim que a corrida é aceita — sem isso o chat abriria
+  // vazio de novo se o motorista fechar e reabrir a conversa.
   useEffect(() => {
     if (!corridaAtiva) {
       setMensagensChat([]);
@@ -340,6 +390,8 @@ export default function DriverHomeScreen() {
     soqueteRef.current?.emit('chat:mensagem', { corridaId: corridaAtiva.id, texto });
   }
 
+  // --- "Nova corrida" nasce com um pulinho (scale) em vez de simplesmente
+  // aparecer — ajuda a chamar atenção do motorista pra decidir rápido. ---
   const novaCorridaAnim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     if (corridaRecebida) {
@@ -353,6 +405,8 @@ export default function DriverHomeScreen() {
     }
   }, [corridaRecebida?.id]);
 
+  // --- Ponto de status (online) pulsando devagar enquanto o motorista está
+  // disponível ou em corrida — dá a sensação de "app vivo" no topo. ---
   const statusPulseAnim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     if (disponivel || corridaAtiva) {
@@ -368,15 +422,27 @@ export default function DriverHomeScreen() {
     }
   }, [disponivel, !!corridaAtiva]);
 
+  // Conecta ao socket assim que a tela abre e escuta os eventos de corrida.
   useEffect(() => {
     let ativo = true;
 
+    // IMPORTANTE: soquete é uma conexão singleton reaproveitada (ver
+    // socketService.ts) e MAIS DE UM componente pode escutar o mesmo evento
+    // ao mesmo tempo (ex: esta tela escuta "corrida:mensagem" pro chat da
+    // corrida ativa, e a tela de "Mensagens" pós-corrida escuta o mesmo
+    // evento pra conversa antiga aberta). Por isso cada handler é uma
+    // referência nomeada e o cleanup usa `.off(evento, handler)` — remove
+    // só ESTE listener. Um `.off(evento)` sem a referência removeria TODOS
+    // os listeners desse evento, inclusive os de outros componentes.
     function aoReceberCorridaNova(corrida: Corrida) {
       if (!ativo) return;
       setCorridaRecebida((atual) => atual ?? corrida);
     }
 
-  
+    // Mensagem nova do chat — só aceita se for da corrida ativa. Se o chat
+    // estiver fechado no momento, conta como "não lida". Mensagens de
+    // corridas já encerradas não passam por aqui — quem cuida delas é o
+    // listener próprio da tela de "Mensagens" pós-corrida.
     function aoReceberMensagem(mensagem: MensagemChat) {
       if (!ativo || mensagem.corridaId !== corridaAtivaIdRef.current) return;
       setMensagensChat((atual) => {
@@ -395,6 +461,11 @@ export default function DriverHomeScreen() {
       if (!ativo) return;
       setCorridaRecebida((atual) => (atual?.id === corridaId ? null : atual));
     }
+
+    // Regra: se foi o PASSAGEIRO que cancelou, a corrida acaba de vez pro
+    // motorista também (não tem mais ninguém pra buscar). Isso pode
+    // acontecer tanto numa oferta ainda não aceita quanto numa corrida já
+    // em andamento — em qualquer caso a tela volta pro estado anterior.
     function aoCancelar({ corridaId, canceladoPor }: { corridaId: string; canceladoPor?: string }) {
       if (!ativo) return;
       setCorridaAtiva((atual) => {
@@ -411,7 +482,7 @@ export default function DriverHomeScreen() {
     (async () => {
       soqueteLocal = await conectarSoquete();
       soqueteRef.current = soqueteLocal;
-      if (!ativo) return; 
+      if (!ativo) return; // desmontou enquanto conectava — não registra nada
 
       soqueteLocal.on('corrida:nova', aoReceberCorridaNova);
       soqueteLocal.on('corrida:mensagem', aoReceberMensagem);
@@ -428,7 +499,8 @@ export default function DriverHomeScreen() {
     };
   }, []);
 
-
+  // Avisa o servidor que está disponível (e a localização atual) enquanto
+  // não tem corrida nenhuma em andamento.
   useEffect(() => {
     if (!coords || corridaAtiva) return;
     (async () => {
@@ -441,6 +513,7 @@ export default function DriverHomeScreen() {
     })();
   }, [disponivel, coords, corridaAtiva]);
 
+  // Com uma corrida aceita, manda a localização ao vivo pro passageiro.
   useEffect(() => {
     if (!corridaAtiva || !coords) return;
     (async () => {
@@ -453,10 +526,15 @@ export default function DriverHomeScreen() {
     })();
   }, [corridaAtiva, coords]);
 
+  // Sempre que a corrida ativa termina (finalizada, cancelada ou nunca
+  // chegou a existir), a etapa de embarque volta pro início.
   useEffect(() => {
     if (!corridaAtiva) setEmbarcado(false);
   }, [corridaAtiva]);
 
+  // Calcula a rota até o próximo ponto: enquanto não embarcou, até o
+  // passageiro (origem); depois de confirmar o embarque, até o destino
+  // final. Recalcula sempre que a etapa muda.
   useEffect(() => {
     if (corridaAtiva && coords) {
       const alvo = embarcado ? corridaAtiva.destino : corridaAtiva.origem;
@@ -468,9 +546,16 @@ export default function DriverHomeScreen() {
     } else {
       limparRota();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [corridaAtiva?.id, embarcado]);
 
-
+  // --- Recálculo automático de rota por desvio ---------------------------
+  // Antes, se o motorista entrasse na rua errada ou perdesse uma conversão,
+  // a rota desenhada no mapa ficava "presa" no caminho antigo — o app não
+  // percebia que ele tinha saído do trajeto. Agora, a cada atualização de
+  // localização, checa a distância até a rota calculada; se ele se afastou
+  // demais dela, recalcula uma rota nova a partir de onde ele está agora,
+  // igual apps como 99/Uber fazem.
   const DISTANCIA_DESVIO_ROTA_METROS = 60;
   const INTERVALO_MINIMO_RECALCULO_MS = 15000;
   const ultimoRecalculoPorDesvioRef = useRef(0);
@@ -492,6 +577,7 @@ export default function DriverHomeScreen() {
     calcularRota(coords, alvo).finally(() => {
       recalculandoPorDesvioRef.current = false;
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [coords?.latitude, coords?.longitude]);
 
   async function aceitarCorridaRecebida() {
@@ -517,6 +603,8 @@ export default function DriverHomeScreen() {
     setCorridaRecebida(null);
   }
 
+  // Motorista confirma que pegou o passageiro no ponto de embarque — a
+  // partir daqui o mapa passa a guiar até o destino final.
   async function confirmarEmbarque() {
     if (!corridaAtiva) return;
     setEmbarcando(true);
@@ -533,6 +621,12 @@ export default function DriverHomeScreen() {
     }
   }
 
+  // Toca em "Finalizar corrida" -> se o Pix já foi pago antes da corrida
+  // começar (pix_prepago), não tem pagamento pra escolher: só confirma que
+  // a corrida acabou e o valor (já com a taxa descontada) cai no saldo pra
+  // saque. Nos outros casos, abre o modal de escolha de pagamento — a
+  // corrida só é finalizada de fato depois que o motorista escolhe uma das
+  // três opções (ver escolherFormaFinalizacao).
   function abrirFinalizacao() {
     if (!corridaAtiva) return;
     if (corridaAtiva.formaPagamento === 'pix_prepago') {
@@ -542,7 +636,10 @@ export default function DriverHomeScreen() {
     setMetodoPagamentoVisivel(true);
   }
 
-
+  // Confirma a finalização de uma corrida pix_prepago — o dinheiro já está
+  // na conta da plataforma desde que o passageiro pagou pra pedir a
+  // corrida, então só chama a rota que credita o valor líquido no saldo
+  // disponível pra saque do motorista.
   async function confirmarFinalizacaoPixPrepago() {
     if (!corridaAtiva) return;
     setFinalizando(true);
@@ -622,7 +719,10 @@ export default function DriverHomeScreen() {
     setCorridaAtiva(null);
   }
 
-
+  // Gera a cobrança Pix no Mercado Pago pelo valor da corrida e abre o modal
+  // com o QR code. Diferente do Pix pré-pago do passageiro, aqui a corrida
+  // JÁ existe — ela só é finalizada quando o pagamento é confirmado (ver
+  // iniciarPollingPix).
   async function iniciarFinalizacaoPix() {
     if (!corridaAtiva) return;
     setPixModalVisivel(true);
@@ -640,7 +740,9 @@ export default function DriverHomeScreen() {
     }
   }
 
-
+  // Fica perguntando pro backend se o Pix já foi pago — assim que aprovar, o
+  // backend já finalizou a corrida sozinho, então só falta a tela "sair" da
+  // corrida ativa.
   function iniciarPollingPix(pagamentoId: string) {
     pararPollingPix();
     pollingPixRef.current = setInterval(async () => {
@@ -658,10 +760,14 @@ export default function DriverHomeScreen() {
           pararPollingPix();
         }
       } catch {
+        // Falha pontual de rede — a próxima tentativa do intervalo já
+        // tenta de novo, não precisa travar a tela por isso.
       }
     }, 3000);
   }
 
+  // Fecha o QR code e volta pro modal de escolha — a corrida continua ativa,
+  // o motorista pode tentar outra forma de pagamento.
   function fecharPixModal() {
     pararPollingPix();
     setPixModalVisivel(false);
@@ -669,6 +775,13 @@ export default function DriverHomeScreen() {
     setMetodoPagamentoVisivel(true);
   }
 
+  // Regra: o motorista só pode cancelar uma corrida que ele mesmo aceitou e
+  // AINDA ANTES de confirmar o embarque (corridaAtiva && !embarcado já
+  // garante isso — depois do embarque o passageiro já está no veículo, então
+  // a opção de cancelar nem aparece, só finalizar). Cancelar aqui NÃO
+  // finaliza o pedido do passageiro — o backend devolve a corrida pro radar
+  // de outros motoristas, a não ser que já tenha estourado o limite de
+  // cancelamentos.
   function abrirCancelamentoAtiva() {
     if (!corridaAtiva || embarcado) return;
     setCancelamentoVisivel(true);
@@ -688,7 +801,7 @@ export default function DriverHomeScreen() {
       avisar('Corrida cancelada.', 'info');
     } finally {
       setCorridaAtiva(null);
-      setDisponivel(false);
+      setDisponivel(false); // precisa ficar online de novo pra voltar a receber corridas
       setCancelando(false);
       setCancelamentoVisivel(false);
     }
@@ -707,15 +820,23 @@ export default function DriverHomeScreen() {
     );
   }
 
+  // Ponto que o mapa deve destacar: enquanto não embarcou, o passageiro;
+  // depois do embarque, o destino final.
   const alvoAtual = corridaAtiva ? (embarcado ? corridaAtiva.destino : corridaAtiva.origem) : null;
 
   return (
     <View style={styles.container}>
       <MapView
         ref={mapRef}
-
+        // Ver o comentário equivalente em HomeScreen.tsx: o Google Maps
+        // nativo só lê `customMapStyle` na criação da view, então a `key`
+        // força remontar o mapa quando o tema muda.
         key={scheme}
-   
+        // Força o Google Maps nas duas plataformas: sem isso, no iOS o
+        // MapView cai no Apple Maps (MapKit) por padrão, que ignora
+        // `customMapStyle` — com `userInterfaceStyle: 'dark'` travado em
+        // app.config.js, o mapa nativo ficava sempre escuro mesmo com o
+        // app no tema claro.
         provider={PROVIDER_GOOGLE}
         style={styles.map}
         showsUserLocation
@@ -740,7 +861,20 @@ export default function DriverHomeScreen() {
               <MapPin variant="destino" />
             </Marker>
             {rota && (
-              <Polyline coordinates={rota.coordenadas} strokeColor={colors.primary} strokeWidth={4} />
+              <>
+                <Polyline
+                  coordinates={rota.coordenadas}
+                  strokeColor={scheme === 'claro' ? 'rgba(255,255,255,0.9)' : 'rgba(8,9,14,0.85)'}
+                  strokeWidth={8}
+                  zIndex={1}
+                />
+                <Polyline
+                  coordinates={rota.coordenadas}
+                  strokeColor={colors.primary}
+                  strokeWidth={4}
+                  zIndex={2}
+                />
+              </>
             )}
           </>
         )}
@@ -1183,11 +1317,17 @@ function createStyles(colors: ThemeColors) {
     ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(7, 25, 63, 0.25)',
   },
+  // Indicador de direção sobreposto (mesma abordagem do HomeScreen do
+  // passageiro) — pivô de tamanho 0 posicionado no PIXEL exato onde sua
+  // coordenada cai na tela, recalculado a cada movimento do mapa.
   direcaoOverlayPivo: {
     position: 'absolute',
     width: 0,
     height: 0,
   },
+  // O <DirectionIndicator> (60x60 por padrão) tem seu próprio ponto central
+  // desenhado no meio do SVG — esse marginLeft/Top negativo (metade do
+  // tamanho) centraliza isso em cima do pivô.
   direcaoOverlayCentralizador: {
     marginLeft: -30,
     marginTop: -30,

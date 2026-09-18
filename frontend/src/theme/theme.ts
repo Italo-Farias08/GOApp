@@ -1,9 +1,4 @@
-// Tema do #GO — dois esquemas de cor (escuro "corrida noturna" e claro),
-// com verde "sinal aberto" (#39FF6A) como cor de ação nos dois.
-// Tudo centralizado aqui: pra trocar a identidade visual do app, mexe só
-// neste arquivo. Quem consome cor de verdade (dinâmica, que muda com o
-// tema) usa o hook `useTheme()` de `./ThemeContext` — não importa `colors`
-// direto daqui, a não ser que precise mesmo do valor fixo do escuro.
+
 
 export const darkColors = {
   background: '#0B0B0F',      // preto grafite (fundo principal)
@@ -27,16 +22,16 @@ export const darkColors = {
 };
 
 export const lightColors = {
-  background: '#dbd8d8',      // branco levemente acinzentado
-  surface: '#d2d0d0',         // cards, inputs, containers
-  surfaceAlt: '#b0b0c6',      // hover / pressed states
-  border: '#DCDCE3',
+  background: '#2c2a2a',      // branco levemente acinzentado
+  surface: '#111010',         // cards, inputs, containers
+  surfaceAlt: '#1b1a1a',      // hover / pressed states
+  border: '#141415',
 
   primary: '#1FAE4D',         // mesmo verde "GO", ajustado pra ter contraste
   primaryPressed: '#178F3F',  // no fundo claro (o neon puro "estoura" no claro)
   onPrimary: '#FFFFFF',       // texto/ícone em cima de um fundo `primary`
 
-  text: '#16161D',
+  text: '#f5f5f5',
   textSecondary: '#5C5C66',
   textMuted: '#9A9AA5',
 

@@ -1208,11 +1208,24 @@ export default function HomeScreen() {
           </Marker>
         )}
         {rota && (
-          <Polyline
-            coordinates={rota.coordenadas}
-            strokeColor={colors.primary}
-            strokeWidth={4}
-          />
+          <>
+            {/* Contorno: linha mais larga por baixo, numa cor que sempre
+                contrasta com o fundo do mapa (clara no escuro, escura no
+                claro). É o que faz a rota "flutuar" sobre o mapa em vez de
+                se misturar com ruas da mesma cor. */}
+            <Polyline
+              coordinates={rota.coordenadas}
+              strokeColor={scheme === 'claro' ? 'rgba(255,255,255,0.9)' : 'rgba(8,9,14,0.85)'}
+              strokeWidth={8}
+              zIndex={1}
+            />
+            <Polyline
+              coordinates={rota.coordenadas}
+              strokeColor={colors.primary}
+              strokeWidth={4}
+              zIndex={2}
+            />
+          </>
         )}
         {localizacaoMotorista && coordenadaInicialMotorista && (
           <Marker

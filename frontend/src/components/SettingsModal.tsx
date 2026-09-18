@@ -183,7 +183,7 @@ function AparenciaToggle() {
 
   return (
     <View style={styles.aparenciaCard}>
-      <Text style={styles.aparenciaLabel}>Aparência</Text>
+      <Text style={styles.aparenciaLabel}>Tema do Mapa</Text>
       <View style={styles.aparenciaSegmentado}>
         <Pressable
           onPress={() => setScheme('escuro')}
