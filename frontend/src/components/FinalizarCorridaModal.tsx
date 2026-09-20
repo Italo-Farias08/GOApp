@@ -1,7 +1,8 @@
 import React, { useMemo } from 'react';
-import { Image, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, Image, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { radius, spacing, typography } from '../theme/theme';
 import type { ThemeColors } from '../theme/theme';
+import { useSheetModalAnimation } from '../hooks/useModalAnimation';
 import { useTheme } from '../theme/ThemeContext';
 import { formatarMoeda } from '../utils/precoCorrida';
 import { AlertIcon, ChevronLeftIcon, MoneyIcon, PixIcon } from './icons';
@@ -27,10 +28,15 @@ export default function FinalizarCorridaModal({ visible, valor, carregando = fal
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
+  const { mounted, backdropOpacity, translateY } = useSheetModalAnimation(visible);
+  if (!mounted) return null;
+
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={carregando ? undefined : onFechar}>
-      <Pressable style={styles.backdrop} onPress={carregando ? undefined : onFechar} />
-      <View style={styles.sheet}>
+    <Modal visible transparent animationType="none" onRequestClose={carregando ? undefined : onFechar}>
+      <Animated.View style={[styles.backdrop, { opacity: backdropOpacity }]}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={carregando ? undefined : onFechar} />
+      </Animated.View>
+      <Animated.View style={[styles.sheet, { transform: [{ translateY }] }]}>
         <View style={styles.handle} />
 
         <View style={styles.tituloRow}>
@@ -97,7 +103,7 @@ export default function FinalizarCorridaModal({ visible, valor, carregando = fal
           <ChevronLeftIcon size={16} color={colors.textSecondary} />
           <Text style={styles.voltarTexto}>Voltar</Text>
         </Pressable>
-      </View>
+      </Animated.View>
     </Modal>
   );
 }

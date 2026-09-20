@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
-import { Image, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, Image, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useCenterModalAnimation } from '../hooks/useModalAnimation';
 import { radius, spacing, typography } from '../theme/theme';
 import type { ThemeColors } from '../theme/theme';
 import { useTheme } from '../theme/ThemeContext';
@@ -33,10 +34,17 @@ export default function SemMotoristasModal({
   const Icone = tipoVeiculo === 'moto' ? MotoIcon : CarIcon;
   const rotuloVeiculo = tipoVeiculo === 'moto' ? 'motos' : 'carros';
 
+  const { mounted, backdropOpacity, scale, contentOpacity } = useCenterModalAnimation(visible);
+  if (!mounted) return null;
+
   return (
-    <Modal visible={visible} animationType="fade" transparent onRequestClose={onContinuar}>
-      <Pressable style={styles.backdrop} onPress={onContinuar} />
-      <View style={styles.cartao}>
+    <Modal visible transparent animationType="none" onRequestClose={onContinuar}>
+      <Animated.View style={[styles.backdrop, { opacity: backdropOpacity }]}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onContinuar} />
+      </Animated.View>
+      <Animated.View
+        style={[styles.cartao, { opacity: contentOpacity, transform: [{ scale }] }]}
+      >
         <View style={styles.iconeBadge}>
           <Image
             source={require('../../assets/logo-mark.png')}
@@ -66,7 +74,7 @@ export default function SemMotoristasModal({
 
         <Button label="Continuar procurando" onPress={onContinuar} style={styles.botaoPrincipal} />
         <Button label="Cancelar corrida" variant="ghost" onPress={onCancelarCorrida} />
-      </View>
+      </Animated.View>
     </Modal>
   );
 }

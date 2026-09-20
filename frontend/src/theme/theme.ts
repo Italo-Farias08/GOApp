@@ -1,5 +1,3 @@
-
-
 export const darkColors = {
   background: '#0B0B0F',      // preto grafite (fundo principal)
   surface: '#16161D',         // cards, inputs, containers
@@ -22,24 +20,29 @@ export const darkColors = {
 };
 
 export const lightColors = {
-  background: '#2c2a2a',      // branco levemente acinzentado
-  surface: '#111010',         // cards, inputs, containers
-  surfaceAlt: '#1b1a1a',      // hover / pressed states
-  border: '#141415',
+  // Marrom escuro médio — "meio escuro" como você pediu, mas com a MESMA
+  // temperatura quente do bege do mapa (LIGHT_MAP_STYLE em mapaConfig.ts),
+  // em vez do cinza neutro/frio de antes. É essa proximidade de tom (os
+  // dois puxando pro marrom, não um frio e outro quente) que faz o modal
+  // parecer parte do mesmo app que o mapa, mesmo sendo mais escuro que ele.
+  background: '#3A362E',
+  surface: '#2A2721',         // um degrau mais escuro que o fundo, dá profundidade ao card
+  surfaceAlt: '#413C33',      // hover / pressed states
+  border: '#4F493D',
 
   primary: '#1FAE4D',         // mesmo verde "GO", ajustado pra ter contraste
   primaryPressed: '#178F3F',  // no fundo claro (o neon puro "estoura" no claro)
   onPrimary: '#FFFFFF',       // texto/ícone em cima de um fundo `primary`
 
-  text: '#f5f5f5',
-  textSecondary: '#5C5C66',
-  textMuted: '#9A9AA5',
+  text: '#F5F1E8',             // branco quente (não gelado) — combina com o resto da paleta
+  textSecondary: '#C7C0AE',
+  textMuted: '#8F8975',
 
-  danger: '#D93636',
-  warning: '#B5750E',
+  danger: '#E05C5C',
+  warning: '#D99B3A',
   success: '#1FAE4D',
 
-  overlay: 'rgba(0,0,0,0.4)',
+  overlay: 'rgba(24,20,10,0.55)',
 };
 
 export type ThemeColors = typeof darkColors;

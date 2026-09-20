@@ -14,6 +14,7 @@ import {
   TouchableWithoutFeedback,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Button from '../components/Button';
 import CityBackground from '../components/CityBackground';
 import Input from '../components/Input';
@@ -27,6 +28,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Register'>;
 
 export default function RegisterScreen({ navigation }: Props) {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
   const { signUp } = useAuth();
@@ -79,7 +81,7 @@ export default function RegisterScreen({ navigation }: Props) {
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
           <ScrollView
-            contentContainerStyle={styles.container}
+            contentContainerStyle={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom + spacing.xxl }]}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >

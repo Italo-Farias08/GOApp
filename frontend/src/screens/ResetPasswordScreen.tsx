@@ -14,6 +14,7 @@ import {
   TouchableWithoutFeedback,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Button from '../components/Button';
 import CityBackground from '../components/CityBackground';
 import { useAuth } from '../context/AuthContext';
@@ -29,6 +30,7 @@ const SEGUNDOS_PARA_REENVIAR = 30;
 
 export default function ResetPasswordScreen({ navigation, route }: Props) {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
   const { email } = route.params;
@@ -142,7 +144,7 @@ export default function ResetPasswordScreen({ navigation, route }: Props) {
           style={styles.flex}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
-          <View style={styles.container}>
+          <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom + spacing.lg }]}>
             <Pressable style={styles.backButton} onPress={() => navigation.goBack()} hitSlop={12}>
               <Text style={styles.backArrow}>‹</Text>
               <Text style={styles.backLabel}>Voltar</Text>

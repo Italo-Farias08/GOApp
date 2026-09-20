@@ -1,7 +1,8 @@
 import React, { useMemo } from 'react';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { radius, spacing, typography } from '../theme/theme';
 import type { ThemeColors } from '../theme/theme';
+import { useSheetModalAnimation } from '../hooks/useModalAnimation';
 import { useTheme } from '../theme/ThemeContext';
 import type { User } from '../types';
 import Button from './Button';
@@ -54,10 +55,15 @@ export default function CompleteProfileModal({ visible, user, carregando = false
     onSalvar({ name: name.trim(), email: email.trim(), phone: phone.trim() });
   }
 
+  const { mounted, backdropOpacity, translateY } = useSheetModalAnimation(visible);
+  if (!mounted) return null;
+
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={carregando ? undefined : onFechar}>
-      <Pressable style={styles.backdrop} onPress={carregando ? undefined : onFechar} />
-      <View style={styles.sheet}>
+    <Modal visible transparent animationType="none" onRequestClose={carregando ? undefined : onFechar}>
+      <Animated.View style={[styles.backdrop, { opacity: backdropOpacity }]}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={carregando ? undefined : onFechar} />
+      </Animated.View>
+      <Animated.View style={[styles.sheet, { transform: [{ translateY }] }]}>
         <View style={styles.handle} />
 
         <View style={styles.tituloRow}>
@@ -110,7 +116,7 @@ export default function CompleteProfileModal({ visible, user, carregando = false
           style={styles.botaoConfirmar}
         />
         <Button label="Agora não" variant="ghost" onPress={onFechar} disabled={carregando} />
-      </View>
+      </Animated.View>
     </Modal>
   );
 }

@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   FlatList,
   Image,
   Modal,
@@ -18,6 +19,7 @@ import { useAuth } from '../context/AuthContext';
 import * as driverService from '../services/driverService';
 import * as rideService from '../services/rideService';
 import { conectarSoquete } from '../services/socketService';
+import { useSheetModalAnimation, useStackViewTransition } from '../hooks/useModalAnimation';
 import { radius, spacing, typography } from '../theme/theme';
 import type { ThemeColors } from '../theme/theme';
 import { useTheme } from '../theme/ThemeContext';
@@ -62,6 +64,11 @@ export default function SettingsModal({ visible, onClose }: Props) {
   const { user, signOut } = useAuth();
   const [view, setView] = useState<ModalView>('menu');
 
+  const { mounted, backdropOpacity, translateY } = useSheetModalAnimation(visible);
+  // Troca de "página" dentro do modal (menu -> conta, menu -> motorista...)
+  // com crossfade + leve deslize horizontal, em vez de aparecer na hora.
+  const { displayedView, translateX, opacity: viewOpacity } = useStackViewTransition(view, 'menu');
+
   function handleClose() {
     onClose();
     // pequeno delay pra não trocar de tela enquanto o modal ainda está fechando
@@ -80,28 +87,38 @@ export default function SettingsModal({ visible, onClose }: Props) {
     navigation.navigate('MotoboyPanel');
   }
 
+  if (!mounted) return null;
+
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={handleClose}>
-      <Pressable style={styles.backdrop} onPress={handleClose} />
-      <View style={styles.sheet}>
+    <Modal visible transparent animationType="none" onRequestClose={handleClose}>
+      <Animated.View style={[styles.backdrop, { opacity: backdropOpacity }]}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={handleClose} />
+      </Animated.View>
+      <Animated.View style={[styles.sheet, { transform: [{ translateY }] }]}>
         <View style={styles.handle} />
 
-        {view === 'menu' && (
-          <MenuView
-            userName={user?.name}
-            onSelectAccount={() => setView('account')}
-            onSelectDriver={() => setView('driver')}
-            onSelectMessages={() => setView('messages')}
-            onSelectPendencias={() => setView('pendencias')}
-            onSelectMotoboyPanel={handleOpenMotoboyPanel}
-            onSignOut={handleSignOut}
-          />
-        )}
-        {view === 'account' && <AccountView onBack={() => setView('menu')} />}
-        {view === 'driver' && <DriverView onBack={() => setView('menu')} onClose={handleClose} />}
-        {view === 'messages' && <MessagesView onBack={() => setView('menu')} />}
-        {view === 'pendencias' && <PendenciasView onBack={() => setView('menu')} />}
-      </View>
+        <Animated.View
+          style={{ opacity: viewOpacity, transform: [{ translateX }] }}
+        >
+          {displayedView === 'menu' && (
+            <MenuView
+              userName={user?.name}
+              onSelectAccount={() => setView('account')}
+              onSelectDriver={() => setView('driver')}
+              onSelectMessages={() => setView('messages')}
+              onSelectPendencias={() => setView('pendencias')}
+              onSelectMotoboyPanel={handleOpenMotoboyPanel}
+              onSignOut={handleSignOut}
+            />
+          )}
+          {displayedView === 'account' && <AccountView onBack={() => setView('menu')} />}
+          {displayedView === 'driver' && (
+            <DriverView onBack={() => setView('menu')} onClose={handleClose} />
+          )}
+          {displayedView === 'messages' && <MessagesView onBack={() => setView('menu')} />}
+          {displayedView === 'pendencias' && <PendenciasView onBack={() => setView('menu')} />}
+        </Animated.View>
+      </Animated.View>
     </Modal>
   );
 }

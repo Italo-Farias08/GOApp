@@ -12,7 +12,8 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import AnimatedRoute from '../components/AnimatedRoute';
 import type { Socket } from 'socket.io-client';
 import Button from '../components/Button';
 import CancelRideModal from '../components/CancelRideModal';
@@ -21,7 +22,9 @@ import DriverMessagesModal from '../components/DriverMessagesModal';
 import ConfirmarPixPrepagoModal from '../components/ConfirmarPixPrepagoModal';
 import FinalizarCorridaModal, { FormaFinalizacao } from '../components/FinalizarCorridaModal';
 import MapPin from '../components/MapPin';
-import DirectionIndicator from '../components/DirectionIndicator';
+import UserDirectionIndicator, {
+  type UserDirectionIndicatorHandle,
+} from '../components/UserDirectionIndicator';
 import PixPaymentModal from '../components/PixPaymentModal';
 import StatusToast, { StatusToastTone } from '../components/StatusToast';
 import SwipeButton from '../components/SwipeButton';
@@ -176,15 +179,17 @@ export default function DriverHomeScreen() {
   // não funcionava de forma confiável nesse setup, então o indicador de
   // direção é uma View comum sobreposta ao mapa, reposicionada em pixel
   // real a cada movimento de câmera (não fica preso ao centro da tela).
-  const [pontoTelaMotorista, setPontoTelaMotorista] = useState<{ x: number; y: number } | null>(
-    null
-  );
+  // Ver o comentário equivalente no HomeScreen (passageiro): isso era
+  // useState e forçava um re-render da tela inteira a cada onRegionChange.
+  // Agora é uma ref imperativa pro <UserDirectionIndicator>, atualizado via
+  // Animated sem passar pelo React.
+  const indicadorDirecaoRef = useRef<UserDirectionIndicatorHandle>(null);
 
   async function atualizarPontoTelaMotorista() {
     if (!coords) return;
     try {
       const ponto = await mapRef.current?.pointForCoordinate(coords);
-      if (ponto) setPontoTelaMotorista(ponto);
+      if (ponto) indicadorDirecaoRef.current?.mover(ponto.x, ponto.y);
     } catch {
       // Mapa ainda não terminou de montar — o próximo onRegionChange tenta de novo.
     }
@@ -860,43 +865,18 @@ export default function DriverHomeScreen() {
             >
               <MapPin variant="destino" />
             </Marker>
-            {rota && (
-              <>
-                <Polyline
-                  coordinates={rota.coordenadas}
-                  strokeColor={scheme === 'claro' ? 'rgba(255,255,255,0.9)' : 'rgba(8,9,14,0.85)'}
-                  strokeWidth={8}
-                  zIndex={1}
-                />
-                <Polyline
-                  coordinates={rota.coordenadas}
-                  strokeColor={colors.primary}
-                  strokeWidth={4}
-                  zIndex={2}
-                />
-              </>
-            )}
+            {rota && <AnimatedRoute coordenadas={rota.coordenadas} />}
           </>
         )}
       </MapView>
 
-      {!!coords && !!pontoTelaMotorista && (
-        <View
-          pointerEvents="none"
-          style={[
-            styles.direcaoOverlayPivo,
-            {
-              left: pontoTelaMotorista.x,
-              top: pontoTelaMotorista.y,
-              transform: [{ rotate: `${heading ?? 0}deg` }],
-            },
-          ]}
-        >
-          <View style={styles.direcaoOverlayCentralizador}>
-            <DirectionIndicator />
-          </View>
-        </View>
-      )}
+      <UserDirectionIndicator
+        ref={indicadorDirecaoRef}
+        heading={heading}
+        visivel={!!coords}
+        pivoStyle={styles.direcaoOverlayPivo}
+        centralizadorStyle={styles.direcaoOverlayCentralizador}
+      />
 
       <View pointerEvents="none" style={styles.mapBrightener} />
 

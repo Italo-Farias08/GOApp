@@ -219,7 +219,16 @@ export type HistoricoCorridaMotoristaItem = {
 
 // --- Pagamento Pix pré-pago ---
 
-export type StatusPagamentoPix = 'pendente' | 'aprovado' | 'recusado' | 'expirado';
+// 'estornado' e 'estorno_pendente' só acontecem depois que a corrida já foi
+// criada e cancelada (Pix pré-pago), então nunca aparecem enquanto o app
+// ainda está mostrando o QR code pra pagar.
+export type StatusPagamentoPix =
+  | 'pendente'
+  | 'aprovado'
+  | 'recusado'
+  | 'expirado'
+  | 'estornado'
+  | 'estorno_pendente';
 
 export type PagamentoPix = {
   id: string;

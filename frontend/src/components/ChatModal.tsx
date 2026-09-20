@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 import {
   ActivityIndicator,
+  Animated,
   FlatList,
   KeyboardAvoidingView,
   Modal,
@@ -11,6 +12,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { useSheetModalAnimation } from '../hooks/useModalAnimation';
 import { radius, spacing, typography } from '../theme/theme';
 import type { ThemeColors } from '../theme/theme';
 import { useTheme } from '../theme/ThemeContext';
@@ -75,15 +77,20 @@ export default function ChatModal({
     }
   }
 
+  const { mounted, backdropOpacity, translateY } = useSheetModalAnimation(visible);
+  if (!mounted) return null;
+
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onFechar}>
-      <Pressable style={styles.backdrop} onPress={onFechar} />
+    <Modal visible transparent animationType="none" onRequestClose={onFechar}>
+      <Animated.View style={[styles.backdrop, { opacity: backdropOpacity }]}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onFechar} />
+      </Animated.View>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 40 : 0}
         style={styles.sheetWrapper}
       >
-        <View style={styles.sheet}>
+        <Animated.View style={[styles.sheet, { transform: [{ translateY }] }]}>
           <View style={styles.handle} />
 
           <View style={styles.cabecalho}>
@@ -158,7 +165,7 @@ export default function ChatModal({
               <SendIcon size={18} color={colors.onPrimary} />
             </Pressable>
           </View>
-        </View>
+        </Animated.View>
       </KeyboardAvoidingView>
     </Modal>
   );

@@ -12,6 +12,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Button from '../components/Button';
 import CityBackground from '../components/CityBackground';
 import { useAuth } from '../context/AuthContext';
@@ -26,6 +27,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Login'>;
 export default function LoginScreen({ navigation }: Props) {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
+  const insets = useSafeAreaInsets();
 
   const { signInWithPhone, signInWithGoogle } = useAuth();
   const [phone, setPhone] = useState('');
@@ -127,7 +129,7 @@ export default function LoginScreen({ navigation }: Props) {
     <LinearGradient colors={['#070B1A', '#0A0F24']} style={styles.flex}>
       <CityBackground />
       <Animated.View style={[styles.flex, { transform: [{ translateY: deslocamento }] }]}>
-        <View style={styles.container}>
+        <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom + spacing.lg }]}>
           <View style={styles.header}>
             <Image
               source={require('../../assets/logo.png')}

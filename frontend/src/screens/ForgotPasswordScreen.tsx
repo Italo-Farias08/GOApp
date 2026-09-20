@@ -13,6 +13,7 @@ import {
   TouchableWithoutFeedback,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Button from '../components/Button';
 import CityBackground from '../components/CityBackground';
 import { useAuth } from '../context/AuthContext';
@@ -28,6 +29,7 @@ const REGEX_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export default function ForgotPasswordScreen({ navigation }: Props) {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
+  const insets = useSafeAreaInsets();
 
   const { forgotPassword } = useAuth();
   const [email, setEmail] = useState('');
@@ -62,7 +64,7 @@ export default function ForgotPasswordScreen({ navigation }: Props) {
           style={styles.flex}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
-          <View style={styles.container}>
+          <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom + spacing.lg }]}>
             <Pressable style={styles.backButton} onPress={() => navigation.goBack()} hitSlop={12}>
               <Text style={styles.backArrow}>‹</Text>
               <Text style={styles.backLabel}>Voltar</Text>

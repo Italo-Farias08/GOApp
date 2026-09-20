@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
-import { Image, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, Image, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSheetModalAnimation } from '../hooks/useModalAnimation';
 import { radius, spacing, typography } from '../theme/theme';
 import type { ThemeColors } from '../theme/theme';
 import { useTheme } from '../theme/ThemeContext';
@@ -73,10 +74,15 @@ export default function RideOptionsModal({
   const duracaoMin = estimativas[0]?.duracaoMin ?? 0;
   const labelHorario = estimativas[0]?.labelHorario ?? null;
 
+  const { mounted, backdropOpacity, translateY } = useSheetModalAnimation(visible);
+  if (!mounted) return null;
+
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose} />
-      <View style={styles.sheet}>
+    <Modal visible transparent animationType="none" onRequestClose={onClose}>
+      <Animated.View style={[styles.backdrop, { opacity: backdropOpacity }]}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+      </Animated.View>
+      <Animated.View style={[styles.sheet, { transform: [{ translateY }] }]}>
         <View style={styles.handle} />
 
         <Text style={styles.title}>Como você quer ir?</Text>
@@ -171,7 +177,7 @@ export default function RideOptionsModal({
           style={styles.confirmButton}
         />
         <Button label="Cancelar" variant="ghost" onPress={onClose} />
-      </View>
+      </Animated.View>
     </Modal>
   );
 }

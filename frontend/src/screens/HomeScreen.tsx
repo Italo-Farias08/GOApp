@@ -16,14 +16,18 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import AnimatedRoute from '../components/AnimatedRoute';
 import type { Socket } from 'socket.io-client';
 import Button from '../components/Button';
 import CancelRideModal from '../components/CancelRideModal';
 import ChatModal from '../components/ChatModal';
 import CompleteProfileModal from '../components/CompleteProfileModal';
 import MapPin from '../components/MapPin';
-import DirectionIndicator from '../components/DirectionIndicator';
+import UserDirectionIndicator, {
+  type UserDirectionIndicatorHandle,
+} from '../components/UserDirectionIndicator';
 import PixPaymentModal from '../components/PixPaymentModal';
 import PromoBanners, { Banner } from '../components/PromoBanners';
 import RideOptionsModal from '../components/RideOptionsModal';
@@ -137,6 +141,7 @@ const MOTIVOS_CANCELAMENTO_PASSAGEIRO = [
 
 export default function HomeScreen() {
   const { colors, scheme } = useTheme();
+  const insets = useSafeAreaInsets();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
   const { user, precisaCompletarCadastro, updateAccount } = useAuth();
@@ -153,7 +158,13 @@ export default function HomeScreen() {
   // tela) ou arrastava o mapa. Recalculando esse ponto a cada movimento do
   // mapa via `pointForCoordinate`, o farol acompanha sua posição real na
   // tela em vez de ficar preso ao centro.
-  const [pontoTelaUsuario, setPontoTelaUsuario] = useState<{ x: number; y: number } | null>(null);
+  // Posição em pixel do indicador de direção. Antes era `useState` aqui —
+  // isso significava re-renderizar a Home inteira (dezenas de states, bottom
+  // sheet, chat, listas...) a cada frame do loop de rastreamento no Android.
+  // Agora é uma ref imperativa pro <UserDirectionIndicator>, que atualiza a
+  // posição via Animated sem passar pelo React. Ver esse componente e
+  // `atualizarPontoTelaUsuario` abaixo.
+  const indicadorDirecaoRef = useRef<UserDirectionIndicatorHandle>(null);
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [opcoesVisiveis, setOpcoesVisiveis] = useState(false);
   const [estimativas, setEstimativas] = useState<EstimativaCorrida[]>([]);
@@ -819,7 +830,7 @@ export default function HomeScreen() {
     if (!coords) return;
     try {
       const ponto = await mapRef.current?.pointForCoordinate(coords);
-      if (ponto) setPontoTelaUsuario(ponto);
+      if (ponto) indicadorDirecaoRef.current?.mover(ponto.x, ponto.y);
     } catch {
       // Mapa ainda não terminou de montar / método indisponível nesse
       // instante — não tem problema, o próximo onRegionChange tenta de novo.
@@ -854,9 +865,16 @@ export default function HomeScreen() {
       return;
     }
     let ativo = true;
+    // Throttle pra ~30fps (a cada 2 frames): a setinha de direção não
+    // precisa de 60fps pra parecer fluida, e isso já corta pela metade as
+    // chamadas de pointForCoordinate() (ponte nativa) por segundo. O
+    // trabalho de renderização em si já não é mais o gargalo (ver
+    // UserDirectionIndicator) — isso aqui é só economia extra de CPU/bateria.
+    let contador = 0;
     function loop() {
       if (!ativo) return;
-      atualizarPontoTelaUsuario();
+      contador += 1;
+      if (contador % 2 === 0) atualizarPontoTelaUsuario();
       rafIdRef.current = requestAnimationFrame(loop);
     }
     rafIdRef.current = requestAnimationFrame(loop);
@@ -1207,26 +1225,7 @@ export default function HomeScreen() {
             <MapPin variant="destino" />
           </Marker>
         )}
-        {rota && (
-          <>
-            {/* Contorno: linha mais larga por baixo, numa cor que sempre
-                contrasta com o fundo do mapa (clara no escuro, escura no
-                claro). É o que faz a rota "flutuar" sobre o mapa em vez de
-                se misturar com ruas da mesma cor. */}
-            <Polyline
-              coordinates={rota.coordenadas}
-              strokeColor={scheme === 'claro' ? 'rgba(255,255,255,0.9)' : 'rgba(8,9,14,0.85)'}
-              strokeWidth={8}
-              zIndex={1}
-            />
-            <Polyline
-              coordinates={rota.coordenadas}
-              strokeColor={colors.primary}
-              strokeWidth={4}
-              zIndex={2}
-            />
-          </>
-        )}
+        {rota && <AnimatedRoute coordenadas={rota.coordenadas} />}
         {localizacaoMotorista && coordenadaInicialMotorista && (
           <Marker
             ref={marcadorMotoristaRef}
@@ -1265,23 +1264,13 @@ export default function HomeScreen() {
           bug. Melhor não mostrar setinha nenhuma nesse caso do que mostrar
           uma direção errada/parada — a bolinha de localização sozinha
           (showsUserLocation, nativa) continua aparecendo normalmente. */}
-      {!!coords && heading !== null && !destinoSelecionado && !!pontoTelaUsuario && (
-        <View
-          pointerEvents="none"
-          style={[
-            styles.farolOverlayPivo,
-            {
-              left: pontoTelaUsuario.x,
-              top: pontoTelaUsuario.y,
-              transform: [{ rotate: `${heading ?? 0}deg` }],
-            },
-          ]}
-        >
-          <View style={styles.direcaoOverlayCentralizador}>
-            <DirectionIndicator />
-          </View>
-        </View>
-      )}
+      <UserDirectionIndicator
+        ref={indicadorDirecaoRef}
+        heading={heading}
+        visivel={!!coords && heading !== null && !destinoSelecionado}
+        pivoStyle={styles.farolOverlayPivo}
+        centralizadorStyle={styles.direcaoOverlayCentralizador}
+      />
 
       <View pointerEvents="none" style={styles.mapBrightener} />
 
@@ -1414,7 +1403,7 @@ export default function HomeScreen() {
           },
         ]}
       >
-        <View onLayout={medirConteudo}>
+        <View onLayout={medirConteudo} style={{ paddingBottom: insets.bottom }}>
           <View style={styles.cabecalhoArrastavel}>
             {expandido && (
               <Text style={styles.bottomTitle}>

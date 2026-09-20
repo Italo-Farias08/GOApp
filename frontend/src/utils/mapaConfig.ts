@@ -1,95 +1,93 @@
+
 export const DARK_MAP_STYLE = [
-  // Fundo mais escuro que antes — é essa distância de tom em relação à cor
-  // das ruas (bem mais clara agora, ver `road` abaixo) que faz a malha
-  // viária ficar legível. Antes as duas cores quase se encostavam.
-  { elementType: 'geometry', stylers: [{ color: '#181a24' }] },
+  { elementType: 'geometry', stylers: [{ color: '#0a0a0d' }] },
   { elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
-  { elementType: 'labels.text.fill', stylers: [{ color: '#8d93a6' }] },
-  { elementType: 'labels.text.stroke', stylers: [{ color: '#0d0e14' }] },
+  { elementType: 'labels.text.fill', stylers: [{ color: '#84858c' }] },
+  { elementType: 'labels.text.stroke', stylers: [{ color: '#000000' }] },
   {
     featureType: 'administrative',
     elementType: 'geometry',
     stylers: [{ visibility: 'off' }],
   },
-  // Nomes de comércio (mercado, loja, restaurante...) escondidos — deixa só
-  // parques e estações de transporte, que ajudam de fato a se orientar.
   {
-    featureType: 'poi.business',
+    featureType: 'administrative.locality',
+    elementType: 'labels',
     stylers: [{ visibility: 'off' }],
   },
+  // Nada de ícone/nome de comércio — só o essencial pra se orientar.
   {
     featureType: 'poi',
-    elementType: 'geometry',
-    stylers: [{ color: '#20222e' }],
-  },
-  {
-    featureType: 'poi',
-    elementType: 'labels.text.fill',
-    stylers: [{ color: '#6b7189' }],
+    stylers: [{ visibility: 'off' }],
   },
   {
     featureType: 'poi.park',
     elementType: 'geometry',
-    stylers: [{ color: '#182119' }],
+    stylers: [{ color: '#0e130f' }],
   },
   {
     featureType: 'road',
     elementType: 'geometry',
-    stylers: [{ color: '#454b66' }],
+    stylers: [{ color: '#28282d' }],
   },
   {
     featureType: 'road',
     elementType: 'geometry.stroke',
-    stylers: [{ color: '#2a2d3f' }],
+    stylers: [{ color: '#19191c' }],
   },
   {
     featureType: 'road',
     elementType: 'labels.text.fill',
-    stylers: [{ color: '#a3a8ba' }],
+    stylers: [{ color: '#7d7e85' }],
   },
-  // Arteriais (avenidas) um degrau acima da rua comum na hierarquia visual.
+  {
+    featureType: 'road.local',
+    elementType: 'labels',
+    stylers: [{ visibility: 'off' }],
+  },
   {
     featureType: 'road.arterial',
     elementType: 'geometry',
-    stylers: [{ color: '#525970' }],
+    stylers: [{ color: '#3a3a41' }],
   },
   {
     featureType: 'road.highway',
     elementType: 'geometry',
-    stylers: [{ color: '#6b7094' }],
+    stylers: [{ color: '#55555f' }],
   },
   {
     featureType: 'road.highway',
     elementType: 'geometry.stroke',
-    stylers: [{ color: '#2a2d3f' }],
+    stylers: [{ color: '#1c1c1f' }],
+  },
+  {
+    featureType: 'road.highway',
+    elementType: 'labels.text.fill',
+    stylers: [{ color: '#c4c4cc' }],
   },
   {
     featureType: 'transit',
-    elementType: 'geometry',
-    stylers: [{ color: '#20222e' }],
+    stylers: [{ visibility: 'off' }],
   },
   {
     featureType: 'water',
     elementType: 'geometry',
-    stylers: [{ color: '#0a0e1a' }],
+    stylers: [{ color: '#000000' }],
   },
   {
     featureType: 'water',
     elementType: 'labels.text.fill',
-    stylers: [{ color: '#4b5173' }],
+    stylers: [{ color: '#3d3d45' }],
   },
 ];
 
-// Mesma ideia do estilo escuro acima, só que com a paleta clara — pro mapa
-// não ficar "com uma cara" diferente do resto do app quando o modo claro
-// tá ativo (ver theme/ThemeContext.tsx). Segue a mesma estrutura, feature
-// por feature, só trocando as cores pra tons claros/pastel.
+// Estilo claro: bem mais "cheio" de detalhe, tipo o mapa do 99 de dia —
+// fundo quente (não branco puro), quarteirão e comércio visíveis com
+// ícones pequenos, avenidas e vias principais num tom amarelo/laranja
+// (a cor histórica de táxi que o 99 herda), água e parques bem marcados.
 export const LIGHT_MAP_STYLE = [
-  // Base um pouco mais escura (era quase idêntica ao branco das ruas —
-  // mesmo problema do tema escuro, só que invertido).
-  { elementType: 'geometry', stylers: [{ color: '#e7e7ec' }] },
+  { elementType: 'geometry', stylers: [{ color: '#f4f1ea' }] },
   { elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
-  { elementType: 'labels.text.fill', stylers: [{ color: '#6b7189' }] },
+  { elementType: 'labels.text.fill', stylers: [{ color: '#63666f' }] },
   { elementType: 'labels.text.stroke', stylers: [{ color: '#ffffff' }] },
   {
     featureType: 'administrative',
@@ -97,23 +95,46 @@ export const LIGHT_MAP_STYLE = [
     stylers: [{ visibility: 'off' }],
   },
   {
+    featureType: 'administrative.locality',
+    elementType: 'labels',
+    stylers: [{ visibility: 'off' }],
+  },
+  // Comércio de volta (com ícone pequeno) — é esse tipo de detalhe que dá
+  // a sensação de mapa "vivo" tipo 99/Uber, em vez de um mapa genérico.
+  {
     featureType: 'poi.business',
+    elementType: 'geometry',
+    stylers: [{ color: '#ece6d8' }],
+  },
+  {
+    featureType: 'poi.business',
+    elementType: 'labels.icon',
+    stylers: [{ visibility: 'on' }],
+  },
+  {
+    featureType: 'poi.business',
+    elementType: 'labels.text',
     stylers: [{ visibility: 'off' }],
   },
   {
     featureType: 'poi',
     elementType: 'geometry',
-    stylers: [{ color: '#dedee5' }],
+    stylers: [{ color: '#ece6d8' }],
   },
   {
     featureType: 'poi',
     elementType: 'labels.text.fill',
-    stylers: [{ color: '#8d93a6' }],
+    stylers: [{ color: '#8d8f78' }],
   },
   {
     featureType: 'poi.park',
     elementType: 'geometry',
-    stylers: [{ color: '#cfe6cf' }],
+    stylers: [{ color: '#c8e6c9' }],
+  },
+  {
+    featureType: 'poi.park',
+    elementType: 'labels.icon',
+    stylers: [{ visibility: 'on' }],
   },
   {
     featureType: 'road',
@@ -123,41 +144,51 @@ export const LIGHT_MAP_STYLE = [
   {
     featureType: 'road',
     elementType: 'geometry.stroke',
-    stylers: [{ color: '#c7c7d1' }],
+    stylers: [{ color: '#e0d9c5' }],
   },
   {
     featureType: 'road',
     elementType: 'labels.text.fill',
-    stylers: [{ color: '#6b7189' }],
+    stylers: [{ color: '#6b6d5e' }],
   },
   {
     featureType: 'road.arterial',
     elementType: 'geometry',
-    stylers: [{ color: '#fdf6e3' }],
+    stylers: [{ color: '#fff3d6' }],
   },
   {
     featureType: 'road.highway',
     elementType: 'geometry',
-    stylers: [{ color: '#f5cf7d' }],
+    stylers: [{ color: '#ffc93c' }],
   },
   {
     featureType: 'road.highway',
     elementType: 'geometry.stroke',
-    stylers: [{ color: '#e0b968' }],
+    stylers: [{ color: '#e8a90f' }],
   },
   {
-    featureType: 'transit',
+    featureType: 'road.highway',
+    elementType: 'labels.text.fill',
+    stylers: [{ color: '#5c4a06' }],
+  },
+  {
+    featureType: 'transit.station',
     elementType: 'geometry',
-    stylers: [{ color: '#dedee5' }],
+    stylers: [{ color: '#ece6d8' }],
+  },
+  {
+    featureType: 'transit.station',
+    elementType: 'labels.icon',
+    stylers: [{ visibility: 'on' }],
   },
   {
     featureType: 'water',
     elementType: 'geometry',
-    stylers: [{ color: '#bcd7ec' }],
+    stylers: [{ color: '#a9dcf5' }],
   },
   {
     featureType: 'water',
     elementType: 'labels.text.fill',
-    stylers: [{ color: '#7a8699' }],
+    stylers: [{ color: '#4f8aa8' }],
   },
 ];

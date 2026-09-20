@@ -1,6 +1,8 @@
 const corridaModelo = require('../modelos/corridaModelo');
 const usuarioModelo = require('../modelos/usuarioModelo');
 const dividaModelo = require('../modelos/dividaModelo');
+const pagamentoPixModelo = require('../modelos/pagamentoPixModelo');
+const mercadoPago = require('../utilitarios/mercadoPago');
 const { ErroHttp } = require('../intermediarios/tratadorErros');
 const soquete = require('../tempoReal/servidorSoquete');
 
@@ -14,7 +16,7 @@ const FORMAS_PAGAMENTO_VALIDAS = ['dinheiro', 'pix', 'pix_prepago'];
 // O Mercado Pago não aceita cobrança Pix abaixo desse valor — sem essa
 // checagem aqui, a corrida nasceria normal e só ia quebrar (com erro feio
 // do Mercado Pago) na hora de gerar o QR code pra pagar ou pra finalizar.
-const VALOR_MINIMO_CORRIDA = 5;
+const VALOR_MINIMO_CORRIDA = 4.3;
 
 function validarDadosCorrida({ origem, destino, tipoVeiculo, preco, distanciaKm, duracaoMin, formaPagamento }) {
   if (!origem?.latitude || !origem?.longitude || !destino?.latitude || !destino?.longitude) {
@@ -109,9 +111,48 @@ async function quitarDividasDaCorrida(corridaFinalizada) {
   return dividaModelo.quitarVarias(idsDividas, corridaFinalizada.id);
 }
 
+// Chamado sempre que uma corrida é cancelada DE VEZ (pelo passageiro, ou
+// pelo sistema depois que motoristas demais desistem dela) — ponto único
+// pra decidir se tem dinheiro pra devolver.
+//
+// Só corridas pagas com Pix PRÉ-pago retêm dinheiro antes de cancelar: o
+// Pix é aprovado ANTES da corrida nascer (ver pagamentoControlador.
+// confirmarCorridaSePago), então cancelar depois disso deixa o valor
+// parado no Mercado Pago sem nenhuma corrida pra "consumir" ele. Dinheiro
+// na mão e Pix pós-pago (gerado só na finalização) nunca chegam a reter
+// nada antes disso, então não têm o que estornar.
+async function estornarPixSeNecessario(corrida) {
+  if (corrida.forma_pagamento !== 'pix_prepago') return null;
+
+  const pagamento = await pagamentoPixModelo.buscarPrepagoAprovadoPorCorrida(corrida.id);
+  if (!pagamento) return null; // nada retido (pago em dinheiro/pix na mão, ou já estornado antes)
+
+  try {
+    await mercadoPago.estornarPagamento(pagamento.mercado_pago_id, pagamento.valor);
+    return pagamentoPixModelo.atualizarStatus(pagamento.id, 'estornado');
+  } catch (erro) {
+    // A corrida já foi cancelada nesse ponto — não faz sentido derrubar o
+    // cancelamento por causa de uma falha no estorno. Mas não pode passar
+    // batido: marca como pendente (pra alguém correr atrás manualmente no
+    // Mercado Pago) e grita bem alto no log.
+    console.error(
+      `[estorno pix] FALHA ao estornar pagamento ${pagamento.id} (corrida ${corrida.id}, ` +
+        `mercado_pago_id ${pagamento.mercado_pago_id}, valor R$${pagamento.valor}):`,
+      erro
+    );
+    try {
+      return await pagamentoPixModelo.atualizarStatus(pagamento.id, 'estorno_pendente');
+    } catch (erroSecundario) {
+      console.error(`[estorno pix] falha até ao marcar estorno_pendente pra ${pagamento.id}:`, erroSecundario);
+      return null;
+    }
+  }
+}
+
 module.exports = {
   validarDadosCorrida,
   criarEDespachar,
   quitarDividasDaCorrida,
+  estornarPixSeNecessario,
   FORMAS_PAGAMENTO_VALIDAS,
 };

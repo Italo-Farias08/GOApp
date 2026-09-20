@@ -82,4 +82,40 @@ async function consultarPagamento(mercadoPagoId) {
   return dados;
 }
 
-module.exports = { criarPagamentoPix, consultarPagamento };
+// Estorna (total ou parcialmente) um pagamento Pix já aprovado. Sem
+// `valor`, o Mercado Pago devolve o valor cheio da cobrança original.
+// Usado quando uma corrida paga com Pix pré-pago é cancelada — o dinheiro
+// já está retido no Mercado Pago (a corrida só nasce depois que o Pix é
+// aprovado), então precisa devolver pro passageiro.
+async function estornarPagamento(mercadoPagoId, valor) {
+  const corpo = {};
+  if (valor != null) {
+    corpo.amount = Number(Number(valor).toFixed(2));
+  }
+
+  const resposta = await fetch(`${BASE_URL}/v1/payments/${mercadoPagoId}/refunds`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${obterAccessToken()}`,
+    },
+    body: JSON.stringify(corpo),
+  });
+
+  const dados = await resposta.json();
+
+  if (!resposta.ok) {
+    console.error('[mercadoPago] resposta de erro ao estornar:', JSON.stringify(dados));
+    const mensagem =
+      dados?.message ||
+      dados?.cause?.[0]?.description ||
+      'Falha ao estornar o pagamento no Mercado Pago.';
+    const erro = new Error(mensagem);
+    erro.statusCode = 502;
+    throw erro;
+  }
+
+  return dados;
+}
+
+module.exports = { criarPagamentoPix, consultarPagamento, estornarPagamento };

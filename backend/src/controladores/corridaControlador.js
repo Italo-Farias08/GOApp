@@ -329,6 +329,11 @@ async function cancelar(req, res, next) {
         throw new ErroHttp(409, 'Essa corrida não pode mais ser cancelada.');
       }
 
+      // Se essa corrida foi paga com Pix pré-pago, o dinheiro já estava
+      // retido no Mercado Pago antes mesmo da corrida existir — cancelar
+      // sem devolver deixaria o passageiro sem o carro E sem o dinheiro.
+      await corridaServico.estornarPixSeNecessario(corridaCancelada);
+
       soquete.notificarCorridaCancelada({
         corridaId: corridaCancelada.id,
         passageiroId: corridaCancelada.passageiro_id,
@@ -368,6 +373,11 @@ async function cancelar(req, res, next) {
         resultado.motoristas_ignorados || []
       );
     } else {
+      // Idem ao cancelamento pelo passageiro: se ninguém mais aceitou e a
+      // corrida morreu de vez, e ela tinha sido paga com Pix pré-pago, o
+      // valor precisa voltar pro passageiro.
+      await corridaServico.estornarPixSeNecessario(resultado);
+
       soquete.notificarCorridaCancelada({
         corridaId: resultado.id,
         passageiroId: resultado.passageiro_id,

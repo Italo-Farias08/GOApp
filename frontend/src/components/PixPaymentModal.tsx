@@ -1,8 +1,9 @@
 import React, { useMemo } from 'react';
-import { ActivityIndicator, Image, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Animated, Image, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { radius, spacing, typography } from '../theme/theme';
 import type { ThemeColors } from '../theme/theme';
+import { useSheetModalAnimation } from '../hooks/useModalAnimation';
 import { useTheme } from '../theme/ThemeContext';
 import type { PagamentoPix } from '../types';
 import { formatarMoeda } from '../utils/precoCorrida';
@@ -55,10 +56,15 @@ export default function PixPaymentModal({
   const recusado = pagamento?.status === 'recusado';
   const comProblema = expirado || recusado;
 
+  const { mounted, backdropOpacity, translateY } = useSheetModalAnimation(visible);
+  if (!mounted) return null;
+
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onFechar}>
-      <Pressable style={styles.backdrop} onPress={onFechar} />
-      <View style={styles.sheet}>
+    <Modal visible transparent animationType="none" onRequestClose={onFechar}>
+      <Animated.View style={[styles.backdrop, { opacity: backdropOpacity }]}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onFechar} />
+      </Animated.View>
+      <Animated.View style={[styles.sheet, { transform: [{ translateY }] }]}>
         <View style={styles.handle} />
 
         <View style={styles.tituloRow}>
@@ -123,7 +129,7 @@ export default function PixPaymentModal({
             </Text>
           </Pressable>
         )}
-      </View>
+      </Animated.View>
     </Modal>
   );
 }

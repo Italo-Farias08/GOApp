@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   FlatList,
   Modal,
   Pressable,
@@ -12,6 +13,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import * as rideService from '../services/rideService';
 import { conectarSoquete } from '../services/socketService';
+import { useSheetModalAnimation } from '../hooks/useModalAnimation';
 import { radius, spacing, typography } from '../theme/theme';
 import type { ThemeColors } from '../theme/theme';
 import { useTheme } from '../theme/ThemeContext';
@@ -141,10 +143,15 @@ export default function DriverMessagesModal({ visible, onClose }: Props) {
     setTimeout(() => setConversaAberta(null), 300);
   }
 
+  const { mounted, backdropOpacity, translateY } = useSheetModalAnimation(visible);
+  if (!mounted) return null;
+
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={handleClose}>
-      <Pressable style={styles.backdrop} onPress={handleClose} />
-      <View style={styles.sheet}>
+    <Modal visible transparent animationType="none" onRequestClose={handleClose}>
+      <Animated.View style={[styles.backdrop, { opacity: backdropOpacity }]}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={handleClose} />
+      </Animated.View>
+      <Animated.View style={[styles.sheet, { transform: [{ translateY }] }]}>
         <View style={styles.handle} />
 
         <View style={styles.header}>
@@ -182,7 +189,7 @@ export default function DriverMessagesModal({ visible, onClose }: Props) {
             )}
           />
         )}
-      </View>
+      </Animated.View>
 
       {!!conversaAberta && (
         <ChatModal

@@ -1,7 +1,8 @@
 import React, { useMemo } from 'react';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { radius, spacing, typography } from '../theme/theme';
 import type { ThemeColors } from '../theme/theme';
+import { useSheetModalAnimation } from '../hooks/useModalAnimation';
 import { useTheme } from '../theme/ThemeContext';
 import Button from './Button';
 import { AlertIcon, CheckIcon } from './icons';
@@ -38,10 +39,15 @@ export default function CancelRideModal({
     if (visible) setMotivoSelecionado(null);
   }, [visible]);
 
+  const { mounted, backdropOpacity, translateY } = useSheetModalAnimation(visible);
+  if (!mounted) return null;
+
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onFechar}>
-      <Pressable style={styles.backdrop} onPress={carregando ? undefined : onFechar} />
-      <View style={styles.sheet}>
+    <Modal visible transparent animationType="none" onRequestClose={onFechar}>
+      <Animated.View style={[styles.backdrop, { opacity: backdropOpacity }]}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={carregando ? undefined : onFechar} />
+      </Animated.View>
+      <Animated.View style={[styles.sheet, { transform: [{ translateY }] }]}>
         <View style={styles.handle} />
 
         <View style={styles.tituloRow}>
@@ -85,7 +91,7 @@ export default function CancelRideModal({
           style={styles.botaoConfirmar}
         />
         <Button label="Voltar" variant="ghost" onPress={onFechar} disabled={carregando} />
-      </View>
+      </Animated.View>
     </Modal>
   );
 }

@@ -5,7 +5,7 @@ function paraPagamentoPublico(linha) {
   if (!linha) return null;
   return {
     id: linha.id,
-    status: linha.status, // 'pendente' | 'aprovado' | 'recusado' | 'expirado'
+    status: linha.status, // 'pendente' | 'aprovado' | 'recusado' | 'expirado' | 'estornado' | 'estorno_pendente'
     valor: Number(linha.valor),
     qrCode: linha.qr_code, // código "copia e cola"
     qrCodeBase64: linha.qr_code_base64, // imagem do QR code em base64 (PNG)
@@ -90,6 +90,22 @@ async function vincularCorrida(id, corridaId) {
   return resultado.rows[0] || buscarPorId(id);
 }
 
+// Busca o pagamento Pix PRÉ-pago já aprovado vinculado a uma corrida —
+// usado no cancelamento pra saber se tem dinheiro retido no Mercado Pago
+// pra devolver, e com qual mercado_pago_id. Filtra por 'aprovado' porque só
+// esse estado significa dinheiro de fato capturado (não existe corrida sem
+// isso, mas por segurança contra estorno duplicado, também não pega quem já
+// estiver 'estornado' ou 'estorno_pendente').
+async function buscarPrepagoAprovadoPorCorrida(corridaId) {
+  const resultado = await consultar(
+    `SELECT * FROM pagamentos_pix
+     WHERE corrida_id = $1 AND tipo = 'prepago' AND status = 'aprovado'
+     LIMIT 1`,
+    [corridaId]
+  );
+  return resultado.rows[0] || null;
+}
+
 module.exports = {
   paraPagamentoPublico,
   criar,
@@ -97,6 +113,7 @@ module.exports = {
   criarQuitacaoDivida,
   buscarPorId,
   buscarPorMercadoPagoId,
+  buscarPrepagoAprovadoPorCorrida,
   atualizarStatus,
   vincularCorrida,
 };
