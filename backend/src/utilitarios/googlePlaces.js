@@ -58,7 +58,6 @@ function calcularDistanciaMetros(lat1, lon1, lat2, lon2) {
   return 2 * R * Math.asin(Math.sqrt(a));
 }
 
-
 function gerarVarianteComNumeroNoFinal(input) {
   const tokens = input.trim().split(/\s+/);
   const indiceNumero = tokens.findIndex((t, i) => /^\d+$/.test(t) && i !== tokens.length - 1);
@@ -110,6 +109,39 @@ async function autocompleteCru({ input, sessionToken, latitude, longitude }) {
   }));
 }
 
+async function nearbySearchComoSugestoes({ input, latitude, longitude }) {
+  if (latitude == null || longitude == null) return [];
+
+  const params = new URLSearchParams({
+    keyword: input,
+    key: obterChave(),
+    language: 'pt-BR',
+    location: `${latitude},${longitude}`,
+    rankby: 'distance',
+  });
+
+  const resposta = await fetch(`${BASE_URL}/nearbysearch/json?${params.toString()}`);
+  const dados = await resposta.json();
+
+  console.log(`[busca endereço] nearby search "${input}" → status=${dados.status}, ${(dados.results || []).length} resultado(s)`);
+
+  if (dados.status !== 'OK' && dados.status !== 'ZERO_RESULTS') {
+    const erro = new Error(dados.error_message || `Falha na busca por perto (${dados.status}).`);
+    erro.statusCode = 502;
+    throw erro;
+  }
+
+  return (dados.results || []).map((r) => {
+    const local = r.geometry?.location;
+    return {
+      id: r.place_id,
+      placeId: r.place_id,
+      descricao: r.vicinity ? `${r.name}, ${r.vicinity}` : r.name,
+      distanciaMetros: local ? calcularDistanciaMetros(latitude, longitude, local.lat, local.lng) : null,
+    };
+  });
+}
+
 // Usa a Geocoding API (forward geocoding) como fonte alternativa de
 // sugestões — não tem autocomplete "de verdade" (não é feito pra digitação
 // parcial), mas costuma achar endereço específico que o Places Autocomplete
@@ -158,6 +190,11 @@ async function geocodeComoSugestoes({ input, latitude, longitude }) {
   });
 }
 
+// Último recurso, só quando nem o Autocomplete nem a Geocoding API do
+// Google acham nada aproveitável: usa o Nominatim (OpenStreetMap), que às
+// vezes tem ruas locais de cidades menores que o Google ainda não indexou
+// bem. É gratuito, mas o uso público tem limite de 1 requisição/segundo —
+// por isso só entra em último caso, nunca a cada tecla digitada.
 async function nominatimComoSugestoes({ input, latitude, longitude }) {
   const params = new URLSearchParams({
     q: input,
@@ -169,7 +206,9 @@ async function nominatimComoSugestoes({ input, latitude, longitude }) {
 
   const resposta = await fetch(`${NOMINATIM_URL}?${params.toString()}`, {
     headers: {
-
+      // Exigido pela política de uso do Nominatim — requisições sem um
+      // User-Agent identificável podem ser bloqueadas.
+      // (https://operations.osmfoundation.org/policies/nominatim/)
       'User-Agent': 'GOApp/1.0 (app de transporte; contato: suporte@goapp.com.br)',
     },
   });
@@ -191,7 +230,9 @@ async function nominatimComoSugestoes({ input, latitude, longitude }) {
         ? calcularDistanciaMetros(latitude, longitude, lat, lon)
         : null;
     return {
-  
+      // Nominatim não tem place_id do Google — usa o próprio osm_id como
+      // identificador. resolverEndereco() sabe lidar com os dois formatos
+      // (ver mais abaixo).
       id: `osm:${r.osm_type}:${r.osm_id}`,
       placeId: `osm:${r.osm_type}:${r.osm_id}`,
       descricao: r.display_name,
@@ -202,6 +243,12 @@ async function nominatimComoSugestoes({ input, latitude, longitude }) {
   });
 }
 
+// Geocodificação REVERSA: transforma coordenadas (lat/lng) num endereço
+// legível. Usada pra descobrir o endereço do PONTO DE EMBARQUE do
+// passageiro (ele só escolhe manualmente o destino — o embarque normalmente
+// é "onde ele está agora", só como coordenadas do GPS) — sem isso, o
+// motorista recebia a corrida sem nenhum endereço de onde buscar o
+// passageiro, só o pino no mapa.
 async function enderecoReverso({ latitude, longitude }) {
   const params = new URLSearchParams({
     latlng: `${latitude},${longitude}`,
@@ -230,12 +277,19 @@ async function enderecoReverso({ latitude, longitude }) {
   };
 }
 
+// Junta uma lista nova de sugestões numa lista já existente, sem duplicar
+// place_id repetido.
 function mesclarSemDuplicar(basePrincipal, novasSugestoes) {
   const idsJaEncontrados = new Set(basePrincipal.map((s) => s.placeId));
   const complemento = novasSugestoes.filter((s) => !idsJaEncontrados.has(s.placeId));
   return [...basePrincipal, ...complemento];
 }
 
+// Reordena a lista final: quem tem distância conhecida vem primeiro,
+// ordenado do mais perto pro mais longe; quem não tem (não deveria
+// acontecer sem coordenadas do usuário, mas por segurança) fica no fim, na
+// ordem em que chegou. Isso é o que de fato resolve "lugar longe aparecendo
+// antes do perto" — em vez de confiar só no bias fraco do Google.
 function ordenarPorDistancia(sugestoes) {
   return [...sugestoes].sort((a, b) => {
     if (a.distanciaMetros == null && b.distanciaMetros == null) return 0;
@@ -245,6 +299,21 @@ function ordenarPorDistancia(sugestoes) {
   });
 }
 
+// Sugestões de endereço enquanto o usuário digita (GET /addresses/autocomplete).
+// O `sessionToken` agrupa essa busca com a chamada de `detalhes` que vem
+// depois, pra cobrança sair como UMA sessão (bem mais barato do que cobrar
+// autocomplete + details como chamadas avulsas).
+//
+// Estratégia em camadas, só ativando a camada seguinte se a anterior veio
+// fraca (evita gastar chamada extra à toa quando a busca normal já for boa):
+//   1. Autocomplete com o texto exatamente como o usuário digitou.
+//   2. Se número estiver no meio da frase, tenta de novo com o número
+//      movido pro final (formato que o Google reconhece melhor).
+//   3. Nearby Search (rankby=distance) — pega estabelecimentos pouco
+//      conhecidos que o Autocomplete filtra por baixa "prominência".
+//   4. Geocoding API como complemento pra endereços.
+//   5. Nominatim (OpenStreetMap) como último recurso.
+// No final, tudo reordenado por distância real (ver ordenarPorDistancia).
 async function autocomplete({ input, sessionToken, latitude, longitude }) {
   let sugestoes = await autocompleteCru({ input, sessionToken, latitude, longitude });
 
@@ -262,6 +331,15 @@ async function autocomplete({ input, sessionToken, latitude, longitude }) {
       } catch (erroVariante) {
         console.log(`[busca endereço] variante "${variante}" → falhou: ${erroVariante.message}`);
       }
+    }
+  }
+
+  if (sugestoes.length < MINIMO_SUGESTOES_SEM_FALLBACK) {
+    try {
+      const sugestoesPorPerto = await nearbySearchComoSugestoes({ input, latitude, longitude });
+      sugestoes = mesclarSemDuplicar(sugestoes, sugestoesPorPerto);
+    } catch (erroNearby) {
+      console.log(`[busca endereço] nearby search fallback "${input}" → falhou: ${erroNearby.message}`);
     }
   }
 
