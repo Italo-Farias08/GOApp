@@ -16,7 +16,23 @@ const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
 // segunda versão da busca com o número reposicionado (ver
 // gerarVarianteComNumeroNoFinal) — ambas custam uma chamada extra, então só
 // valem a pena quando a busca "normal" veio fraca.
+//
+// Usado como critério ÚNICO só quando a gente não tem como calcular
+// distância nenhuma (sem latitude/longitude do usuário). Quando dá pra medir
+// distância, quem decide se a busca veio fraca é buscaVeioFraca() logo
+// abaixo — ver o comentário lá pra entender por quê.
 const MINIMO_SUGESTOES_SEM_FALLBACK = 3;
+
+// Raio (em metros) dentro do qual uma sugestão conta como "realisticamente
+// perto" do usuário. É o critério que substitui a contagem simples de
+// sugestões: o Google sempre devolve até 5 previsões pra qualquer busca com
+// texto suficiente (ex.: "Caic" tinha 5/5), então contar quantidade nunca
+// detecta o caso real de bug — 5 sugestões, todas de escolas CAIC de outras
+// cidades, a centenas de km de distância. Com esse raio, mesmo vindo 5
+// sugestões "cheias", se nenhuma estiver a menos de ~20km do usuário a busca
+// conta como fraca e as camadas extras (Nearby Search, Geocoding, Nominatim)
+// são acionadas.
+const RAIO_SUGESTAO_ACEITAVEL_METROS = 20000;
 
 // Raio (em metros) usado pra enviesar a busca pro entorno do usuário. Era
 // 50000 (50km, o máximo aceito pelo Google) — só que a própria documentação
@@ -277,6 +293,38 @@ async function enderecoReverso({ latitude, longitude }) {
   };
 }
 
+// Decide se a lista de sugestões (até aqui) conta como "fraca" — ou seja,
+// se vale a pena acionar a próxima camada de fallback.
+//
+// Critério novo: em vez de só contar quantas sugestões vieram, verifica se
+// PELO MENOS UMA está dentro de RAIO_SUGESTAO_ACEITAVEL_METROS. Se todas
+// vierem de longe — mesmo vindo as 5 que o Google devolve no máximo — conta
+// como busca fraca. É o que resolve o caso real: "Caic" sempre voltava
+// status=OK com 5 sugestões (o teto do Google), só que as 5 eram de escolas
+// CAIC de cidades distantes, então a condição antiga (< 3 sugestões) nunca
+// disparava e as camadas extras nunca chegavam a rodar — dá pra confirmar
+// isso direto no log de produção, onde só aparece a linha de `autocomplete`
+// e nunca a de `nearby search`.
+//
+// Quando não dá pra calcular distância nenhuma (usuário sem
+// latitude/longitude, então nenhuma sugestão tem `distanciaMetros`), não tem
+// como avaliar proximidade — aí cai de volta no critério antigo, só por
+// quantidade, pra não acionar fallback à toa em todo request sem
+// geolocalização.
+function buscaVeioFraca(sugestoes) {
+  if (sugestoes.length === 0) return true;
+
+  const temAlgumaDistanciaConhecida = sugestoes.some((s) => s.distanciaMetros != null);
+  if (!temAlgumaDistanciaConhecida) {
+    return sugestoes.length < MINIMO_SUGESTOES_SEM_FALLBACK;
+  }
+
+  const existeSugestaoPerto = sugestoes.some(
+    (s) => s.distanciaMetros != null && s.distanciaMetros <= RAIO_SUGESTAO_ACEITAVEL_METROS
+  );
+  return !existeSugestaoPerto;
+}
+
 // Junta uma lista nova de sugestões numa lista já existente, sem duplicar
 // place_id repetido.
 function mesclarSemDuplicar(basePrincipal, novasSugestoes) {
@@ -305,7 +353,9 @@ function ordenarPorDistancia(sugestoes) {
 // autocomplete + details como chamadas avulsas).
 //
 // Estratégia em camadas, só ativando a camada seguinte se a anterior veio
-// fraca (evita gastar chamada extra à toa quando a busca normal já for boa):
+// fraca — "fraca" decidido por buscaVeioFraca() (nenhuma sugestão
+// realisticamente perto, não só "poucas sugestões"; ver comentário lá) —
+// evitando gastar chamada extra à toa quando a busca normal já for boa:
 //   1. Autocomplete com o texto exatamente como o usuário digitou.
 //   2. Se número estiver no meio da frase, tenta de novo com o número
 //      movido pro final (formato que o Google reconhece melhor).
@@ -317,7 +367,7 @@ function ordenarPorDistancia(sugestoes) {
 async function autocomplete({ input, sessionToken, latitude, longitude }) {
   let sugestoes = await autocompleteCru({ input, sessionToken, latitude, longitude });
 
-  if (sugestoes.length < MINIMO_SUGESTOES_SEM_FALLBACK) {
+  if (buscaVeioFraca(sugestoes)) {
     const variante = gerarVarianteComNumeroNoFinal(input);
     if (variante) {
       try {
@@ -334,7 +384,7 @@ async function autocomplete({ input, sessionToken, latitude, longitude }) {
     }
   }
 
-  if (sugestoes.length < MINIMO_SUGESTOES_SEM_FALLBACK) {
+  if (buscaVeioFraca(sugestoes)) {
     try {
       const sugestoesPorPerto = await nearbySearchComoSugestoes({ input, latitude, longitude });
       sugestoes = mesclarSemDuplicar(sugestoes, sugestoesPorPerto);
@@ -343,7 +393,7 @@ async function autocomplete({ input, sessionToken, latitude, longitude }) {
     }
   }
 
-  if (sugestoes.length < MINIMO_SUGESTOES_SEM_FALLBACK) {
+  if (buscaVeioFraca(sugestoes)) {
     try {
       const sugestoesGeocode = await geocodeComoSugestoes({ input, latitude, longitude });
       sugestoes = mesclarSemDuplicar(sugestoes, sugestoesGeocode);
@@ -352,7 +402,7 @@ async function autocomplete({ input, sessionToken, latitude, longitude }) {
     }
   }
 
-  if (sugestoes.length < MINIMO_SUGESTOES_SEM_FALLBACK) {
+  if (buscaVeioFraca(sugestoes)) {
     try {
       const sugestoesNominatim = await nominatimComoSugestoes({ input, latitude, longitude });
       sugestoes = mesclarSemDuplicar(sugestoes, sugestoesNominatim);
