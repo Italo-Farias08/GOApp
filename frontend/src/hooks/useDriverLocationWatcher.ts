@@ -83,13 +83,28 @@ export function useDriverLocationWatcher(ativo: boolean, corridaId: string | nul
       pararRastreamentoSegundoPlano();
       return;
     }
-    iniciarRastreamentoSegundoPlano().then((concedida) => {
-      if (!concedida) {
+    iniciarRastreamentoSegundoPlano()
+      .then((concedida) => {
+        if (!concedida) {
+          setErrorMessage(
+            'Ative a localização "Permitir sempre" pro #GO nas configurações do aparelho pra continuar recebendo corridas com o app minimizado ou a tela travada.'
+          );
+        }
+      })
+      .catch((erro) => {
+        // startLocationUpdatesAsync só funciona dentro de um build de
+        // verdade (dev client / standalone) — no Expo Go ele rejeita
+        // (ERR_LOCATION_INFO_PLIST), e sem esse catch essa rejeição não
+        // tratada derrubava o app inteiro assim que o motorista tentava
+        // ficar online. Agora só avisa e segue com o rastreamento em
+        // PRIMEIRO plano (watchPositionAsync logo abaixo) funcionando
+        // normal — só o "continuar recebendo corrida com o app minimizado"
+        // que fica sem efeito até rodar num build de verdade.
+        console.error('[localizacao-segundo-plano] não foi possível iniciar:', erro);
         setErrorMessage(
-          'Ative a localização "Permitir sempre" pro #GO nas configurações do aparelho pra continuar recebendo corridas com o app minimizado ou a tela travada.'
+          'Não foi possível ativar o rastreamento em segundo plano neste ambiente de teste. Mantenha o app aberto em primeiro plano para continuar recebendo corridas.'
         );
-      }
-    });
+      });
   }, [ativo]);
 
   useEffect(() => {

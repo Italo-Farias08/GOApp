@@ -175,10 +175,7 @@ export type Corrida = {
   embarqueEm?: string;
   canceladoPor?: CanceladoPor;
   motivoCancelamento?: string;
-  // Campo só de resposta (não persistido no banco): true quando, no exato
-  // instante em que a corrida foi criada, não havia nenhum motorista do
-  // tipo de veículo pedido disponível por perto. Usado pro app avisar o
-  // passageiro com um modal — a busca continua normalmente mesmo assim.
+
   semMotoristasDisponiveis?: boolean;
 };
 

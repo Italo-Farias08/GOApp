@@ -10,12 +10,27 @@
 
 const BASE_URL = 'https://maps.googleapis.com/maps/api/place';
 const GEOCODE_URL = 'https://maps.googleapis.com/maps/api/geocode/json';
+const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
 
 // Abaixo desse número de sugestões, também tenta a Geocoding API e/ou uma
 // segunda versão da busca com o número reposicionado (ver
 // gerarVarianteComNumeroNoFinal) — ambas custam uma chamada extra, então só
 // valem a pena quando a busca "normal" veio fraca.
 const MINIMO_SUGESTOES_SEM_FALLBACK = 3;
+
+// Raio (em metros) usado pra enviesar a busca pro entorno do usuário. Era
+// 50000 (50km, o máximo aceito pelo Google) — só que a própria documentação
+// do Google avisa: "resultados de estabelecimento (comércios, negócios)
+// geralmente não pontuam alto o suficiente pra aparecer quando a área de
+// busca é grande. Use um raio menor." Era exatamente por isso que buscar
+// "Mc Donalds" ou "Shopping X" não achava nada — a busca tratava o Brasil
+// inteiro como "perto" o bastante pra empatar com endereços genéricos, e o
+// estabelecimento local sempre perdia. Um raio de 15km ainda cobre uma
+// cidade inteira e a região metropolitana ao redor, mas é apertado o
+// suficiente pra estabelecimentos locais competirem de verdade — e também
+// ajuda a ordenação geral (itens de fora desse raio precisam ser bem mais
+// relevantes por texto pra aparecer antes dos próximos).
+const RAIO_BUSCA_METROS = 15000;
 
 function obterChave() {
   const chave = process.env.GOOGLE_PLACES_API_KEY;
@@ -29,13 +44,21 @@ function obterChave() {
   return chave;
 }
 
-// Gera uma segunda versão da consulta com o número do endereço movido pro
-// FINAL, no formato "nome da rua, número" — é assim que o Google reconhece
-// melhor. Resolve casos tipo "Rua 3 caic" (o Google acha que "Rua 3" é o
-// nome, quando na real é "Rua Caic, nº 3") virando "Rua caic, 3".
-//
-// Só mexe quando o número está no MEIO da frase — se já estiver no fim
-// (ou não tiver número nenhum), não tem o que melhorar, então devolve null.
+// Distância em metros entre dois pontos (fórmula de Haversine) — usada pra
+// dar uma distância de verdade pras sugestões que não vêm com
+// `distance_meters` pronto (Geocoding API e Nominatim não têm esse campo).
+function calcularDistanciaMetros(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const toRad = (graus) => (graus * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+
 function gerarVarianteComNumeroNoFinal(input) {
   const tokens = input.trim().split(/\s+/);
   const indiceNumero = tokens.findIndex((t, i) => /^\d+$/.test(t) && i !== tokens.length - 1);
@@ -58,7 +81,14 @@ async function autocompleteCru({ input, sessionToken, latitude, longitude }) {
 
   if (latitude != null && longitude != null) {
     params.set('location', `${latitude},${longitude}`);
-    params.set('radius', '50000'); // ~50km, só pra priorizar por perto sem travar o resto do Brasil
+    params.set('radius', String(RAIO_BUSCA_METROS));
+    // `origin` faz o Google devolver `distance_meters` em cada sugestão —
+    // sem isso a gente não tem NENHUM jeito de saber a distância real de
+    // cada resultado, só confiar que o "bias" do location+radius ordenou
+    // direito (e, como vimos, ele ordena fraco). Com `distance_meters` em
+    // mãos, a gente reordena a lista final por conta própria (ver
+    // ordenarPorDistancia), garantindo "mais perto primeiro" de verdade.
+    params.set('origin', `${latitude},${longitude}`);
   }
 
   const resposta = await fetch(`${BASE_URL}/autocomplete/json?${params.toString()}`);
@@ -76,6 +106,7 @@ async function autocompleteCru({ input, sessionToken, latitude, longitude }) {
     id: p.place_id,
     placeId: p.place_id,
     descricao: p.description,
+    distanciaMetros: p.distance_meters ?? null,
   }));
 }
 
@@ -112,19 +143,65 @@ async function geocodeComoSugestoes({ input, latitude, longitude }) {
     throw erro;
   }
 
-  return (dados.results || []).map((r) => ({
-    id: r.place_id,
-    placeId: r.place_id,
-    descricao: r.formatted_address,
-  }));
+  return (dados.results || []).map((r) => {
+    const local = r.geometry?.location;
+    const distanciaMetros =
+      latitude != null && longitude != null && local
+        ? calcularDistanciaMetros(latitude, longitude, local.lat, local.lng)
+        : null;
+    return {
+      id: r.place_id,
+      placeId: r.place_id,
+      descricao: r.formatted_address,
+      distanciaMetros,
+    };
+  });
 }
 
-// Geocodificação REVERSA: transforma coordenadas (lat/lng) num endereço
-// legível. Usada pra descobrir o endereço do PONTO DE EMBARQUE do
-// passageiro (ele só escolhe manualmente o destino — o embarque normalmente
-// é "onde ele está agora", só como coordenadas do GPS) — sem isso, o
-// motorista recebia a corrida sem nenhum endereço de onde buscar o
-// passageiro, só o pino no mapa.
+async function nominatimComoSugestoes({ input, latitude, longitude }) {
+  const params = new URLSearchParams({
+    q: input,
+    format: 'jsonv2',
+    countrycodes: 'br',
+    'accept-language': 'pt-BR',
+    limit: '5',
+  });
+
+  const resposta = await fetch(`${NOMINATIM_URL}?${params.toString()}`, {
+    headers: {
+
+      'User-Agent': 'GOApp/1.0 (app de transporte; contato: suporte@goapp.com.br)',
+    },
+  });
+
+  if (!resposta.ok) {
+    const erro = new Error(`Falha na busca do Nominatim (HTTP ${resposta.status}).`);
+    erro.statusCode = 502;
+    throw erro;
+  }
+
+  const resultados = await resposta.json();
+  console.log(`[busca endereço] nominatim "${input}" → ${resultados.length} sugestão(ões)`);
+
+  return resultados.map((r) => {
+    const lat = Number(r.lat);
+    const lon = Number(r.lon);
+    const distanciaMetros =
+      latitude != null && longitude != null
+        ? calcularDistanciaMetros(latitude, longitude, lat, lon)
+        : null;
+    return {
+  
+      id: `osm:${r.osm_type}:${r.osm_id}`,
+      placeId: `osm:${r.osm_type}:${r.osm_id}`,
+      descricao: r.display_name,
+      latitude: lat,
+      longitude: lon,
+      distanciaMetros,
+    };
+  });
+}
+
 async function enderecoReverso({ latitude, longitude }) {
   const params = new URLSearchParams({
     latlng: `${latitude},${longitude}`,
@@ -153,25 +230,21 @@ async function enderecoReverso({ latitude, longitude }) {
   };
 }
 
-// Junta uma lista nova de sugestões numa lista já existente, sem duplicar
-// place_id repetido.
 function mesclarSemDuplicar(basePrincipal, novasSugestoes) {
   const idsJaEncontrados = new Set(basePrincipal.map((s) => s.placeId));
   const complemento = novasSugestoes.filter((s) => !idsJaEncontrados.has(s.placeId));
   return [...basePrincipal, ...complemento];
 }
 
-// Sugestões de endereço enquanto o usuário digita (GET /addresses/autocomplete).
-// O `sessionToken` agrupa essa busca com a chamada de `detalhes` que vem
-// depois, pra cobrança sair como UMA sessão (bem mais barato do que cobrar
-// autocomplete + details como chamadas avulsas).
-//
-// Estratégia em camadas, só ativando a camada seguinte se a anterior veio
-// fraca (evita gastar chamada extra à toa quando a busca normal já for boa):
-//   1. Autocomplete com o texto exatamente como o usuário digitou.
-//   2. Se número estiver no meio da frase, tenta de novo com o número
-//      movido pro final (formato que o Google reconhece melhor).
-//   3. Geocoding API como último complemento.
+function ordenarPorDistancia(sugestoes) {
+  return [...sugestoes].sort((a, b) => {
+    if (a.distanciaMetros == null && b.distanciaMetros == null) return 0;
+    if (a.distanciaMetros == null) return 1;
+    if (b.distanciaMetros == null) return -1;
+    return a.distanciaMetros - b.distanciaMetros;
+  });
+}
+
 async function autocomplete({ input, sessionToken, latitude, longitude }) {
   let sugestoes = await autocompleteCru({ input, sessionToken, latitude, longitude });
 
@@ -201,13 +274,45 @@ async function autocomplete({ input, sessionToken, latitude, longitude }) {
     }
   }
 
-  return sugestoes;
+  if (sugestoes.length < MINIMO_SUGESTOES_SEM_FALLBACK) {
+    try {
+      const sugestoesNominatim = await nominatimComoSugestoes({ input, latitude, longitude });
+      sugestoes = mesclarSemDuplicar(sugestoes, sugestoesNominatim);
+    } catch (erroNominatim) {
+      console.log(`[busca endereço] nominatim fallback "${input}" → falhou: ${erroNominatim.message}`);
+    }
+  }
+
+  return ordenarPorDistancia(sugestoes).map(({ id, placeId, descricao }) => ({ id, placeId, descricao }));
 }
 
 // Resolve um place_id pra latitude/longitude reais — só é chamado quando o
 // usuário TOCA numa sugestão, nunca a cada tecla digitada (é o que faz o
 // sessionToken valer a pena).
 async function detalhes({ placeId, sessionToken }) {
+  // Sugestão veio do Nominatim (fallback final) — já temos lat/lng prontos
+  // desde a busca, não precisa (nem dá, o Google não conhece esse ID) fazer
+  // uma segunda chamada de "detalhes".
+  if (placeId.startsWith('osm:')) {
+    const [, osmType, osmId] = placeId.split(':');
+    const params = new URLSearchParams({
+      osm_type: osmType,
+      osm_id: osmId,
+      format: 'jsonv2',
+    });
+    const resposta = await fetch(`https://nominatim.openstreetmap.org/details?${params.toString()}`, {
+      headers: { 'User-Agent': 'GOApp/1.0 (app de transporte; contato: suporte@goapp.com.br)' },
+    });
+    const dados = await resposta.json();
+    return {
+      id: placeId,
+      placeId,
+      descricao: dados.localname || dados.names?.name || placeId,
+      latitude: Number(dados.centroid?.coordinates?.[1] ?? dados.geometry?.coordinates?.[1]),
+      longitude: Number(dados.centroid?.coordinates?.[0] ?? dados.geometry?.coordinates?.[0]),
+    };
+  }
+
   const params = new URLSearchParams({
     place_id: placeId,
     key: obterChave(),

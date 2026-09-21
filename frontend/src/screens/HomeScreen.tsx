@@ -1144,8 +1144,17 @@ export default function HomeScreen() {
           // Pago confirmar o pagamento mais rápido que o próximo poll daqui,
           // o evento de socket podia chegar ANTES da ref acima ser
           // atualizada, e o listener descartava ele sem querer).
+          //
+          // O setTimeout aqui NÃO é só estético: abrir este modal no MESMO
+          // instante em que o modal do QR code (Pix) está fechando trava a
+          // tela inteira (a animação de fechar um <Modal> nativo e abrir
+          // outro ao mesmo tempo é uma combinação que o React Native não
+          // lida bem — a tela congela sem nenhum erro pra mostrar, e nem o
+          // botão de cancelar responde). Esperar o modal do QR terminar de
+          // fechar antes de abrir este evita o conflito. 400ms cobre com
+          // folga a duração da animação de saída do modal do QR.
           if (atualizado.semMotoristasDisponiveis) {
-            setSemMotoristasVisivel(true);
+            setTimeout(() => setSemMotoristasVisivel(true), 400);
           }
 
           // Igual ao fluxo de dinheiro/Pix direto: busca a corrida de
@@ -1801,8 +1810,13 @@ export default function HomeScreen() {
         tipoVeiculo={corridaConfirmada?.tipo ?? 'carro'}
         onContinuar={() => setSemMotoristasVisivel(false)}
         onCancelarCorrida={() => {
+          // Mesmo motivo do setTimeout lá no polling do Pix: fechar este
+          // modal e abrir o de confirmação de cancelamento no mesmo
+          // instante trava a tela (dois <Modal> nativos brigando pela
+          // transição ao mesmo tempo). Espera a animação de fechar este
+          // terminar antes de abrir o próximo.
           setSemMotoristasVisivel(false);
-          abrirCancelamento();
+          setTimeout(abrirCancelamento, 400);
         }}
       />
 
