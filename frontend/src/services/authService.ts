@@ -215,3 +215,15 @@ export async function updateAccount(payload: UpdateAccountPayload): Promise<User
 export async function logout(): Promise<void> {
   await clearTokens();
 }
+
+// DELETE /auth/me — o backend confere corrida ativa, pendências e saldo a
+// receber antes de apagar (ver autenticacaoControlador.excluirConta); se
+// alguma dessas checagens barrar, a API responde 409 com uma mensagem
+// pronta pra mostrar na tela.
+export async function deleteAccount(): Promise<void> {
+  if (USE_MOCK) {
+    await mockDelay(undefined, 500);
+    return;
+  }
+  await api.delete('/auth/me');
+}

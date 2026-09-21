@@ -238,6 +238,11 @@ export type PagamentoPix = {
   qrCodeBase64: string;
   tipo: 'prepago' | 'pos_pago' | 'quitacao_divida';
   corridaId?: string;
+  // Só relevante pro tipo 'prepago': true quando a corrida foi criada (Pix
+  // aprovado) sem nenhum motorista do tipo pedido disponível no instante —
+  // o app usa isso pra mostrar o mesmo aviso que já existe no fluxo de
+  // dinheiro/Pix na hora.
+  semMotoristasDisponiveis?: boolean;
   expiraEm: string;
 };
 

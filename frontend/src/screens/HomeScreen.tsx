@@ -1138,6 +1138,16 @@ export default function HomeScreen() {
           // disponível, sem nunca ver o aviso.
           corridaIdRef.current = atualizado.corridaId;
 
+          // Fonte principal do aviso: vem garantida nesta mesma resposta,
+          // sem depender do timing do socket acima (que ainda fica como
+          // reforço, mas sozinho não é confiável — se o webhook do Mercado
+          // Pago confirmar o pagamento mais rápido que o próximo poll daqui,
+          // o evento de socket podia chegar ANTES da ref acima ser
+          // atualizada, e o listener descartava ele sem querer).
+          if (atualizado.semMotoristasDisponiveis) {
+            setSemMotoristasVisivel(true);
+          }
+
           // Igual ao fluxo de dinheiro/Pix direto: busca a corrida de
           // verdade pra pegar o preço REAL (com dívida pendente somada, se
           // houver) em vez de ficar preso na estimativa calculada antes do

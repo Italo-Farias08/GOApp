@@ -10,6 +10,12 @@ function paraPagamentoPublico(linha) {
     qrCode: linha.qr_code, // código "copia e cola"
     qrCodeBase64: linha.qr_code_base64, // imagem do QR code em base64 (PNG)
     corridaId: linha.corrida_id || undefined, // pré-pago: só vem depois de aprovado. pós-pago: vem desde a criação.
+    // Só relevante pro tipo 'prepago': verdadeiro quando a corrida foi
+    // criada (pagamento aprovado) mas não tinha nenhum motorista do tipo
+    // pedido disponível no instante da criação — ver
+    // atualizacao-aviso-sem-motoristas-pix.sql pro porquê disso vir daqui
+    // em vez de só por socket.
+    semMotoristasDisponiveis: linha.sem_motoristas_disponiveis || false,
     // 'prepago'          -> gerado ANTES da corrida existir (tela do passageiro)
     // 'pos_pago'         -> gerado pelo motorista ao FINALIZAR uma corrida já existente
     // 'quitacao_divida'  -> gerado na tela de "Pendências", pra quitar dívidas antigas sem esperar a próxima corrida
@@ -82,10 +88,15 @@ async function atualizarStatus(id, status) {
 // Só grava se ainda não tiver corrida vinculada — evita criar duas
 // corridas se o webhook e o polling do app confirmarem o pagamento quase
 // ao mesmo tempo.
-async function vincularCorrida(id, corridaId) {
+// Vincula o pagamento aprovado à corrida recém-criada — e já salva junto se
+// não tinha motorista disponível no instante da criação (ver comentário em
+// paraPagamentoPublico), pra próxima leitura desse pagamento devolver isso
+// pro app sem precisar recalcular nada.
+async function vincularCorrida(id, corridaId, semMotoristasDisponiveis = false) {
   const resultado = await consultar(
-    `UPDATE pagamentos_pix SET corrida_id = $2 WHERE id = $1 AND corrida_id IS NULL RETURNING *`,
-    [id, corridaId]
+    `UPDATE pagamentos_pix SET corrida_id = $2, sem_motoristas_disponiveis = $3
+     WHERE id = $1 AND corrida_id IS NULL RETURNING *`,
+    [id, corridaId, semMotoristasDisponiveis]
   );
   return resultado.rows[0] || buscarPorId(id);
 }

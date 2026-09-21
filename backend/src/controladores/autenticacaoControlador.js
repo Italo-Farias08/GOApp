@@ -1,6 +1,8 @@
 const bcrypt = require('bcryptjs');
 const usuarioModelo = require('../modelos/usuarioModelo');
 const tokenRenovacaoModelo = require('../modelos/tokenRenovacaoModelo');
+const corridaModelo = require('../modelos/corridaModelo');
+const dividaModelo = require('../modelos/dividaModelo');
 const { gerarToken, gerarRefreshToken, hashToken } = require('../utilitarios/token');
 const { normalizarTelefone } = require('../utilitarios/telefone');
 const { gerarCodigo, gerarExpiracao } = require('../utilitarios/codigoVerificacao');
@@ -516,6 +518,57 @@ async function atualizarPushToken(req, res, next) {
   }
 }
 
+// DELETE /auth/me
+//
+// Exclusão de conta — pedida pela tela de Conta, com confirmação em duas
+// etapas do lado do app (não dá pra desfazer). Antes de apagar qualquer
+// dado, confere três coisas que tornariam a exclusão arriscada pra outras
+// pessoas ou pro próprio usuário, e bloqueia com uma mensagem clara em vez
+// de deixar seguir:
+//   1. Corrida em andamento (como passageiro OU como motorista) — excluir
+//      no meio de uma corrida deixaria a outra pessoa na mão.
+//   2. Pendências não pagas (dívidas de corridas anteriores) — excluir sem
+//      quitar deixaria o motorista credor sem receber pra sempre.
+//   3. Saldo a receber (motorista) ainda não sacado — a chave Pix é apagada
+//      na exclusão, então o dinheiro ficaria preso sem ninguém pra sacar.
+// Passando por essas checagens, `usuarioModelo.excluirConta` só apaga os
+// dados PESSOAIS (nome, email, telefone, senha, foto, chave Pix) — nunca a
+// linha do usuário de verdade, pra não quebrar o histórico de corridas e
+// dívidas ligado a ele (inclusive o de outras pessoas). Por fim, derruba
+// todas as sessões (refresh tokens) desse usuário em qualquer dispositivo.
+async function excluirConta(req, res, next) {
+  try {
+    const usuario = await usuarioModelo.buscarPorId(req.usuarioId);
+    if (!usuario) throw new ErroHttp(404, 'Usuário não encontrado.');
+
+    const corridaAtivaPassageiro = await corridaModelo.buscarAtivaPorPassageiro(req.usuarioId);
+    if (corridaAtivaPassageiro) {
+      throw new ErroHttp(409, 'Você tem uma corrida em andamento. Finalize ou cancele antes de excluir sua conta.');
+    }
+
+    const corridaAtivaMotorista = await corridaModelo.buscarAtivaPorMotorista(req.usuarioId);
+    if (corridaAtivaMotorista) {
+      throw new ErroHttp(409, 'Você tem uma corrida em andamento. Finalize ou cancele antes de excluir sua conta.');
+    }
+
+    const dividasPendentes = await dividaModelo.listarPendentesPorPassageiro(req.usuarioId);
+    if (dividasPendentes.length > 0) {
+      throw new ErroHttp(409, 'Você tem pendências de corridas anteriores. Quite-as antes de excluir sua conta.');
+    }
+
+    if (Number(usuario.saldo_a_receber || 0) > 0) {
+      throw new ErroHttp(409, 'Você tem saldo a receber. Solicite o saque antes de excluir sua conta.');
+    }
+
+    await usuarioModelo.excluirConta(req.usuarioId);
+    await tokenRenovacaoModelo.revogarTodosDoUsuario(req.usuarioId);
+
+    return res.status(204).send();
+  } catch (erro) {
+    next(erro);
+  }
+}
+
 module.exports = {
   registrar,
   verificarEmail,
@@ -531,4 +584,5 @@ module.exports = {
   obterPerfil,
   atualizarPerfil,
   atualizarPushToken,
+  excluirConta,
 };

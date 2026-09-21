@@ -5,6 +5,7 @@ const motoristaModelo = require('../modelos/motoristaModelo');
 const dividaModelo = require('../modelos/dividaModelo');
 const pagamentoPixModelo = require('../modelos/pagamentoPixModelo');
 const corridaServico = require('../servicos/corridaServico');
+const comissaoServico = require('../servicos/comissaoServico');
 const mercadoPago = require('../utilitarios/mercadoPago');
 const { ErroHttp } = require('../intermediarios/tratadorErros');
 const { exigirPerfilCompleto } = require('../utilitarios/perfilUsuario');
@@ -412,8 +413,11 @@ async function validarCorridaParaFinalizar(corridaId, motoristaId) {
 // POST /rides/:id/finish
 //
 // Mantida por compatibilidade com versões antigas do app — finaliza sem
-// passar pela escolha de forma de pagamento. O fluxo atual (modal "Pix /
-// Dinheiro / Não pagou" ao finalizar) usa as três rotas abaixo.
+// passar pela escolha de forma de pagamento. É a rota usada hoje pelo fluxo
+// "pix_prepago" (ver DriverHomeScreen.confirmarFinalizacaoPixPrepago): como
+// o Pix já foi pago ANTES da corrida nascer, não tem forma de pagamento pra
+// escolher, só fechar o ciclo — por isso quita dívidas embutidas e credita
+// o motorista igual às outras duas rotas de finalização abaixo.
 async function finalizar(req, res, next) {
   try {
     await validarCorridaParaFinalizar(req.params.id, req.usuarioId);
@@ -422,6 +426,13 @@ async function finalizar(req, res, next) {
     if (!corridaFinalizada) {
       throw new ErroHttp(409, 'Essa corrida não pode ser finalizada agora.');
     }
+
+    await corridaServico.quitarDividasDaCorrida(corridaFinalizada);
+    await comissaoServico.aplicarComissao({
+      motoristaId: req.usuarioId,
+      valorCorrida: corridaFinalizada.preco_original,
+      foiPagoEmDinheiro: false,
+    });
 
     soquete.notificarCorridaFinalizada({
       corridaId: corridaFinalizada.id,
@@ -439,7 +450,10 @@ async function finalizar(req, res, next) {
 // Motorista confirma que recebeu o valor em DINHEIRO na mão — finaliza a
 // corrida na hora, marcando o pagamento como concluído. Se essa corrida
 // trazia dívida(s) de uma viagem anterior embutida no preço, quita todas e
-// credita quem tinha ficado sem receber.
+// credita quem tinha ficado sem receber. Como o motorista já embolsou o
+// valor cheio na hora, ele não recebe nada A MAIS no saldo — só fica devendo
+// a comissão da plataforma (R$0,50), abatida automaticamente do próximo
+// crédito de Pix que ele receber (ver comissaoServico.aplicarComissao).
 async function finalizarComDinheiro(req, res, next) {
   try {
     await validarCorridaParaFinalizar(req.params.id, req.usuarioId);
@@ -450,6 +464,11 @@ async function finalizarComDinheiro(req, res, next) {
     }
 
     await corridaServico.quitarDividasDaCorrida(corridaFinalizada);
+    await comissaoServico.aplicarComissao({
+      motoristaId: req.usuarioId,
+      valorCorrida: corridaFinalizada.preco_original,
+      foiPagoEmDinheiro: true,
+    });
 
     soquete.notificarCorridaFinalizada({
       corridaId: corridaFinalizada.id,

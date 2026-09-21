@@ -25,6 +25,7 @@ roteador.post('/logout', autenticacaoControlador.sair);
 // Rotas protegidas (exigem token)
 roteador.get('/me', autenticacaoIntermediario, autenticacaoControlador.obterPerfil);
 roteador.put('/me', autenticacaoIntermediario, autenticacaoControlador.atualizarPerfil);
+roteador.delete('/me', autenticacaoIntermediario, autenticacaoControlador.excluirConta);
 roteador.put('/push-token', autenticacaoIntermediario, autenticacaoControlador.atualizarPushToken);
 
 module.exports = roteador;

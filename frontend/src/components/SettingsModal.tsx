@@ -46,6 +46,7 @@ import {
   MoonIcon,
   MotoIcon,
   SunIcon,
+  TrashIcon,
   UserIcon,
 } from './icons';
 
@@ -111,7 +112,9 @@ export default function SettingsModal({ visible, onClose }: Props) {
               onSignOut={handleSignOut}
             />
           )}
-          {displayedView === 'account' && <AccountView onBack={() => setView('menu')} />}
+          {displayedView === 'account' && (
+            <AccountView onBack={() => setView('menu')} onClose={handleClose} />
+          )}
           {displayedView === 'driver' && (
             <DriverView onBack={() => setView('menu')} onClose={handleClose} />
           )}
@@ -272,17 +275,18 @@ function ChevronRightIcon() {
 
 // ---------- Conta ----------
 
-function AccountView({ onBack }: { onBack: () => void }) {
+function AccountView({ onBack, onClose }: { onBack: () => void; onClose: () => void }) {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
 
-  const { user, updateAccount } = useAuth();
+  const { user, updateAccount, deleteAccount } = useAuth();
   const [name, setName] = useState(user?.name ?? '');
   const [email, setEmail] = useState(user?.email ?? '');
   const [phone, setPhone] = useState(user?.phone ?? '');
   const [loading, setLoading] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [excluindo, setExcluindo] = useState(false);
 
   async function handleSave() {
     setError(null);
@@ -295,6 +299,55 @@ function AccountView({ onBack }: { onBack: () => void }) {
       setError(err?.message ?? 'Não foi possível salvar.');
     } finally {
       setLoading(false);
+    }
+  }
+
+  // Dupla confirmação nativa (Alert) antes de excluir de vez — a primeira
+  // deixa claro que a ação não tem volta, a segunda é o "tem certeza mesmo"
+  // pra ninguém excluir sem querer com dois toques rápidos e sem ler.
+  function handleDeleteAccount() {
+    Alert.alert(
+      'Excluir conta',
+      'Isso apaga seus dados pessoais (nome, email, telefone, foto) e você não vai conseguir entrar de novo. Essa ação não pode ser desfeita.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Continuar',
+          style: 'destructive',
+          onPress: () => {
+            Alert.alert(
+              'Tem certeza?',
+              'Confirme mais uma vez: sua conta será excluída permanentemente.',
+              [
+                { text: 'Cancelar', style: 'cancel' },
+                {
+                  text: 'Sim, excluir minha conta',
+                  style: 'destructive',
+                  onPress: confirmarExclusao,
+                },
+              ]
+            );
+          },
+        },
+      ]
+    );
+  }
+
+  async function confirmarExclusao() {
+    setError(null);
+    setExcluindo(true);
+    try {
+      await deleteAccount();
+      onClose();
+    } catch (err: any) {
+      // Mensagens do backend (corrida ativa, pendência, saldo a receber)
+      // chegam em err.response.data.message.
+      Alert.alert(
+        'Não foi possível excluir',
+        err?.response?.data?.message ?? err?.message ?? 'Tente novamente em instantes.'
+      );
+    } finally {
+      setExcluindo(false);
     }
   }
 
@@ -326,6 +379,17 @@ function AccountView({ onBack }: { onBack: () => void }) {
       {saved && !error && <Text style={styles.savedText}>Credenciais atualizadas ✓</Text>}
 
       <Button label="Salvar" onPress={handleSave} loading={loading} style={styles.actionButton} />
+
+      <View style={styles.divider} />
+
+      <MenuItem
+        renderIcon={(cor) => <TrashIcon size={20} color={cor} />}
+        label="Excluir conta"
+        sublabel="Apaga seus dados pessoais permanentemente"
+        danger
+        onPress={handleDeleteAccount}
+      />
+      {excluindo && <ActivityIndicator color={colors.danger} style={styles.actionButton} />}
     </ScrollView>
   );
 }

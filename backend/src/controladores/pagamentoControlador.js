@@ -4,6 +4,7 @@ const usuarioModelo = require('../modelos/usuarioModelo');
 const pagamentoPixModelo = require('../modelos/pagamentoPixModelo');
 const dividaModelo = require('../modelos/dividaModelo');
 const corridaServico = require('../servicos/corridaServico');
+const comissaoServico = require('../servicos/comissaoServico');
 const mercadoPago = require('../utilitarios/mercadoPago');
 const { ErroHttp } = require('../intermediarios/tratadorErros');
 const { exigirPerfilCompleto } = require('../utilitarios/perfilUsuario');
@@ -166,16 +167,21 @@ async function confirmarCorridaSePago(pagamento) {
 
   const dadosCorrida = pagamento.dados_corrida;
   let corridaId;
+  let semMotoristasDisponiveis = false;
   try {
     const corridaPublica = await corridaServico.criarEDespachar({
       passageiroId: pagamento.passageiro_id,
       ...dadosCorrida,
     });
     corridaId = corridaPublica.id;
+    semMotoristasDisponiveis = corridaPublica.semMotoristasDisponiveis;
   } catch (erro) {
     // "Já tem corrida em andamento" aqui quase sempre significa que o
     // webhook e o polling confirmaram o mesmo pagamento quase juntos, e o
     // outro já criou a corrida — só acha ela e vincula, em vez de falhar.
+    // Não temos como saber, aqui, se tinha motorista disponível no instante
+    // exato em que ELE criou a corrida (esse cálculo já aconteceu do outro
+    // lado) — fica false por padrão; caso raríssimo, sem impacto prático.
     if (erro.statusCode === 409) {
       const corridaAtiva = await corridaModelo.buscarAtivaPorPassageiro(pagamento.passageiro_id);
       if (!corridaAtiva) throw erro;
@@ -185,7 +191,7 @@ async function confirmarCorridaSePago(pagamento) {
     }
   }
 
-  return pagamentoPixModelo.vincularCorrida(pagamento.id, corridaId);
+  return pagamentoPixModelo.vincularCorrida(pagamento.id, corridaId, semMotoristasDisponiveis);
 }
 
 // Espelho de confirmarCorridaSePago, mas pro Pix POS-pago (gerado pelo
@@ -210,6 +216,14 @@ async function confirmarFinalizacaoSePago(pagamento) {
   const corridaFinalizada = await corridaModelo.finalizarComPixAprovado(pagamento.corrida_id);
   if (corridaFinalizada) {
     await corridaServico.quitarDividasDaCorrida(corridaFinalizada);
+    // Credita o motorista com o valor da corrida (menos a comissão da
+    // plataforma) — faltava essa chamada aqui, por isso o saldo pra sacar
+    // nunca subia mesmo depois de uma corrida paga por Pix.
+    await comissaoServico.aplicarComissao({
+      motoristaId: corridaFinalizada.motorista_id,
+      valorCorrida: corridaFinalizada.preco_original,
+      foiPagoEmDinheiro: false,
+    });
     soquete.notificarCorridaFinalizada({
       corridaId: corridaFinalizada.id,
       passageiroId: corridaFinalizada.passageiro_id,

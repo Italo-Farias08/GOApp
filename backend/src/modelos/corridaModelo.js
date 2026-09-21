@@ -106,6 +106,21 @@ async function buscarAtivaPorPassageiro(passageiroId) {
   return resultado.rows[0] || null;
 }
 
+// Espelho de buscarAtivaPorPassageiro, mas pro lado do MOTORISTA — usado,
+// por exemplo, na exclusão de conta: não pode deixar excluir a conta de um
+// motorista que está no meio de uma corrida (o passageiro ficaria com o
+// motorista "sumindo" no meio do caminho).
+async function buscarAtivaPorMotorista(motoristaId) {
+  const resultado = await consultar(
+    `SELECT * FROM corridas
+     WHERE motorista_id = $1 AND status IN ('aceita', 'em_andamento')
+     ORDER BY criado_em DESC
+     LIMIT 1`,
+    [motoristaId]
+  );
+  return resultado.rows[0] || null;
+}
+
 // Todas as corridas ainda "procurando" motorista de um tipo de veículo —
 // usado pra reoferecer corridas pendentes assim que um motorista fica online
 // (sem isso, só quem já estava online no instante da criação recebia).
@@ -398,6 +413,7 @@ module.exports = {
   criar,
   buscarPorId,
   buscarAtivaPorPassageiro,
+  buscarAtivaPorMotorista,
   buscarProcurandoPorTipo,
   aceitar,
   embarcar,

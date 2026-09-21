@@ -47,8 +47,7 @@ export default function ConfirmarPixPrepagoModal({
 
         <Text style={styles.titulo}>Essa corrida já está paga</Text>
         <Text style={styles.subtitulo}>
-          O passageiro pagou via Pix antes mesmo de embarcar. O valor já está com a gente — ao
-          confirmar, ele cai (com a comissão já descontada) no seu saldo disponível pra saque.
+          O passageiro pagou via Pix antes mesmo de embarcar.
         </Text>
 
         <View style={styles.valorCard}>

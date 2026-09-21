@@ -14,43 +14,33 @@ export const darkColors = {
 
   danger: '#FF4D4D',
   warning: '#FFB020',
-  success: '#39FF6A',
-
+  success: '#39FF6A', 
   overlay: 'rgba(0,0,0,0.6)',
 };
 
 export const lightColors = {
-  // Marrom escuro médio — "meio escuro" como você pediu, mas com a MESMA
-  // temperatura quente do bege do mapa (LIGHT_MAP_STYLE em mapaConfig.ts),
-  // em vez do cinza neutro/frio de antes. É essa proximidade de tom (os
-  // dois puxando pro marrom, não um frio e outro quente) que faz o modal
-  // parecer parte do mesmo app que o mapa, mesmo sendo mais escuro que ele.
-  background: '#3A362E',
-  surface: '#2A2721',         // um degrau mais escuro que o fundo, dá profundidade ao card
-  surfaceAlt: '#413C33',      // hover / pressed states
-  border: '#4F493D',
+  background: '#0B0B0F',      // preto grafite (fundo principal)
+  surface: '#16161D',         // cards, inputs, containers
+  surfaceAlt: '#1F1F29',      // hover / pressed states
+  border: '#2A2A35',
 
-  primary: '#1FAE4D',         // mesmo verde "GO", ajustado pra ter contraste
-  primaryPressed: '#178F3F',  // no fundo claro (o neon puro "estoura" no claro)
-  onPrimary: '#FFFFFF',       // texto/ícone em cima de um fundo `primary`
+  primary: '#39FF6A',         // verde neon "GO" — botões e ações principais
+  primaryPressed: '#2ED95C',
+  onPrimary: '#0B0B0F',       // texto/ícone em cima de um fundo `primary`
 
-  text: '#F5F1E8',             // branco quente (não gelado) — combina com o resto da paleta
-  textSecondary: '#C7C0AE',
-  textMuted: '#8F8975',
+  text: '#F5F5F7',
+  textSecondary: '#9A9AA5',
+  textMuted: '#5C5C66',
 
-  danger: '#E05C5C',
-  warning: '#D99B3A',
-  success: '#1FAE4D',
-
-  overlay: 'rgba(24,20,10,0.55)',
+  danger: '#FF4D4D',
+  warning: '#FFB020',
+  success: '#39FF6A',
+  overlay: 'rgba(0,0,0,0.6)',
 };
+
 
 export type ThemeColors = typeof darkColors;
 export type ColorScheme = 'escuro' | 'claro';
-
-// Mantido por compatibilidade com qualquer import antigo de `colors` —
-// sempre o escuro (era o único tema antes). Prefira `useTheme().colors`
-// pra pegar a cor certa do tema atual.
 export const colors = darkColors;
 
 export const spacing = {

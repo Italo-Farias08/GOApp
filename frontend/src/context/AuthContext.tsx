@@ -35,6 +35,7 @@ type AuthContextValue = {
   resetPassword: (payload: ResetPasswordPayload) => Promise<void>;
   signOut: () => Promise<void>;
   updateAccount: (payload: UpdateAccountPayload) => Promise<void>;
+  deleteAccount: () => Promise<void>;
   updateDriverStatus: (status: DriverStatus) => void;
   updateAvatarUrl: (avatarUrl: string) => void;
   error: string | null;
@@ -187,6 +188,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
   }
 
+  // Chamada pela tela de Conta depois da confirmação (dupla) do usuário.
+  // O backend já barra a exclusão com uma mensagem clara se houver corrida
+  // ativa, pendência ou saldo a receber — aqui só repassa esse erro pra
+  // quem chamou mostrar na tela. Se der certo, limpa a sessão local igual
+  // ao signOut (a conta já não existe mais pra manter logada).
+  async function deleteAccount() {
+    setError(null);
+    try {
+      await authService.deleteAccount();
+      await authService.logout();
+      setUser(null);
+    } catch (err: any) {
+      setError(err?.response?.data?.message ?? err.message ?? 'Não foi possível excluir sua conta.');
+      throw err;
+    }
+  }
+
   // Chamado pela tela de Conta (dentro do modal de configurações).
   // Ainda não valida nada — só deixa a estrutura pronta pro backend.
   async function updateAccount(payload: UpdateAccountPayload) {
@@ -231,6 +249,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         resetPassword,
         signOut,
         updateAccount,
+        deleteAccount,
         updateDriverStatus,
         updateAvatarUrl,
         error,

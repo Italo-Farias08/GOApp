@@ -241,6 +241,36 @@ async function buscarPushTokensPorIds(ids) {
   return resultado.rows.map((linha) => linha.push_token);
 }
 
+// Exclusão de conta — NÃO apaga a linha do usuário de verdade. Um DELETE de
+// verdade quebraria (ou arrastaria junto) o histórico de corridas, dívidas e
+// pagamentos ligado a esse usuário — inclusive de OUTRAS pessoas (ex: o
+// motorista que tem uma corrida antiga com esse passageiro). Em vez disso,
+// apaga só os dados pessoais (nome, email, telefone, senha, foto, chave
+// Pix) e marca `deletado_em`, preservando o id e o histórico ligado a ele.
+// E-mail/telefone viram NULL (não colidem com o UNIQUE constraint, Postgres
+// permite múltiplos NULLs), então ficam livres pra alguém cadastrar de novo
+// com esses mesmos dados no futuro.
+async function excluirConta(id) {
+  const resultado = await consultar(
+    `UPDATE usuarios SET
+       nome = 'Usuário excluído',
+       email = NULL,
+       telefone = NULL,
+       senha_hash = NULL,
+       avatar_url = NULL,
+       push_token = NULL,
+       chave_pix = NULL,
+       chave_pix_tipo = NULL,
+       cpf = NULL,
+       deletado_em = NOW(),
+       atualizado_em = NOW()
+     WHERE id = $1
+     RETURNING *`,
+    [id]
+  );
+  return resultado.rows[0];
+}
+
 module.exports = {
   paraUsuarioPublico,
   buscarPorEmail,
@@ -262,4 +292,5 @@ module.exports = {
   atualizarPushToken,
   buscarPushTokenPorId,
   buscarPushTokensPorIds,
+  excluirConta,
 };

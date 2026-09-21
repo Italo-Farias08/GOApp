@@ -137,6 +137,31 @@ export function ExitIcon({ size = 20, color = '#FF4D4D', strokeWidth = 1.7 }: Ic
   );
 }
 
+// Ícone de lixeira — usado no botão de "Excluir conta" (tela Conta).
+export function TrashIcon({ size = 20, color = '#FF4D4D', strokeWidth = 1.7 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Line x1="4.5" y1="7" x2="19.5" y2="7" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" />
+      <Path
+        d="M9.5 7 V5.2 A1.2 1.2 0 0 1 10.7 4 H13.3 A1.2 1.2 0 0 1 14.5 5.2 V7"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Path
+        d="M6.5 7 L7.3 19 A1.5 1.5 0 0 0 8.8 20.4 H15.2 A1.5 1.5 0 0 0 16.7 19 L17.5 7"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Line x1="10.2" y1="10.5" x2="10.5" y2="17" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" />
+      <Line x1="13.8" y1="10.5" x2="13.5" y2="17" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
 // Ícone de relógio/histórico — usado na lista de "Mensagens" pra indicar
 // uma corrida já encerrada.
 export function HistoryIcon({ size = 16, color = '#9A9AA5', strokeWidth = 1.8 }: IconProps) {
