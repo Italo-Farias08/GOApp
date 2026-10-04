@@ -119,6 +119,11 @@ const ALTURA_MAXIMA_CONTEUDO_ROLAVEL = 380;
 // grupo handle + input na primeira renderização — ver onLayout abaixo.
 const SHEET_ALTURA_RECOLHIDA_PADRAO = 110;
 
+// Folga mínima entre o topo do cartão e a status bar/notch quando o teclado
+// está aberto (ver `alturaTeclado` dentro do componente) — sem essa folga o
+// cartão encostaria exatamente na borda, ficando visualmente apertado.
+const RESERVA_TOPO_COM_TECLADO = 16;
+
 // Saudação de acordo com o horário — pequeno detalhe que faz a tela parecer
 // viva em vez de estática.
 function obterSaudacao(): string {
@@ -356,9 +361,27 @@ export default function HomeScreen() {
   // é isso que evita espaço vazio sobrando: o cartão só cresce até onde o
   // conteúdo realmente precisa.
   const [alturaConteudo, setAlturaConteudo] = useState(SHEET_ALTURA_MINIMA);
+
+  // Altura real do teclado (só um número, não o Animated.Value) — precisa
+  // disso separado de `keyboardOffset` porque `keyboardOffset` só desloca a
+  // POSIÇÃO do cartão (empurra pra cima), sem limitar a ALTURA dele. Sem
+  // esse limite, um cartão já perto do teto de 75% da tela (SHEET_ALTURA_MAXIMA)
+  // + o deslocamento pra cima do teclado juntos ultrapassavam o topo da
+  // tela — o cabeçalho e o campo de digitar ficavam empurrados pra FORA da
+  // tela por cima, sobrando visível só a lista de sugestões (o passageiro
+  // não via mais o que estava digitando).
+  const [alturaTeclado, setAlturaTeclado] = useState(0);
+
   const alturaExpandida = Math.min(
     Math.max(alturaConteudo, SHEET_ALTURA_MINIMA),
-    SHEET_ALTURA_MAXIMA
+    SHEET_ALTURA_MAXIMA,
+    // Com o teclado aberto, o cartão some é deslocado pra cima em
+    // `alturaTeclado` (ver keyboardOffset) por cima da própria altura dele
+    // — sem esse terceiro limite, os dois deslocamentos somados empurravam
+    // o cabeçalho/campo de busca pra fora do topo da tela (ver comentário
+    // de `alturaTeclado` acima). RESERVA_TOPO_COM_TECLADO garante uma
+    // folga mínima abaixo da status bar/notch mesmo no pior caso.
+    ALTURA_TELA - insets.top - alturaTeclado - RESERVA_TOPO_COM_TECLADO
   );
 
   const [expandido, setExpandido] = useState(false);
@@ -451,6 +474,7 @@ export default function HomeScreen() {
 
     const showSub = Keyboard.addListener(showEvent, (evento) => {
       irParaDegrau(true);
+      setAlturaTeclado(evento.endCoordinates.height);
       Animated.timing(keyboardOffset, {
         toValue: -evento.endCoordinates.height,
         duration: Platform.OS === 'ios' ? evento.duration ?? 250 : 200,
@@ -458,6 +482,7 @@ export default function HomeScreen() {
       }).start();
     });
     const hideSub = Keyboard.addListener(hideEvent, (evento) => {
+      setAlturaTeclado(0);
       Animated.timing(keyboardOffset, {
         toValue: 0,
         duration: Platform.OS === 'ios' ? evento?.duration ?? 250 : 200,

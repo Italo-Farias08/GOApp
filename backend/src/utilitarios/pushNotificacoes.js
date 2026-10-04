@@ -19,13 +19,18 @@ function ehTokenExpoValido(token) {
 // (ver src/services/notificacaoPushService.ts no frontend) — sem isso o
 // Android usa um canal genérico sem som/vibração configurados.
 function montarMensagem(pushToken, { titulo, corpo, dados }) {
+  // Corrida nova usa canal e som próprios (o mesmo arquivo que toca dentro
+  // do app) — o canal 'corridas' e o arquivo 'corrida_nova.wav' são criados
+  // no app (notificacaoPushService.ts / app.config.js). O resto continua no
+  // canal padrão.
+  const ehCorridaNova = dados?.tipo === 'corrida_nova';
   return {
     to: pushToken,
     title: titulo,
     body: corpo,
     data: dados || {},
-    sound: 'default',
-    channelId: 'default',
+    sound: ehCorridaNova ? 'corrida_nova.wav' : 'default',
+    channelId: ehCorridaNova ? 'corridas' : 'default',
     // O ícone que aparece na barra de status/notificação vem da configuração
     // nativa do app (app.config.js -> expo.notification.icon), não é
     // possível (nem necessário) mandar por aqui.

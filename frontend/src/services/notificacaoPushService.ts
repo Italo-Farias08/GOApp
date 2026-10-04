@@ -8,13 +8,19 @@ import { api } from './api';
 // assim — sem isso o expo-notifications engole silenciosamente qualquer
 // push que chegue com o app em uso.
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldShowBanner: true,
-    shouldShowList: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
+  handleNotification: async (notificacao) => {
+    // Corrida nova com o app ABERTO: a tela do motorista já mostra a oferta
+    // e toca o som em loop (somCorridaService). Deixar o push também
+    // tocar/mostrar banner duplicaria o aviso.
+    const ehCorridaNova = notificacao.request.content.data?.tipo === 'corrida_nova';
+    return {
+      shouldShowAlert: !ehCorridaNova,
+      shouldShowBanner: !ehCorridaNova,
+      shouldShowList: !ehCorridaNova,
+      shouldPlaySound: !ehCorridaNova,
+      shouldSetBadge: false,
+    };
+  },
 });
 
 // Canal usado por toda notificação mandada pelo backend (ver channelId em
@@ -30,6 +36,20 @@ async function configurarCanalAndroid() {
     // app.config.js (expo.notification.color).
     lightColor: '#001566',
     sound: 'default',
+  });
+
+  // Canal exclusivo de corrida nova: som próprio (assets/sounds/corrida_nova.wav,
+  // registrado em app.config.js), prioridade máxima e vibração longa. O som
+  // de um canal Android NÃO pode ser alterado depois de criado — por isso é
+  // um canal novo ('corridas') em vez de mexer no 'default'. O backend usa
+  // esse mesmo id (ver backend/src/utilitarios/pushNotificacoes.js).
+  await Notifications.setNotificationChannelAsync('corridas', {
+    name: 'Corridas novas',
+    importance: Notifications.AndroidImportance.MAX,
+    vibrationPattern: [0, 500, 300, 500, 300, 500],
+    lightColor: '#001566',
+    sound: 'corrida_nova.wav',
+    lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
   });
 }
 

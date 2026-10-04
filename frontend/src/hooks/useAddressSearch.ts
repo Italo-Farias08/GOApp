@@ -33,6 +33,23 @@ export function useAddressSearch(
   // se mantém até o usuário escolher uma sugestão (ou limpar tudo de novo).
   const sessionTokenRef = useRef<string>(gerarSessionToken());
 
+  // Guarda a localização mais recente SEM entrar no array de dependências
+  // do efeito de busca abaixo. `coordsUsuario` vem do watchPositionAsync
+  // (useCurrentLocation), que gera um objeto novo a cada atualização de GPS
+  // (a cada ~4s ou 5m de movimento) — se o efeito de busca dependesse
+  // diretamente de `coordsUsuario`, cada atualização de GPS reexecutava a
+  // busca inteira com o MESMO texto já buscado, disparando uma chamada
+  // duplicada pro Google a cada poucos segundos (visível nos logs: mesmo
+  // input, mesmo sessiontoken, duas requisições seguidas — e provavelmente
+  // o que fazia o Nearby Search estourar DEADLINE_EXCEEDED, por causa de
+  // duas chamadas concorrentes quase idênticas). Guardando num ref, a busca
+  // sempre usa a localização mais atual no momento em que dispara, mas só
+  // dispara de novo quando o TEXTO digitado muda.
+  const coordsRef = useRef(coordsUsuario);
+  useEffect(() => {
+    coordsRef.current = coordsUsuario;
+  }, [coordsUsuario]);
+
   useEffect(() => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
 
@@ -56,7 +73,7 @@ export function useAddressSearch(
         const resultado = await addressService.buscarSugestoes(
           termoLimpo,
           sessionTokenRef.current,
-          coordsUsuario
+          coordsRef.current
         );
         setSugestoes(resultado);
       } catch (err) {
@@ -70,7 +87,7 @@ export function useAddressSearch(
     return () => {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
     };
-  }, [termo, coordsUsuario]);
+  }, [termo]);
 
   // Chamado só quando o usuário TOCA numa sugestão — resolve o place_id pra
   // latitude/longitude reais e encerra a sessão de busca atual.

@@ -46,6 +46,7 @@ import { useRota } from '../hooks/useRota';
 import * as paymentService from '../services/paymentService';
 import * as rideService from '../services/rideService';
 import { conectarSoquete } from '../services/socketService';
+import { iniciarSomCorrida, pararSomCorrida } from '../services/somCorridaService';
 import { radius, spacing, typography } from '../theme/theme';
 import type { ThemeColors } from '../theme/theme';
 import { useTheme } from '../theme/ThemeContext';
@@ -53,8 +54,6 @@ import type { Corrida, FormaPagamento, MensagemChat, PagamentoPix, RootStackPara
 import { formatarDistancia, formatarDuracao, formatarMoeda } from '../utils/precoCorrida';
 import { LIGHT_MAP_STYLE, DARK_MAP_STYLE } from '../utils/mapaConfig';
 
-// Ícone e texto de cada forma de pagamento, pro motorista já saber de cara
-// como vai receber (ou se o Pix já caiu na conta, no caso do pré-pago).
 const INFO_PAGAMENTO: Record<FormaPagamento, { label: string; Icone: typeof MoneyIcon }> = {
   dinheiro: { label: 'Dinheiro', Icone: MoneyIcon },
   pix: { label: 'Pix', Icone: PixIcon },
@@ -184,9 +183,60 @@ export default function DriverHomeScreen() {
   // Agora é uma ref imperativa pro <UserDirectionIndicator>, atualizado via
   // Animated sem passar pelo React.
   const indicadorDirecaoRef = useRef<UserDirectionIndicatorHandle>(null);
+  // Tamanho real da área do mapa (medido ao vivo, não a tela inteira —
+  // evita depender de Dimensions e ficar errado se algum dia o mapa
+  // dividir espaço com outra coisa). Usado só no modo navegação, ver
+  // abaixo.
+  const [tamanhoMapa, setTamanhoMapa] = useState({ largura: 0, altura: 0 });
+
+  // Altura real do painel inferior (varia conforme o estado: offline, nova
+  // corrida, corrida ativa) — usada só pra posicionar o botão flutuante de
+  // recentralizar sempre coladinho acima dele, sem sobrepor nada.
+  const [alturaPainel, setAlturaPainel] = useState(0);
+  // Espelha `alturaPainel` num ref: o PanResponder é criado só uma vez (via
+  // useRef) e seus callbacks fecham sobre o valor de `alturaPainel` da
+  // primeira renderização — sem esse ref, o cálculo do limite de arrasto
+  // ficaria travado em 0 pra sempre.
+  const alturaPainelRef = useRef(0);
+  // Em navegação, o painel inferior cobre parte do mapa. Com esse padding o
+  // Google Maps passa a tratar só a área livre (entre a barra do topo e o
+  // painel) como "o mapa": o motorista fica centralizado ali, em vez de
+  // escondido atrás do painel.
+  const paddingMapa = useMemo(
+    () => ({
+      top: corridaAtiva ? insets.top + 70 : 0,
+      right: 0,
+      bottom: corridaAtiva ? alturaPainel : 0,
+      left: 0,
+    }),
+    [!!corridaAtiva, insets.top, alturaPainel]
+  );
 
   async function atualizarPontoTelaMotorista() {
     if (!coords) return;
+
+    // Modo navegação: a câmera está SEMPRE centralizada na coordenada do
+    // motorista (ver o efeito de câmera logo abaixo, `center: coords`).
+    // Então o pixel onde ele está é, por definição, o centro exato do
+    // mapa — não precisa (nem convém) perguntar pro `pointForCoordinate`,
+    // que é assíncrono e corre atrás da câmera em vez de acompanhar ela
+    // no mesmo instante. Fixando direto no centro, a seta fica cravada
+    // no meio da tela sem nenhuma defasagem, do jeito que Waze/Google
+    // Maps fazem (o mapa desliza por baixo de um ponteiro que não se
+    // move).
+    if (corridaAtiva && tamanhoMapa.largura > 0 && tamanhoMapa.altura > 0) {
+      // O centro da câmera fica no meio da área VISÍVEL do mapa (descontado
+      // o padding do topo e do painel inferior — ver `paddingMapa`), não no
+      // meio da tela inteira.
+      const topo = paddingMapa.top;
+      const base = paddingMapa.bottom;
+      indicadorDirecaoRef.current?.mover(
+        tamanhoMapa.largura / 2,
+        topo + (tamanhoMapa.altura - topo - base) / 2
+      );
+      return;
+    }
+
     try {
       const ponto = await mapRef.current?.pointForCoordinate(coords);
       if (ponto) indicadorDirecaoRef.current?.mover(ponto.x, ponto.y);
@@ -198,17 +248,60 @@ export default function DriverHomeScreen() {
   useEffect(() => {
     atualizarPontoTelaMotorista();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [coords?.latitude, coords?.longitude]);
+  }, [coords?.latitude, coords?.longitude, corridaAtiva, tamanhoMapa, paddingMapa.top, paddingMapa.bottom]);
 
-  // Altura real do painel inferior (varia conforme o estado: offline, nova
-  // corrida, corrida ativa) — usada só pra posicionar o botão flutuante de
-  // recentralizar sempre coladinho acima dele, sem sobrepor nada.
-  const [alturaPainel, setAlturaPainel] = useState(0);
-  // Espelha `alturaPainel` num ref: o PanResponder é criado só uma vez (via
-  // useRef) e seus callbacks fecham sobre o valor de `alturaPainel` da
-  // primeira renderização — sem esse ref, o cálculo do limite de arrasto
-  // ficaria travado em 0 pra sempre.
-  const alturaPainelRef = useRef(0);
+  // --- Câmera de navegação -------------------------------------------
+  // Fora de corrida, o mapa fica do jeito padrão: norte sempre pra cima,
+  // câmera "de cima pra baixo" (pitch 0) — bom pra ver o entorno geral.
+  //
+  // Durante uma corrida ativa (indo buscar o passageiro OU levando ele
+  // pro destino), troca pro modo "navegação": a câmera GIRA junto com o
+  // motorista (bearing = heading, então "pra frente" sempre aponta pro
+  // topo da tela, como Waze/Google Maps) e inclina (pitch), pra mostrar o
+  // caminho à frente em vez de só um mapa plano visto de cima. Sem esse
+  // efeito, o motorista tinha que ficar arrastando/girando o mapa na mão
+  // pra entender pra que lado seguir.
+  const modoNavegacaoRef = useRef(false);
+  // Última posição/rumo aplicados na câmera de navegação — o magnetômetro
+  // dispara dezenas de leituras por segundo e cada uma disparava uma
+  // animateCamera nova (câmera tremendo/atrasada). Só reanima se o
+  // motorista andou ou o rumo mudou de verdade (>= 4°).
+  const ultimaCameraRef = useRef<{ lat: number; lng: number; rumo: number } | null>(null);
+  useEffect(() => {
+    if (!coords) return;
+
+    if (corridaAtiva) {
+      const rumo = heading ?? 0;
+      const primeiraVez = !modoNavegacaoRef.current;
+      const ultima = ultimaCameraRef.current;
+
+      if (!primeiraVez && ultima) {
+        const mesmoLugar = ultima.lat === coords.latitude && ultima.lng === coords.longitude;
+        const difRumo = Math.abs(((rumo - ultima.rumo + 540) % 360) - 180);
+        if (mesmoLugar && difRumo < 4) return;
+      }
+
+      modoNavegacaoRef.current = true;
+      ultimaCameraRef.current = { lat: coords.latitude, lng: coords.longitude, rumo };
+      // Entrando no modo navegação (corrida acabou de ser aceita): transição
+      // mais lenta (girar + inclinar). Depois disso, acompanha o motorista
+      // com uma animação curta.
+      mapRef.current?.animateCamera(
+        { center: coords, heading: rumo, pitch: 45, zoom: 18 },
+        { duration: primeiraVez ? 900 : 350 }
+      );
+    } else if (modoNavegacaoRef.current) {
+      // Corrida acabou de terminar (ou foi cancelada): volta pro modo
+      // "mapa" normal, norte pra cima e sem inclinação.
+      modoNavegacaoRef.current = false;
+      ultimaCameraRef.current = null;
+      mapRef.current?.animateCamera(
+        { center: coords, heading: 0, pitch: 0, zoom: 16 },
+        { duration: 500 }
+      );
+    }
+  }, [corridaAtiva?.id, coords?.latitude, coords?.longitude, heading]);
+
   function medirPainel(evento: LayoutChangeEvent) {
     const altura = evento.nativeEvent.layout.height;
     alturaPainelRef.current = altura;
@@ -300,6 +393,16 @@ export default function DriverHomeScreen() {
 
   function recentralizarMapa() {
     if (!coords) return;
+    if (corridaAtiva) {
+      // Em corrida ativa, "recentralizar" deve manter o modo navegação
+      // (girado na direção do rumo) — voltar pro norte pra cima aqui
+      // desfaria exatamente o que o efeito de câmera acima está mantendo.
+      mapRef.current?.animateCamera(
+        { center: coords, heading: heading ?? 0, pitch: 45, zoom: 18 },
+        { duration: 450 }
+      );
+      return;
+    }
     mapRef.current?.animateToRegion(
       { latitude: coords.latitude, longitude: coords.longitude, latitudeDelta: 0.01, longitudeDelta: 0.01 },
       450
@@ -353,6 +456,9 @@ export default function DriverHomeScreen() {
   const [carregandoHistoricoChat, setCarregandoHistoricoChat] = useState(false);
   const [mensagensNaoLidas, setMensagensNaoLidas] = useState(0);
   const corridaAtivaIdRef = useRef<string | null>(null);
+  // Corridas que o motorista recusou nesta sessão — não voltam a aparecer
+  // nem a tocar o som.
+  const corridasRecusadasRef = useRef<Set<string>>(new Set());
   const userIdRef = useRef<string | undefined>(user?.id);
   useEffect(() => {
     userIdRef.current = user?.id;
@@ -410,6 +516,16 @@ export default function DriverHomeScreen() {
     }
   }, [corridaRecebida?.id]);
 
+  // --- Som de corrida nova ------------------------------------------------
+  // Toca (em loop, com vibração) enquanto a oferta estiver na tela. O
+  // cleanup para o som quando a oferta some por qualquer motivo: aceitou,
+  // recusou, outro motorista pegou, passageiro cancelou ou a tela fechou.
+  useEffect(() => {
+    if (!corridaRecebida) return;
+    iniciarSomCorrida();
+    return () => pararSomCorrida();
+  }, [corridaRecebida?.id]);
+
   // --- Ponto de status (online) pulsando devagar enquanto o motorista está
   // disponível ou em corrida — dá a sensação de "app vivo" no topo. ---
   const statusPulseAnim = useRef(new Animated.Value(0)).current;
@@ -441,6 +557,13 @@ export default function DriverHomeScreen() {
     // os listeners desse evento, inclusive os de outros componentes.
     function aoReceberCorridaNova(corrida: Corrida) {
       if (!ativo) return;
+      // O servidor reenvia as corridas pendentes a cada atualização de GPS
+      // do motorista online (ver 'motorista:disponivel'). Sem esse filtro,
+      // uma corrida recusada voltava pra tela (e tocava o som de novo) uns
+      // segundos depois. Também ignora ofertas que chegam com uma corrida
+      // já em andamento.
+      if (corridasRecusadasRef.current.has(corrida.id)) return;
+      if (corridaAtivaIdRef.current) return;
       setCorridaRecebida((atual) => atual ?? corrida);
     }
 
@@ -543,11 +666,11 @@ export default function DriverHomeScreen() {
   useEffect(() => {
     if (corridaAtiva && coords) {
       const alvo = embarcado ? corridaAtiva.destino : corridaAtiva.origem;
+      // (Antes havia aqui um fitToCoordinates pra enquadrar a rota inteira.
+      // Ele rodava logo DEPOIS do efeito da câmera de navegação e desfazia
+      // o "seguir a rota" assim que a corrida era aceita — a tela só
+      // entrava em navegação no próximo movimento do GPS.)
       calcularRota(coords, alvo);
-      mapRef.current?.fitToCoordinates(
-        [coords, alvo],
-        { edgePadding: { top: 100, right: 60, bottom: 280, left: 60 }, animated: true }
-      );
     } else {
       limparRota();
     }
@@ -587,6 +710,7 @@ export default function DriverHomeScreen() {
 
   async function aceitarCorridaRecebida() {
     if (!corridaRecebida) return;
+    pararSomCorrida();
     setAceitando(true);
     setErro(null);
     try {
@@ -605,6 +729,8 @@ export default function DriverHomeScreen() {
   }
 
   function recusarCorridaRecebida() {
+    if (corridaRecebida) corridasRecusadasRef.current.add(corridaRecebida.id);
+    pararSomCorrida();
     setCorridaRecebida(null);
   }
 
@@ -844,8 +970,15 @@ export default function DriverHomeScreen() {
         // app no tema claro.
         provider={PROVIDER_GOOGLE}
         style={styles.map}
+        onLayout={(evento) =>
+          setTamanhoMapa({
+            largura: evento.nativeEvent.layout.width,
+            altura: evento.nativeEvent.layout.height,
+          })
+        }
         showsUserLocation
         showsMyLocationButton={false}
+        mapPadding={paddingMapa}
         customMapStyle={scheme === 'claro' ? LIGHT_MAP_STYLE : DARK_MAP_STYLE}
         onMapReady={atualizarPontoTelaMotorista}
         onRegionChange={atualizarPontoTelaMotorista}
@@ -872,7 +1005,16 @@ export default function DriverHomeScreen() {
 
       <UserDirectionIndicator
         ref={indicadorDirecaoRef}
-        heading={heading}
+        // A setinha gira pra representar o rumo relativo ao NORTE (que é
+        // fixo no topo da tela) fora de corrida. Durante a corrida, a
+        // câmera em si já gira pra acompanhar o rumo (ver o efeito de
+        // câmera de navegação acima) — se a seta também girasse por cima
+        // disso, giraria duas vezes (uma vez a câmera, outra vez a seta),
+        // ficando sempre apontando pro lado errado. Por isso, em modo
+        // navegação ela fica travada em 0°: "pra frente" já É o topo da
+        // tela, então a seta só precisa apontar reto pra cima.
+        heading={corridaAtiva ? 0 : heading}
+        variant={corridaAtiva ? 'seta' : 'facho'}
         visivel={!!coords}
         pivoStyle={styles.direcaoOverlayPivo}
         centralizadorStyle={styles.direcaoOverlayCentralizador}

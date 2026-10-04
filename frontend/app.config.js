@@ -56,6 +56,7 @@ export default {
         'FOREGROUND_SERVICE',
         'FOREGROUND_SERVICE_LOCATION',
         'POST_NOTIFICATIONS',
+        'VIBRATE',
       ],
       // Ícone adaptativo (Android 8+): primeiro plano com só o "G" (sem o
       // fundo navy) + a cor de fundo — é o Android quem monta o ícone final,
@@ -97,6 +98,12 @@ export default {
         {
           icon: './assets/notification-icon.png',
           color: '#001566',
+          // Som personalizado da notificação de corrida nova (push com o app
+          // minimizado/tela bloqueada). O mesmo arquivo toca em loop dentro
+          // do app (ver src/services/somCorridaService.ts). Mexer nesta
+          // lista exige gerar um build novo (eas build) — não pega por
+          // atualização OTA.
+          sounds: ['./assets/sounds/corrida_nova.wav'],
         },
       ],
       // Login com Google via SDK nativo (ver src/hooks/useGoogleAuth.ts).
