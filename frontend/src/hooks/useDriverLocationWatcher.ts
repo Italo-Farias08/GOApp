@@ -14,6 +14,32 @@ type Coords = { latitude: number; longitude: number };
 // seta de direção "tremer" girando pra qualquer lado à toa.
 const DISTANCIA_MINIMA_PARA_RUMO_METROS = 5;
 
+// Abaixo dessa velocidade (m/s ≈ 3,6 km/h) o "course" do GPS é ruído puro —
+// aí o rumo vem da bússola. (Antes eram 0,5 m/s, que ainda deixava passar
+// leituras instáveis e fazia a seta/câmera dar tranco ao arrancar.)
+const VELOCIDADE_MINIMA_RUMO_GPS = 1;
+
+// Bússola: só repassa pro React se o rumo mudou de verdade. O magnetômetro
+// dispara dezenas de leituras por segundo, e cada setState re-renderizava a
+// tela do motorista inteira — com a corrida aberta isso deixava tudo pesado.
+const BUSSOLA_MUDANCA_MINIMA_GRAUS = 4;
+const BUSSOLA_INTERVALO_MINIMO_MS = 150;
+
+// Opções do GPS. Em corrida usa o modo "navegação" (1 leitura por segundo,
+// precisão máxima) pra câmera andar suave junto com o motorista; fora de
+// corrida mantém o modo econômico (uma leitura a cada 4 s / 15 m) pra não
+// gastar bateria à toa só esperando chamada.
+const GPS_ECONOMICO = {
+  accuracy: Location.Accuracy.High,
+  timeInterval: 4000,
+  distanceInterval: 15,
+};
+const GPS_NAVEGACAO = {
+  accuracy: Location.Accuracy.BestForNavigation,
+  timeInterval: 1000,
+  distanceInterval: 1,
+};
+
 // Bearing (0-360°, 0 = norte, sentido horário) do ponto A até o ponto B —
 // mesma fórmula usada em HomeScreen.tsx pra girar o carrinho do motorista
 // na tela do passageiro.
@@ -62,6 +88,9 @@ export function useDriverLocationWatcher(ativo: boolean, corridaId: string | nul
   const bussolaRef = useRef<Location.LocationSubscription | null>(null);
   const posicaoAnteriorRef = useRef<Coords | null>(null);
   const velocidadeAtualRef = useRef(0);
+  // Último rumo da bússola que foi repassado ao React (pra filtrar o ruído).
+  const ultimoRumoBussolaRef = useRef<{ rumo: number; em: number } | null>(null);
+  const emCorrida = corridaId != null;
 
   // Mantém a tarefa de segundo plano sabendo qual corrida está ativa agora,
   // pra que o POST feito de dentro do TaskManager (backgroundLocationTask)
@@ -114,6 +143,7 @@ export function useDriverLocationWatcher(ativo: boolean, corridaId: string | nul
       bussolaRef.current?.remove();
       bussolaRef.current = null;
       posicaoAnteriorRef.current = null;
+      ultimoRumoBussolaRef.current = null;
       return;
     }
 
@@ -126,8 +156,8 @@ export function useDriverLocationWatcher(ativo: boolean, corridaId: string | nul
         return;
       }
 
-      assinaturaRef.current = await Location.watchPositionAsync(
-        { accuracy: Location.Accuracy.High, timeInterval: 4000, distanceInterval: 15 },
+      const assinaturaGps = await Location.watchPositionAsync(
+        emCorrida ? GPS_NAVEGACAO : GPS_ECONOMICO,
         (posicao) => {
           if (cancelado) return;
 
@@ -138,7 +168,11 @@ export function useDriverLocationWatcher(ativo: boolean, corridaId: string | nul
           setCoords(novaPosicao);
           velocidadeAtualRef.current = posicao.coords.speed ?? 0;
           const rumoDoAparelho = posicao.coords.heading;
-          if (rumoDoAparelho != null && rumoDoAparelho >= 0 && (posicao.coords.speed ?? 0) > 0.5) {
+          if (
+            rumoDoAparelho != null &&
+            rumoDoAparelho >= 0 &&
+            (posicao.coords.speed ?? 0) > VELOCIDADE_MINIMA_RUMO_GPS
+          ) {
             setHeading(rumoDoAparelho);
           } else {
             const anterior = posicaoAnteriorRef.current;
@@ -149,17 +183,39 @@ export function useDriverLocationWatcher(ativo: boolean, corridaId: string | nul
           posicaoAnteriorRef.current = novaPosicao;
         }
       );
+      // O efeito pode ter sido desfeito (ex.: corrida aceita → watcher
+      // recriado em modo navegação) enquanto esperávamos o GPS iniciar.
+      // Sem esse teste, a assinatura antiga ficava viva em segundo plano.
+      if (cancelado) {
+        assinaturaGps.remove();
+        return;
+      }
+      assinaturaRef.current = assinaturaGps;
 
       // Bússola: só usamos essa leitura pra girar a setinha quando o
       // motorista está parado (sem velocidade relevante) — em movimento, o
       // rumo do GPS/bearing entre pontos é mais confiável que o
       // magnetômetro (que sofre interferência do metal do carro).
-      bussolaRef.current = await Location.watchHeadingAsync((evento) => {
+      const assinaturaBussola = await Location.watchHeadingAsync((evento) => {
         if (cancelado) return;
-        if (velocidadeAtualRef.current > 0.5) return;
+        if (velocidadeAtualRef.current > VELOCIDADE_MINIMA_RUMO_GPS) return;
         const rumo = evento.trueHeading >= 0 ? evento.trueHeading : evento.magHeading;
+
+        const ultimo = ultimoRumoBussolaRef.current;
+        const agora = Date.now();
+        if (ultimo) {
+          const diferenca = Math.abs(((rumo - ultimo.rumo + 540) % 360) - 180);
+          if (diferenca < BUSSOLA_MUDANCA_MINIMA_GRAUS) return;
+          if (agora - ultimo.em < BUSSOLA_INTERVALO_MINIMO_MS) return;
+        }
+        ultimoRumoBussolaRef.current = { rumo, em: agora };
         setHeading(rumo);
       });
+      if (cancelado) {
+        assinaturaBussola.remove();
+        return;
+      }
+      bussolaRef.current = assinaturaBussola;
     })();
 
     return () => {
@@ -169,8 +225,13 @@ export function useDriverLocationWatcher(ativo: boolean, corridaId: string | nul
       bussolaRef.current?.remove();
       bussolaRef.current = null;
       posicaoAnteriorRef.current = null;
+      ultimoRumoBussolaRef.current = null;
     };
-  }, [ativo]);
+    // `emCorrida` entra nas dependências: ao aceitar uma corrida o watcher é
+    // recriado já no modo navegação (1 leitura/s).
+  }, [ativo, emCorrida]);
 
-  return { coords, heading, errorMessage };
+  // `velocidadeRef` é um ref (não state) de propósito: a tela só precisa ler
+  // a velocidade quando mexe na câmera, sem re-renderizar por causa dela.
+  return { coords, heading, errorMessage, velocidadeRef: velocidadeAtualRef };
 }

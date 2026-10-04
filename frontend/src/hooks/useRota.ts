@@ -3,10 +3,24 @@ import { api } from '../services/api';
 
 export type PontoRota = { latitude: number; longitude: number };
 
+// Uma curva/manobra da rota ("Vire à direita na Rua X"), vinda do backend
+// (OSRM com steps=true). Opcional: se o backend for uma versão antiga e não
+// mandar `passos`, o app navega normal, só sem o aviso de próxima curva.
+export type PassoRota = {
+  instrucao: string;
+  tipo: string | null;
+  nome: string | null;
+  distanciaM: number;
+  duracaoS: number;
+  latitude: number;
+  longitude: number;
+};
+
 export type ResultadoRota = {
   distanciaKm: number;
   duracaoMin: number;
   coordenadas: PontoRota[];
+  passos?: PassoRota[];
 };
 
 // Distância (em metros) de um ponto até o segmento de reta AB mais próximo —

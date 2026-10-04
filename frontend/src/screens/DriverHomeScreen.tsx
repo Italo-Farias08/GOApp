@@ -14,6 +14,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import AnimatedRoute from '../components/AnimatedRoute';
+import BannerManobra from '../components/BannerManobra';
 import type { Socket } from 'socket.io-client';
 import Button from '../components/Button';
 import CancelRideModal from '../components/CancelRideModal';
@@ -46,6 +47,7 @@ import { useRota } from '../hooks/useRota';
 import * as paymentService from '../services/paymentService';
 import * as rideService from '../services/rideService';
 import { conectarSoquete } from '../services/socketService';
+import { useNavegacaoRota } from '../hooks/useNavegacaoRota';
 import { iniciarSomCorrida, pararSomCorrida } from '../services/somCorridaService';
 import { radius, spacing, typography } from '../theme/theme';
 import type { ThemeColors } from '../theme/theme';
@@ -54,6 +56,8 @@ import type { Corrida, FormaPagamento, MensagemChat, PagamentoPix, RootStackPara
 import { formatarDistancia, formatarDuracao, formatarMoeda } from '../utils/precoCorrida';
 import { LIGHT_MAP_STYLE, DARK_MAP_STYLE } from '../utils/mapaConfig';
 
+// Ícone e texto de cada forma de pagamento, pro motorista já saber de cara
+// como vai receber (ou se o Pix já caiu na conta, no caso do pré-pago).
 const INFO_PAGAMENTO: Record<FormaPagamento, { label: string; Icone: typeof MoneyIcon }> = {
   dinheiro: { label: 'Dinheiro', Icone: MoneyIcon },
   pix: { label: 'Pix', Icone: PixIcon },
@@ -133,6 +137,27 @@ const toggleStyles = StyleSheet.create({
   },
 });
 
+// --- Câmera de navegação (corrida aceita) --------------------------------
+// Ajuste aqui se quiser a câmera mais perto/longe ou mais/menos inclinada.
+//   NAV_PITCH: 0 = vista de cima; 60 = câmera baixa, olhando pra frente
+//              (o Google Maps limita em ~67)
+//   NAV_POSICAO_MOTORISTA: onde o motorista fica na área livre do mapa,
+//              de 0 (topo) a 1 (base). 0.68 = no terço de baixo, deixando
+//              a maior parte da tela mostrando o caminho à frente.
+//   zoomPorVelocidade: o zoom se ajusta sozinho — bem perto parado/devagar
+//              (pra ver a esquina) e um pouco mais aberto em velocidade
+//              (pra enxergar a curva com antecedência), como o Waze.
+const NAV_PITCH = 60;
+const NAV_POSICAO_MOTORISTA = 0.68;
+// Pausa do "seguir o motorista" quando ele arrasta o mapa com o dedo.
+const NAV_PAUSA_AO_ARRASTAR_MS = 8000;
+
+function zoomPorVelocidade(metrosPorSegundo: number): number {
+  if (metrosPorSegundo > 16) return 17.8; // > ~58 km/h
+  if (metrosPorSegundo > 8) return 18.4; // > ~29 km/h
+  return 19;
+}
+
 export default function DriverHomeScreen() {
   const { colors, scheme } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -166,11 +191,14 @@ export default function DriverHomeScreen() {
   const [toastMensagem, setToastMensagem] = useState<string | null>(null);
   const [toastTom, setToastTom] = useState<StatusToastTone>('info');
 
-  const { coords, heading } = useDriverLocationWatcher(
+  const { coords, heading, velocidadeRef } = useDriverLocationWatcher(
     disponivel || !!corridaAtiva,
     corridaAtiva?.id ?? null
   );
   const { rota, calcularRota, limparRota, distanciaAteRota } = useRota();
+  // Navegação: "gruda" o motorista na rota (posição/rumo estáveis), calcula o
+  // trecho que falta, o ETA ao vivo e a próxima curva.
+  const nav = useNavegacaoRota(rota, coords, !!corridaAtiva);
   const mapRef = useRef<MapView>(null);
   const soqueteRef = useRef<Socket | null>(null);
   // Posição em PIXEL (x,y) na tela onde sua coordenada real cai agora —
@@ -202,15 +230,23 @@ export default function DriverHomeScreen() {
   // Google Maps passa a tratar só a área livre (entre a barra do topo e o
   // painel) como "o mapa": o motorista fica centralizado ali, em vez de
   // escondido atrás do painel.
-  const paddingMapa = useMemo(
-    () => ({
-      top: corridaAtiva ? insets.top + 70 : 0,
-      right: 0,
-      bottom: corridaAtiva ? alturaPainel : 0,
-      left: 0,
-    }),
-    [!!corridaAtiva, insets.top, alturaPainel]
-  );
+  //
+  // O padding do TOPO é grande de propósito: empurra o centro da câmera pra
+  // baixo, então o motorista aparece no terço inferior da área livre (como
+  // no Waze/Google Maps) e a tela mostra o caminho à frente, não o que ficou
+  // pra trás. Cálculo: centro visível = top + (livre - top) / 2; pra isso cair
+  // em NAV_POSICAO_MOTORISTA * livre, top = (2 * NAV_POSICAO_MOTORISTA - 1) * livre.
+  const paddingMapa = useMemo(() => {
+    if (!corridaAtiva) return { top: 0, right: 0, bottom: 0, left: 0 };
+    const bottom = alturaPainel;
+    const livre = Math.max(tamanhoMapa.altura - bottom, 0);
+    const topoIdeal = (2 * NAV_POSICAO_MOTORISTA - 1) * livre;
+    // Mínimo: abaixo da barra do topo (70) e, quando há aviso de curva, abaixo
+    // dele também (mais ~90).
+    const minimo = insets.top + (nav.proximoPasso ? 165 : 70);
+    const top = Math.min(Math.max(minimo, topoIdeal), livre * 0.7);
+    return { top: Math.round(top), right: 0, bottom, left: 0 };
+  }, [!!corridaAtiva, insets.top, alturaPainel, tamanhoMapa.altura, !!nav.proximoPasso]);
 
   async function atualizarPontoTelaMotorista() {
     if (!coords) return;
@@ -262,45 +298,108 @@ export default function DriverHomeScreen() {
   // efeito, o motorista tinha que ficar arrastando/girando o mapa na mão
   // pra entender pra que lado seguir.
   const modoNavegacaoRef = useRef(false);
-  // Última posição/rumo aplicados na câmera de navegação — o magnetômetro
-  // dispara dezenas de leituras por segundo e cada uma disparava uma
-  // animateCamera nova (câmera tremendo/atrasada). Só reanima se o
-  // motorista andou ou o rumo mudou de verdade (>= 4°).
+  // Última posição/rumo aplicados na câmera de navegação — só reanima se o
+  // motorista andou ou o rumo mudou de verdade (evita animação por leitura
+  // da bússola, que dispara muitas vezes por segundo).
   const ultimaCameraRef = useRef<{ lat: number; lng: number; rumo: number } | null>(null);
+  // Último rumo conhecido: se a bússola/GPS ficar sem leitura (parado), a
+  // câmera mantém a direção em vez de voltar pro norte.
+  const ultimoRumoRef = useRef(0);
+  // Se o motorista arrastar o mapa, a câmera para de seguir até esse horário.
+  const seguirPausadoAteRef = useRef(0);
+  // Espelhos (refs) do estado mais recente — usados por funções chamadas de
+  // timers/botões, que de outra forma enxergariam valores velhos.
+  const coordsRef = useRef(coords);
+  coordsRef.current = coords;
+  const headingRef = useRef(heading);
+  headingRef.current = heading;
+  const navRef = useRef(nav);
+  navRef.current = nav;
+
+  // Aplica a câmera de navegação AGORA. Centro = posição "grudada" na rota
+  // (se ele está nela) ou o GPS cru; rumo = direção da rota logo à frente
+  // (estável) ou, fora da rota, o rumo do GPS/bússola.
+  function aplicarCameraNavegacao(duracao: number) {
+    const atual = coordsRef.current;
+    if (!atual) return;
+    const n = navRef.current;
+
+    const centro = n.naRota && n.pontoProjetado ? n.pontoProjetado : atual;
+    if (n.naRota && n.rumoAFrente != null) {
+      ultimoRumoRef.current = n.rumoAFrente;
+    } else if (headingRef.current != null) {
+      ultimoRumoRef.current = headingRef.current;
+    }
+    const rumo = ultimoRumoRef.current;
+
+    ultimaCameraRef.current = { lat: centro.latitude, lng: centro.longitude, rumo };
+    mapRef.current?.animateCamera(
+      {
+        center: centro,
+        heading: rumo,
+        pitch: NAV_PITCH,
+        zoom: zoomPorVelocidade(velocidadeRef.current),
+      },
+      { duration: duracao }
+    );
+  }
+
+  // Ao aceitar a corrida, o painel de baixo troca (oferta -> corrida ativa) e
+  // o mapa recebe padding novo uns instantes depois. Reaplica a câmera de
+  // navegação logo depois disso, pra garantir que o enquadramento final é o
+  // de navegação mesmo se o padding tiver mexido na câmera.
+  useEffect(() => {
+    if (!corridaAtiva) return;
+    seguirPausadoAteRef.current = 0;
+    const timer = setTimeout(() => {
+      modoNavegacaoRef.current = true;
+      aplicarCameraNavegacao(600);
+    }, 1000);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [corridaAtiva?.id]);
+
   useEffect(() => {
     if (!coords) return;
 
     if (corridaAtiva) {
-      const rumo = heading ?? 0;
       const primeiraVez = !modoNavegacaoRef.current;
-      const ultima = ultimaCameraRef.current;
+      modoNavegacaoRef.current = true;
 
+      // Motorista arrastou o mapa: deixa ele olhar em paz por alguns segundos.
+      if (Date.now() < seguirPausadoAteRef.current) return;
+
+      const centro = nav.naRota && nav.pontoProjetado ? nav.pontoProjetado : coords;
+      const rumoNovo =
+        nav.naRota && nav.rumoAFrente != null ? nav.rumoAFrente : heading ?? ultimoRumoRef.current;
+
+      const ultima = ultimaCameraRef.current;
       if (!primeiraVez && ultima) {
-        const mesmoLugar = ultima.lat === coords.latitude && ultima.lng === coords.longitude;
-        const difRumo = Math.abs(((rumo - ultima.rumo + 540) % 360) - 180);
-        if (mesmoLugar && difRumo < 4) return;
+        const parado =
+          Math.abs(ultima.lat - centro.latitude) < 0.000004 && // ~0,4 m
+          Math.abs(ultima.lng - centro.longitude) < 0.000004;
+        const difRumo = Math.abs(((rumoNovo - ultima.rumo + 540) % 360) - 180);
+        if (parado && difRumo < 4) return;
       }
 
-      modoNavegacaoRef.current = true;
-      ultimaCameraRef.current = { lat: coords.latitude, lng: coords.longitude, rumo };
-      // Entrando no modo navegação (corrida acabou de ser aceita): transição
-      // mais lenta (girar + inclinar). Depois disso, acompanha o motorista
-      // com uma animação curta.
-      mapRef.current?.animateCamera(
-        { center: coords, heading: rumo, pitch: 45, zoom: 18 },
-        { duration: primeiraVez ? 900 : 350 }
-      );
+      // ~0,9 s por movimento: o mesmo ritmo do GPS em modo navegação (1
+      // leitura/s), então a câmera desliza em vez de pular de ponto em
+      // ponto. Na primeira vez (corrida acabou de ser aceita) é essa mesma
+      // animação que gira e inclina o mapa até o modo navegação.
+      aplicarCameraNavegacao(900);
     } else if (modoNavegacaoRef.current) {
       // Corrida acabou de terminar (ou foi cancelada): volta pro modo
       // "mapa" normal, norte pra cima e sem inclinação.
       modoNavegacaoRef.current = false;
       ultimaCameraRef.current = null;
+      seguirPausadoAteRef.current = 0;
       mapRef.current?.animateCamera(
         { center: coords, heading: 0, pitch: 0, zoom: 16 },
         { duration: 500 }
       );
     }
-  }, [corridaAtiva?.id, coords?.latitude, coords?.longitude, heading]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [corridaAtiva?.id, nav, coords?.latitude, coords?.longitude, heading]);
 
   function medirPainel(evento: LayoutChangeEvent) {
     const altura = evento.nativeEvent.layout.height;
@@ -397,10 +496,8 @@ export default function DriverHomeScreen() {
       // Em corrida ativa, "recentralizar" deve manter o modo navegação
       // (girado na direção do rumo) — voltar pro norte pra cima aqui
       // desfaria exatamente o que o efeito de câmera acima está mantendo.
-      mapRef.current?.animateCamera(
-        { center: coords, heading: heading ?? 0, pitch: 45, zoom: 18 },
-        { duration: 450 }
-      );
+      seguirPausadoAteRef.current = 0;
+      aplicarCameraNavegacao(450);
       return;
     }
     mapRef.current?.animateToRegion(
@@ -670,6 +767,10 @@ export default function DriverHomeScreen() {
       // Ele rodava logo DEPOIS do efeito da câmera de navegação e desfazia
       // o "seguir a rota" assim que a corrida era aceita — a tela só
       // entrava em navegação no próximo movimento do GPS.)
+      // Limpa a rota da etapa anterior: sem isso, ao confirmar o embarque, a
+      // linha e o aviso de curva da rota ATÉ O PASSAGEIRO continuavam na tela
+      // até a rota nova chegar.
+      limparRota();
       calcularRota(coords, alvo);
     } else {
       limparRota();
@@ -684,8 +785,8 @@ export default function DriverHomeScreen() {
   // localização, checa a distância até a rota calculada; se ele se afastou
   // demais dela, recalcula uma rota nova a partir de onde ele está agora,
   // igual apps como 99/Uber fazem.
-  const DISTANCIA_DESVIO_ROTA_METROS = 60;
-  const INTERVALO_MINIMO_RECALCULO_MS = 15000;
+  const DISTANCIA_DESVIO_ROTA_METROS = 50;
+  const INTERVALO_MINIMO_RECALCULO_MS = 10000;
   const ultimoRecalculoPorDesvioRef = useRef(0);
   const recalculandoPorDesvioRef = useRef(false);
   useEffect(() => {
@@ -976,9 +1077,15 @@ export default function DriverHomeScreen() {
             altura: evento.nativeEvent.layout.height,
           })
         }
-        showsUserLocation
+        // Em corrida o ponto azul do GPS some: quem representa o motorista
+        // é a seta fixa no centro (colada na rota). Os dois juntos ficavam
+        // dessincronizados — o azul no GPS cru, a seta na rota.
+        showsUserLocation={!corridaAtiva}
         showsMyLocationButton={false}
         mapPadding={paddingMapa}
+        onPanDrag={() => {
+          if (corridaAtiva) seguirPausadoAteRef.current = Date.now() + NAV_PAUSA_AO_ARRASTAR_MS;
+        }}
         customMapStyle={scheme === 'claro' ? LIGHT_MAP_STYLE : DARK_MAP_STYLE}
         onMapReady={atualizarPontoTelaMotorista}
         onRegionChange={atualizarPontoTelaMotorista}
@@ -998,7 +1105,12 @@ export default function DriverHomeScreen() {
             >
               <MapPin variant="destino" />
             </Marker>
-            {rota && <AnimatedRoute coordenadas={rota.coordenadas} />}
+            {rota && (
+              <AnimatedRoute
+                coordenadas={nav.naRota && nav.restante.length >= 2 ? nav.restante : rota.coordenadas}
+                pulso={false}
+              />
+            )}
           </>
         )}
       </MapView>
@@ -1263,8 +1375,8 @@ export default function DriverHomeScreen() {
           </View>
           {rota && (
             <Text style={styles.painelSubtitulo}>
-              {formatarDistancia(rota.distanciaKm)} até o passageiro · aproximadamente{' '}
-              {formatarDuracao(rota.duracaoMin)}
+              {formatarDistancia(nav.distanciaRestanteM != null ? nav.distanciaRestanteM / 1000 : rota.distanciaKm)} até o passageiro · aproximadamente{' '}
+              {formatarDuracao(nav.duracaoRestanteMin ?? rota.duracaoMin)}
             </Text>
           )}
           <SwipeButton
@@ -1351,8 +1463,8 @@ export default function DriverHomeScreen() {
           </View>
           {rota && (
             <Text style={styles.painelSubtitulo}>
-              {formatarDistancia(rota.distanciaKm)} até o destino · aproximadamente{' '}
-              {formatarDuracao(rota.duracaoMin)}
+              {formatarDistancia(nav.distanciaRestanteM != null ? nav.distanciaRestanteM / 1000 : rota.distanciaKm)} até o destino · aproximadamente{' '}
+              {formatarDuracao(nav.duracaoRestanteMin ?? rota.duracaoMin)}
             </Text>
           )}
           <Pressable
@@ -1374,6 +1486,15 @@ export default function DriverHomeScreen() {
             style={styles.painelBotao}
           />
         </Animated.View>
+      )}
+
+      {corridaAtiva && nav.proximoPasso && nav.distanciaProximoPassoM != null && (
+        <BannerManobra
+          instrucao={nav.proximoPasso.instrucao}
+          nome={nav.proximoPasso.nome}
+          distanciaM={nav.distanciaProximoPassoM}
+          top={insets.top + 56}
+        />
       )}
 
       <StatusToast message={toastMensagem} tone={toastTom} topOffset={insets.top + spacing.xxl + spacing.xs} />

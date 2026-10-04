@@ -10,9 +10,6 @@ import { ThemeProvider, useTheme } from './src/theme/ThemeContext';
 // nenhuma tela. Ver src/services/backgroundLocationTask.ts.
 import './src/services/backgroundLocationTask';
 
-// Separado do `App` só porque precisa estar DENTRO do <ThemeProvider> pra
-// poder chamar `useTheme()` e decidir o estilo da StatusBar (ícones claros
-// no tema escuro, escuros no tema claro).
 function AppConteudo() {
   const { scheme } = useTheme();
   return (

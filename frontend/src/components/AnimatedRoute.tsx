@@ -7,6 +7,12 @@ export type PontoRota = { latitude: number; longitude: number };
 
 type Props = {
   coordenadas: PontoRota[];
+  // Pulso animado percorrendo a rota. Liga por padrão (telas de passageiro);
+  // a navegação do motorista desliga: o pulso mantém um Marker com
+  // tracksViewChanges e reinicia a cada atualização da linha — peso à toa
+  // com a câmera se movendo o tempo todo, e quem dirige já vê o sentido
+  // pela própria seta.
+  pulso?: boolean;
 };
 
 const DURACAO_LOOP_MS = 3200;
@@ -81,7 +87,7 @@ function calcularTrechos(coordenadas: PontoRota[]): Trecho[] {
 // andamento). Com animateMarkerToCoordinate a animação de posição roda
 // inteira do lado nativo — zero setState, zero re-render do React por
 // frame.
-export default function AnimatedRoute({ coordenadas }: Props) {
+export default function AnimatedRoute({ coordenadas, pulso = true }: Props) {
   const { colors, scheme } = useTheme();
   const escalaHalo = useRef(new Animated.Value(0)).current;
   const marcadorRef = useRef<InstanceType<typeof Marker> | null>(null);
@@ -90,7 +96,7 @@ export default function AnimatedRoute({ coordenadas }: Props) {
   const pontoInicial = coordenadas.length >= 2 ? coordenadas[0] : null;
 
   useEffect(() => {
-    if (trechos.length === 0) return;
+    if (!pulso || trechos.length === 0) return;
 
     let ativo = true;
     let indice = 0;
@@ -123,7 +129,7 @@ export default function AnimatedRoute({ coordenadas }: Props) {
       escalaHalo.setValue(0);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trechos]);
+  }, [trechos, pulso]);
 
   if (!pontoInicial) return null;
 
@@ -151,6 +157,7 @@ export default function AnimatedRoute({ coordenadas }: Props) {
           (marcador pequeno) porque é o halo pulsando que precisa ser
           recapturado — mas agora é o ÚNICO custo de recaptura da rota,
           sem o re-render em cascata que existia antes. */}
+      {pulso && (
       <Marker
         ref={marcadorRef}
         coordinate={pontoInicial}
@@ -170,6 +177,7 @@ export default function AnimatedRoute({ coordenadas }: Props) {
           />
         </View>
       </Marker>
+      )}
     </>
   );
 }
