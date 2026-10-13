@@ -1,4 +1,5 @@
 import * as Location from 'expo-location';
+import { DeviceMotion } from 'expo-sensors';
 import { useEffect, useRef, useState } from 'react';
 import {
   definirCorridaAtivaParaSegundoPlano,
@@ -90,7 +91,44 @@ export function useDriverLocationWatcher(ativo: boolean, corridaId: string | nul
   const velocidadeAtualRef = useRef(0);
   // Último rumo da bússola que foi repassado ao React (pra filtrar o ruído).
   const ultimoRumoBussolaRef = useRef<{ rumo: number; em: number } | null>(null);
+  const giroAssinaturaRef = useRef<{ remove: () => void } | null>(null);
+  const giroAlfaGrausRef = useRef<number | null>(null);
+  const giroOffsetRef = useRef<number | null>(null);
+  const bussolaVivaRef = useRef(false);
   const emCorrida = corridaId != null;
+
+  function calibrarGiro(rumoGps: number) {
+    if (giroAlfaGrausRef.current == null) return;
+    giroOffsetRef.current = rumoGps + giroAlfaGrausRef.current;
+  }
+
+  function iniciarGiroscopio(cancelado: () => boolean) {
+    if (giroAssinaturaRef.current) return;
+    DeviceMotion.isAvailableAsync()
+      .then((disponivel) => {
+        if (!disponivel || cancelado()) return;
+        DeviceMotion.setUpdateInterval(120);
+        giroAssinaturaRef.current = DeviceMotion.addListener((dados) => {
+          const alfa = dados.rotation?.alpha;
+          if (alfa == null) return;
+          const alfaGraus = (alfa * 180) / Math.PI;
+          giroAlfaGrausRef.current = alfaGraus;
+          if (giroOffsetRef.current == null) return;
+          if (velocidadeAtualRef.current > VELOCIDADE_MINIMA_RUMO_GPS) return;
+          const rumo = (((giroOffsetRef.current - alfaGraus) % 360) + 360) % 360;
+          const ultimo = ultimoRumoBussolaRef.current;
+          const agora = Date.now();
+          if (ultimo) {
+            const diferenca = Math.abs(((rumo - ultimo.rumo + 540) % 360) - 180);
+            if (diferenca < BUSSOLA_MUDANCA_MINIMA_GRAUS) return;
+            if (agora - ultimo.em < BUSSOLA_INTERVALO_MINIMO_MS) return;
+          }
+          ultimoRumoBussolaRef.current = { rumo, em: agora };
+          setHeading(rumo);
+        });
+      })
+      .catch(() => {});
+  }
 
   // Mantém a tarefa de segundo plano sabendo qual corrida está ativa agora,
   // pra que o POST feito de dentro do TaskManager (backgroundLocationTask)
@@ -142,6 +180,10 @@ export function useDriverLocationWatcher(ativo: boolean, corridaId: string | nul
       assinaturaRef.current = null;
       bussolaRef.current?.remove();
       bussolaRef.current = null;
+      giroAssinaturaRef.current?.remove();
+      giroAssinaturaRef.current = null;
+      giroOffsetRef.current = null;
+      giroAlfaGrausRef.current = null;
       posicaoAnteriorRef.current = null;
       ultimoRumoBussolaRef.current = null;
       return;
@@ -174,10 +216,13 @@ export function useDriverLocationWatcher(ativo: boolean, corridaId: string | nul
             (posicao.coords.speed ?? 0) > VELOCIDADE_MINIMA_RUMO_GPS
           ) {
             setHeading(rumoDoAparelho);
+            calibrarGiro(rumoDoAparelho);
           } else {
             const anterior = posicaoAnteriorRef.current;
             if (anterior && distanciaMetros(anterior, novaPosicao) >= DISTANCIA_MINIMA_PARA_RUMO_METROS) {
-              setHeading(calcularRumo(anterior, novaPosicao));
+              const rumoCalculado = calcularRumo(anterior, novaPosicao);
+              setHeading(rumoCalculado);
+              calibrarGiro(rumoCalculado);
             }
           }
           posicaoAnteriorRef.current = novaPosicao;
@@ -196,26 +241,41 @@ export function useDriverLocationWatcher(ativo: boolean, corridaId: string | nul
       // motorista está parado (sem velocidade relevante) — em movimento, o
       // rumo do GPS/bearing entre pontos é mais confiável que o
       // magnetômetro (que sofre interferência do metal do carro).
-      const assinaturaBussola = await Location.watchHeadingAsync((evento) => {
-        if (cancelado) return;
-        if (velocidadeAtualRef.current > VELOCIDADE_MINIMA_RUMO_GPS) return;
-        const rumo = evento.trueHeading >= 0 ? evento.trueHeading : evento.magHeading;
+      let assinaturaBussola: Location.LocationSubscription | null = null;
+      bussolaVivaRef.current = false;
+      try {
+        assinaturaBussola = await Location.watchHeadingAsync((evento) => {
+          if (cancelado) return;
+          bussolaVivaRef.current = true;
+          if (velocidadeAtualRef.current > VELOCIDADE_MINIMA_RUMO_GPS) return;
+          const rumo = evento.trueHeading >= 0 ? evento.trueHeading : evento.magHeading;
 
-        const ultimo = ultimoRumoBussolaRef.current;
-        const agora = Date.now();
-        if (ultimo) {
-          const diferenca = Math.abs(((rumo - ultimo.rumo + 540) % 360) - 180);
-          if (diferenca < BUSSOLA_MUDANCA_MINIMA_GRAUS) return;
-          if (agora - ultimo.em < BUSSOLA_INTERVALO_MINIMO_MS) return;
-        }
-        ultimoRumoBussolaRef.current = { rumo, em: agora };
-        setHeading(rumo);
-      });
+          const ultimo = ultimoRumoBussolaRef.current;
+          const agora = Date.now();
+          if (ultimo) {
+            const diferenca = Math.abs(((rumo - ultimo.rumo + 540) % 360) - 180);
+            if (diferenca < BUSSOLA_MUDANCA_MINIMA_GRAUS) return;
+            if (agora - ultimo.em < BUSSOLA_INTERVALO_MINIMO_MS) return;
+          }
+          ultimoRumoBussolaRef.current = { rumo, em: agora };
+          setHeading(rumo);
+        });
+      } catch {
+        assinaturaBussola = null;
+      }
       if (cancelado) {
-        assinaturaBussola.remove();
+        assinaturaBussola?.remove();
         return;
       }
       bussolaRef.current = assinaturaBussola;
+
+      if (!assinaturaBussola) {
+        iniciarGiroscopio(() => cancelado);
+      } else {
+        setTimeout(() => {
+          if (!cancelado && !bussolaVivaRef.current) iniciarGiroscopio(() => cancelado);
+        }, 3000);
+      }
     })();
 
     return () => {
@@ -224,6 +284,8 @@ export function useDriverLocationWatcher(ativo: boolean, corridaId: string | nul
       assinaturaRef.current = null;
       bussolaRef.current?.remove();
       bussolaRef.current = null;
+      giroAssinaturaRef.current?.remove();
+      giroAssinaturaRef.current = null;
       posicaoAnteriorRef.current = null;
       ultimoRumoBussolaRef.current = null;
     };

@@ -148,7 +148,7 @@ const toggleStyles = StyleSheet.create({
 //   zoomPorVelocidade: o zoom se ajusta sozinho — bem perto parado/devagar
 //              (pra ver a esquina) e um pouco mais aberto em velocidade
 //              (pra enxergar a curva com antecedência), como o Waze.
-const NAV_PITCH = 60;
+const NAV_PITCH = 67;
 const NAV_POSICAO_MOTORISTA = 0.68;
 // Pausa do "seguir o motorista" quando ele arrasta o mapa com o dedo.
 const NAV_PAUSA_AO_ARRASTAR_MS = 8000;
@@ -1130,7 +1130,7 @@ export default function DriverHomeScreen() {
         // tela, então a seta só precisa apontar reto pra cima.
         heading={corridaAtiva ? 0 : heading}
         variant={corridaAtiva ? 'seta' : 'facho'}
-        visivel={!!coords && !corridaAtiva}
+        visivel={!!coords && !corridaAtiva && heading != null}
         pivoStyle={styles.direcaoOverlayPivo}
         centralizadorStyle={styles.direcaoOverlayCentralizador}
       />
