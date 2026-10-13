@@ -22,6 +22,7 @@ import ChatModal from '../components/ChatModal';
 import DriverMessagesModal from '../components/DriverMessagesModal';
 import ConfirmarPixPrepagoModal from '../components/ConfirmarPixPrepagoModal';
 import FinalizarCorridaModal, { FormaFinalizacao } from '../components/FinalizarCorridaModal';
+import DirectionIndicator from '../components/DirectionIndicator';
 import MapPin from '../components/MapPin';
 import UserDirectionIndicator, {
   type UserDirectionIndicatorHandle,
@@ -199,6 +200,16 @@ export default function DriverHomeScreen() {
   // Navegação: "gruda" o motorista na rota (posição/rumo estáveis), calcula o
   // trecho que falta, o ETA ao vivo e a próxima curva.
   const nav = useNavegacaoRota(rota, coords, !!corridaAtiva);
+  const centroMotorista = coords && nav.naRota && nav.pontoProjetado ? nav.pontoProjetado : coords;
+  const [setaPronta, setSetaPronta] = useState(false);
+  useEffect(() => {
+    if (!corridaAtiva) {
+      setSetaPronta(false);
+      return;
+    }
+    const t = setTimeout(() => setSetaPronta(true), 800);
+    return () => clearTimeout(t);
+  }, [!!corridaAtiva]);
   const mapRef = useRef<MapView>(null);
   const soqueteRef = useRef<Socket | null>(null);
   // Posição em PIXEL (x,y) na tela onde sua coordenada real cai agora —
@@ -251,27 +262,7 @@ export default function DriverHomeScreen() {
   async function atualizarPontoTelaMotorista() {
     if (!coords) return;
 
-    // Modo navegação: a câmera está SEMPRE centralizada na coordenada do
-    // motorista (ver o efeito de câmera logo abaixo, `center: coords`).
-    // Então o pixel onde ele está é, por definição, o centro exato do
-    // mapa — não precisa (nem convém) perguntar pro `pointForCoordinate`,
-    // que é assíncrono e corre atrás da câmera em vez de acompanhar ela
-    // no mesmo instante. Fixando direto no centro, a seta fica cravada
-    // no meio da tela sem nenhuma defasagem, do jeito que Waze/Google
-    // Maps fazem (o mapa desliza por baixo de um ponteiro que não se
-    // move).
-    if (corridaAtiva && tamanhoMapa.largura > 0 && tamanhoMapa.altura > 0) {
-      // O centro da câmera fica no meio da área VISÍVEL do mapa (descontado
-      // o padding do topo e do painel inferior — ver `paddingMapa`), não no
-      // meio da tela inteira.
-      const topo = paddingMapa.top;
-      const base = paddingMapa.bottom;
-      indicadorDirecaoRef.current?.mover(
-        tamanhoMapa.largura / 2,
-        topo + (tamanhoMapa.altura - topo - base) / 2
-      );
-      return;
-    }
+    if (corridaAtiva) return;
 
     try {
       const ponto = await mapRef.current?.pointForCoordinate(coords);
@@ -1091,6 +1082,18 @@ export default function DriverHomeScreen() {
         onRegionChange={atualizarPontoTelaMotorista}
       >
 
+        {corridaAtiva && centroMotorista && (
+          <Marker
+            coordinate={centroMotorista}
+            anchor={{ x: 0.5, y: 0.5 }}
+            flat={false}
+            zIndex={999}
+            tracksViewChanges={!setaPronta}
+          >
+            <DirectionIndicator size={60} variant="seta" />
+          </Marker>
+        )}
+
         {corridaAtiva && alvoAtual && (
           <>
             <Marker
@@ -1127,7 +1130,7 @@ export default function DriverHomeScreen() {
         // tela, então a seta só precisa apontar reto pra cima.
         heading={corridaAtiva ? 0 : heading}
         variant={corridaAtiva ? 'seta' : 'facho'}
-        visivel={!!coords}
+        visivel={!!coords && !corridaAtiva}
         pivoStyle={styles.direcaoOverlayPivo}
         centralizadorStyle={styles.direcaoOverlayCentralizador}
       />
